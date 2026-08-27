@@ -1,0 +1,502 @@
+/* The owner interface.
+ *
+ * Deliberately dependency-free. A build pipeline before there is a dashboard
+ * to justify one is overhead, and the API boundary is clean enough that
+ * replacing this layer later is cheap.
+ */
+
+const el = (id) => document.getElementById(id);
+
+const app = {
+  meta: { providers: {}, capability_tags: [], home: "" },
+  state: null,
+  connections: [],
+  conversation: { id: null, messages: [] },
+  streaming: false,
+  editingTags: new Set(),
+};
+
+/* ---------- api ---------- */
+
+async function api(path, options = {}) {
+  const response = await fetch(path, {
+    headers: { "Content-Type": "application/json" },
+    ...options,
+  });
+  if (!response.ok) {
+    let detail = `Request failed (${response.status})`;
+    try {
+      const body = await response.json();
+      if (body.detail) detail = body.detail;
+    } catch (_) { /* keep the generic message */ }
+    throw new Error(detail);
+  }
+  return response.status === 204 ? null : response.json();
+}
+
+/* ---------- boot ---------- */
+
+async function boot() {
+  app.meta = await api("/api/meta");
+  el("home-note").textContent = `This Aworg lives at ${app.meta.home}`;
+  buildProviderOptions();
+  buildTagChips();
+  await refresh();
+  wireEvents();
+}
+
+async function refresh() {
+  const [state, connections, conversation] = await Promise.all([
+    api("/api/state"),
+    api("/api/connections"),
+    api("/api/conversation"),
+  ]);
+  app.state = state;
+  app.connections = connections;
+  app.conversation = conversation;
+  renderStatus();
+  renderChat();
+  renderSettings();
+}
+
+/* ---------- status ---------- */
+
+function renderStatus() {
+  const resident = app.state.resident;
+  el("status-dot").className = `dot ${resident.status}`;
+  el("status-text").textContent =
+    resident.status === "present" ? resident.model_label : resident.detail;
+}
+
+/* ---------- chat ---------- */
+
+function renderChat() {
+  const box = el("messages");
+  box.innerHTML = "";
+
+  if (!app.conversation.messages.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty";
+    if (app.state.resident.status === "present") {
+      empty.innerHTML =
+        "<strong>Your Resident is present.</strong>" +
+        "It lives on this machine and will remember this conversation. " +
+        "For now it can only talk — it has no workspace and no tools yet.";
+    } else {
+      empty.innerHTML =
+        "<strong>No model is connected.</strong>" +
+        "Open Settings and connect a model to bring your Resident to life.";
+    }
+    box.appendChild(empty);
+    return;
+  }
+
+  for (const message of app.conversation.messages) {
+    box.appendChild(messageNode(message.role, message.content, message.model_label));
+  }
+  box.scrollTop = box.scrollHeight;
+}
+
+function messageNode(role, content, label) {
+  const wrapper = document.createElement("div");
+  wrapper.className = `msg ${role}`;
+
+  const body = document.createElement("div");
+  body.className = "body";
+  body.textContent = content;
+  wrapper.appendChild(body);
+
+  // Attribution is what makes switching models mid-conversation legible:
+  // the owner can see which mind produced which reply.
+  if (role === "resident" && label) {
+    const attrib = document.createElement("div");
+    attrib.className = "attrib";
+    attrib.textContent = label;
+    wrapper.appendChild(attrib);
+  }
+  return wrapper;
+}
+
+async function send(text) {
+  const box = el("messages");
+  if (!app.conversation.messages.length) box.innerHTML = "";
+
+  box.appendChild(messageNode("owner", text, null));
+  app.conversation.messages.push({ role: "owner", content: text });
+
+  const replyNode = messageNode("resident", "", null);
+  const body = replyNode.querySelector(".body");
+  body.classList.add("cursor");
+  box.appendChild(replyNode);
+  box.scrollTop = box.scrollHeight;
+
+  setStreaming(true);
+  let collected = "";
+  let failed = false;
+
+  try {
+    const response = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: text }),
+    });
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop();
+
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        const event = JSON.parse(line);
+
+        if (event.type === "delta") {
+          collected += event.text;
+          body.textContent = collected;
+          box.scrollTop = box.scrollHeight;
+        } else if (event.type === "done") {
+          const attrib = document.createElement("div");
+          attrib.className = "attrib";
+          attrib.textContent = event.model_label;
+          replyNode.appendChild(attrib);
+          app.conversation.messages.push({
+            role: "resident",
+            content: collected,
+            model_label: event.model_label,
+          });
+        } else if (event.type === "error") {
+          failed = true;
+          if (!collected) replyNode.remove();
+          box.appendChild(messageNode("error", event.message, null));
+          box.scrollTop = box.scrollHeight;
+        }
+      }
+    }
+  } catch (error) {
+    failed = true;
+    if (!collected) replyNode.remove();
+    box.appendChild(messageNode("error", `Lost contact with AWORG: ${error.message}`, null));
+  } finally {
+    body.classList.remove("cursor");
+    setStreaming(false);
+    if (failed) {
+      // The conversation on disk is authoritative; resync rather than guess.
+      app.conversation = await api("/api/conversation");
+    }
+  }
+}
+
+function setStreaming(on) {
+  app.streaming = on;
+  el("send").disabled = on;
+  el("send").textContent = on ? "…" : "Send";
+}
+
+/* ---------- settings ---------- */
+
+function buildProviderOptions() {
+  const select = el("conn-provider");
+  select.innerHTML = "";
+  for (const [value, label] of Object.entries(app.meta.providers)) {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = label;
+    select.appendChild(option);
+  }
+}
+
+function buildTagChips() {
+  const container = el("conn-tags");
+  container.innerHTML = "";
+  for (const tag of app.meta.capability_tags) {
+    const chip = document.createElement("span");
+    chip.className = "tag selectable";
+    chip.textContent = tag;
+    chip.onclick = () => {
+      if (app.editingTags.has(tag)) app.editingTags.delete(tag);
+      else app.editingTags.add(tag);
+      chip.classList.toggle("on");
+    };
+    container.appendChild(chip);
+  }
+}
+
+function renderSettings() {
+  const select = el("primary-select");
+  select.innerHTML = "";
+
+  if (!app.connections.length) {
+    const option = document.createElement("option");
+    option.textContent = "No connections yet";
+    option.value = "";
+    select.appendChild(option);
+  }
+
+  for (const connection of app.connections) {
+    const option = document.createElement("option");
+    option.value = connection.id;
+    option.textContent = `${connection.name} (${connection.model})`;
+    option.selected = connection.id === app.state.primary_connection_id;
+    select.appendChild(option);
+  }
+
+  el("system-prompt").value = app.state.system_prompt;
+  renderConnections();
+}
+
+function renderConnections() {
+  const container = el("connections");
+  container.innerHTML = "";
+
+  if (!app.connections.length) {
+    const hint = document.createElement("p");
+    hint.className = "hint";
+    hint.textContent = "No models connected yet.";
+    container.appendChild(hint);
+    return;
+  }
+
+  for (const connection of app.connections) {
+    container.appendChild(connectionNode(connection));
+  }
+}
+
+function connectionNode(connection) {
+  const isPrimary = connection.id === app.state.primary_connection_id;
+
+  const card = document.createElement("div");
+  card.className = "conn" + (isPrimary ? " is-primary" : "") + (connection.enabled ? "" : " disabled");
+
+  const top = document.createElement("div");
+  top.className = "conn-top";
+
+  const left = document.createElement("div");
+  const name = document.createElement("div");
+  name.className = "conn-name";
+  name.textContent = connection.name;
+  const meta = document.createElement("div");
+  meta.className = "conn-meta";
+  meta.textContent =
+    `${app.meta.providers[connection.provider] || connection.provider} · ${connection.model}` +
+    (connection.base_url ? ` · ${connection.base_url}` : "") +
+    (connection.has_credential ? "" : " · no credential");
+  left.append(name, meta);
+  top.appendChild(left);
+
+  if (isPrimary) {
+    const badge = document.createElement("span");
+    badge.className = "badge";
+    badge.textContent = "Resident";
+    top.appendChild(badge);
+  }
+  card.appendChild(top);
+
+  if (connection.tags.length) {
+    const tags = document.createElement("div");
+    tags.className = "tags";
+    for (const tag of connection.tags) {
+      const chip = document.createElement("span");
+      chip.className = "tag";
+      chip.textContent = tag;
+      tags.appendChild(chip);
+    }
+    card.appendChild(tags);
+  }
+
+  const actions = document.createElement("div");
+  actions.className = "conn-actions";
+
+  if (!isPrimary) {
+    actions.appendChild(
+      button("Make Resident", "tiny", async () => {
+        await api("/api/resident", {
+          method: "PATCH",
+          body: JSON.stringify({ primary_connection_id: connection.id }),
+        });
+        await refresh();
+      })
+    );
+  }
+
+  const result = document.createElement("span");
+  result.className = "test-result";
+
+  actions.appendChild(
+    button("Test", "tiny ghost", async (btn) => {
+      btn.disabled = true;
+      result.textContent = "Testing…";
+      result.className = "test-result";
+      try {
+        const outcome = await api(`/api/connections/${connection.id}/test`, { method: "POST" });
+        result.textContent = outcome.detail;
+        result.className = `test-result ${outcome.ok ? "ok" : "bad"}`;
+      } catch (error) {
+        result.textContent = error.message;
+        result.className = "test-result bad";
+      } finally {
+        btn.disabled = false;
+      }
+    })
+  );
+
+  actions.appendChild(button("Edit", "tiny ghost", () => openForm(connection)));
+
+  actions.appendChild(
+    button(connection.enabled ? "Disable" : "Enable", "tiny ghost", async () => {
+      await api(`/api/connections/${connection.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ enabled: !connection.enabled }),
+      });
+      await refresh();
+    })
+  );
+
+  actions.appendChild(
+    button("Delete", "tiny ghost", async () => {
+      if (!confirm(`Delete "${connection.name}"? Its credential is deleted too.`)) return;
+      await api(`/api/connections/${connection.id}`, { method: "DELETE" });
+      await refresh();
+    })
+  );
+
+  actions.appendChild(result);
+  card.appendChild(actions);
+  return card;
+}
+
+function button(label, className, onClick) {
+  const node = document.createElement("button");
+  node.type = "button";
+  node.className = className;
+  node.textContent = label;
+  node.onclick = () => onClick(node);
+  return node;
+}
+
+/* ---------- connection form ---------- */
+
+function openForm(connection) {
+  el("conn-form").hidden = false;
+  el("conn-error").textContent = "";
+  el("conn-id").value = connection ? connection.id : "";
+  el("conn-name").value = connection ? connection.name : "";
+  el("conn-provider").value = connection ? connection.provider : Object.keys(app.meta.providers)[0];
+  el("conn-model").value = connection ? connection.model : "";
+  el("conn-base-url").value = connection && connection.base_url ? connection.base_url : "";
+  el("conn-credential").value = "";
+  el("conn-credential").placeholder = connection && connection.has_credential
+    ? "Stored — leave blank to keep it"
+    : "Stored privately, never shown again";
+
+  app.editingTags = new Set(connection ? connection.tags : []);
+  for (const chip of el("conn-tags").children) {
+    chip.classList.toggle("on", app.editingTags.has(chip.textContent));
+  }
+  el("conn-name").focus();
+}
+
+function closeForm() {
+  el("conn-form").hidden = true;
+  app.editingTags = new Set();
+}
+
+/* ---------- events ---------- */
+
+function wireEvents() {
+  for (const tab of document.querySelectorAll(".viewtab")) {
+    tab.onclick = () => {
+      for (const other of document.querySelectorAll(".viewtab")) {
+        other.classList.toggle("active", other === tab);
+      }
+      for (const view of document.querySelectorAll(".view")) {
+        view.classList.toggle("active", view.id === `view-${tab.dataset.view}`);
+      }
+    };
+  }
+
+  const input = el("input");
+  input.addEventListener("input", () => {
+    input.style.height = "auto";
+    input.style.height = `${Math.min(input.scrollHeight, 200)}px`;
+  });
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      el("composer").requestSubmit();
+    }
+  });
+
+  el("composer").onsubmit = (event) => {
+    event.preventDefault();
+    const text = input.value.trim();
+    if (!text || app.streaming) return;
+    input.value = "";
+    input.style.height = "auto";
+    send(text);
+  };
+
+  el("new-conversation").onclick = async () => {
+    if (app.streaming) return;
+    if (app.conversation.messages.length &&
+        !confirm("Start a new conversation? The Resident will not carry this one forward.")) return;
+    app.conversation = await api("/api/conversation/new", { method: "POST" });
+    renderChat();
+  };
+
+  el("save-resident").onclick = async () => {
+    const body = {
+      system_prompt: el("system-prompt").value,
+    };
+    const chosen = el("primary-select").value;
+    if (chosen) body.primary_connection_id = chosen;
+    await api("/api/resident", { method: "PATCH", body: JSON.stringify(body) });
+    await refresh();
+    const saved = el("resident-saved");
+    saved.textContent = "Saved";
+    setTimeout(() => { saved.textContent = ""; }, 2000);
+  };
+
+  el("add-connection").onclick = () => openForm(null);
+  el("conn-cancel").onclick = closeForm;
+
+  el("conn-form").onsubmit = async (event) => {
+    event.preventDefault();
+    const error = el("conn-error");
+    error.textContent = "";
+
+    const payload = {
+      name: el("conn-name").value.trim(),
+      provider: el("conn-provider").value,
+      model: el("conn-model").value.trim(),
+      base_url: el("conn-base-url").value.trim() || null,
+      tags: [...app.editingTags],
+      credential: el("conn-credential").value || null,
+    };
+
+    if (!payload.name || !payload.model) {
+      error.textContent = "A name and a model identifier are required.";
+      return;
+    }
+
+    const id = el("conn-id").value;
+    try {
+      if (id) {
+        await api(`/api/connections/${id}`, { method: "PATCH", body: JSON.stringify(payload) });
+      } else {
+        await api("/api/connections", { method: "POST", body: JSON.stringify(payload) });
+      }
+      closeForm();
+      await refresh();
+    } catch (err) {
+      error.textContent = err.message;
+    }
+  };
+}
+
+boot();

@@ -1,0 +1,61 @@
+"""Starting and inspecting an Aworg."""
+
+from __future__ import annotations
+
+import argparse
+import sys
+
+from .paths import Paths, resolve_home
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        prog="aworg",
+        description="AWORG - Autonomous Workspace Organism",
+    )
+    parser.add_argument(
+        "--home",
+        help="Where this Aworg lives (default: $AWORG_HOME, or ~/.aworg)",
+    )
+    commands = parser.add_subparsers(dest="command")
+
+    start = commands.add_parser("start", help="Start the Aworg and open its interface")
+    start.add_argument("--host", default="127.0.0.1")
+    start.add_argument("--port", type=int, default=8420)
+
+    commands.add_parser("init", help="Create this Aworg's home directory")
+    commands.add_parser("home", help="Print this Aworg's home directory")
+
+    args = parser.parse_args(argv)
+    paths = Paths(resolve_home(args.home))
+
+    if args.command == "home":
+        print(paths.home)
+        return 0
+
+    if args.command == "init":
+        paths.ensure()
+        print(f"Aworg home ready at {paths.home}")
+        return 0
+
+    if args.command == "start" or args.command is None:
+        host = getattr(args, "host", "127.0.0.1")
+        port = getattr(args, "port", 8420)
+        paths.ensure()
+
+        import uvicorn
+
+        from .server import create_app
+
+        print(f"AWORG home     {paths.home}")
+        print(f"Owner interface  http://{host}:{port}")
+        print()
+        uvicorn.run(create_app(paths), host=host, port=port, log_level="warning")
+        return 0
+
+    parser.print_help()
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

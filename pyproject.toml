@@ -1,0 +1,23 @@
+[project]
+name = "aworg"
+version = "0.1.0"
+description = "Autonomous Workspace Organism - a persistent AI Resident for your machine"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn>=0.27",
+    "httpx>=0.27",
+]
+
+[project.scripts]
+aworg = "aworg.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["aworg*"]
+
+[tool.setuptools.package-data]
+aworg = ["web/*"]

@@ -1,0 +1,9 @@
+.venv/
+*.egg-info/
+__pycache__/
+*.py[cod]
+
+# An Aworg's home never belongs in the runtime's repository, but guard against
+# someone pointing AWORG_HOME here during development.
+.aworg/
+*.db

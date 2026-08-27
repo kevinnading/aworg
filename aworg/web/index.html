@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AWORG</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="identity">
+    <span class="wordmark">AWORG</span>
+    <span class="status" id="status">
+      <span class="dot" id="status-dot"></span>
+      <span id="status-text">Waking…</span>
+    </span>
+  </div>
+  <nav class="views">
+    <button class="viewtab active" data-view="chat">Chat</button>
+    <button class="viewtab" data-view="settings">Settings</button>
+  </nav>
+</header>
+
+<main>
+
+  <section id="view-chat" class="view active">
+    <div class="messages" id="messages"></div>
+    <form class="composer" id="composer">
+      <textarea id="input" rows="1" placeholder="Say something to your Resident…"></textarea>
+      <div class="composer-actions">
+        <button type="button" class="ghost" id="new-conversation">New conversation</button>
+        <button type="submit" id="send">Send</button>
+      </div>
+    </form>
+  </section>
+
+  <section id="view-settings" class="view">
+    <div class="settings-scroll">
+
+      <div class="panel">
+        <h2>The Resident</h2>
+        <p class="hint">Which mind the Resident currently thinks with, and the
+          standing instructions that describe who it is.</p>
+
+        <label class="field">
+          <span>Primary Resident</span>
+          <select id="primary-select"></select>
+        </label>
+
+        <label class="field">
+          <span>Standing instructions</span>
+          <textarea id="system-prompt" rows="8"></textarea>
+        </label>
+
+        <div class="row">
+          <button id="save-resident">Save</button>
+          <span class="saved" id="resident-saved"></span>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>Model Pool</h2>
+            <p class="hint">Every model this Aworg can reach. Only the primary
+              is in use today; the rest are here for the workers that come later.</p>
+          </div>
+          <button id="add-connection">Add connection</button>
+        </div>
+
+        <div id="connections"></div>
+
+        <form class="conn-form" id="conn-form" hidden>
+          <input type="hidden" id="conn-id">
+          <div class="grid">
+            <label class="field">
+              <span>Name</span>
+              <input id="conn-name" placeholder="Workhorse" autocomplete="off">
+            </label>
+            <label class="field">
+              <span>Provider</span>
+              <select id="conn-provider"></select>
+            </label>
+            <label class="field">
+              <span>Model</span>
+              <input id="conn-model" placeholder="claude-opus-4-5" autocomplete="off">
+            </label>
+            <label class="field">
+              <span>Endpoint <em>optional</em></span>
+              <input id="conn-base-url" placeholder="http://localhost:11434/v1" autocomplete="off">
+            </label>
+          </div>
+
+          <label class="field">
+            <span>Credential</span>
+            <input id="conn-credential" type="password" placeholder="Stored privately, never shown again" autocomplete="off">
+          </label>
+
+          <div class="field">
+            <span>Good for</span>
+            <div class="tags" id="conn-tags"></div>
+          </div>
+
+          <div class="row">
+            <button type="submit" id="conn-save">Save connection</button>
+            <button type="button" class="ghost" id="conn-cancel">Cancel</button>
+            <span class="error" id="conn-error"></span>
+          </div>
+        </form>
+      </div>
+
+      <p class="home-note" id="home-note"></p>
+
+    </div>
+  </section>
+
+</main>
+
+<script src="/app.js"></script>
+</body>
+</html>
