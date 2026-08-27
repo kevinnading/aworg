@@ -11,6 +11,24 @@
   --danger: #f87171;
   --ok: #4ade80;
   --warn: #fbbf24;
+
+  /* Editor palette. Tuned toward One Dark, which reads well against this
+     background and is familiar enough that code looks like code on sight. */
+  --code-bg: #0b0e12;
+  --code-gutter: #4b535e;
+  --t-comment: #6b7480;
+  --t-string: #98c379;
+  --t-number: #d19a66;
+  --t-keyword: #c678dd;
+  --t-builtin: #56b6c2;
+  --t-fn: #61afef;
+  --t-key: #61afef;
+  --t-decorator: #e5c07b;
+  --t-tag: #e06c75;
+  --t-attr: #d19a66;
+  --t-variable: #e06c75;
+  --t-flag: #56b6c2;
+  --t-doctype: #6b7480;
 }
 
 * { box-sizing: border-box; }
@@ -327,7 +345,7 @@ button.tiny { padding: 5px 11px; font-size: 13px; }
   border: 1px solid var(--line);
   border-radius: 9px;
   overflow: hidden;
-  background: #0b0d10;
+  background: var(--code-bg);
 }
 
 .markdown .code-head {
@@ -357,10 +375,35 @@ button.tiny { padding: 5px 11px; font-size: 13px; }
 }
 .code-copy:hover { color: var(--text); filter: none; }
 
+.markdown .code-body { display: flex; align-items: stretch; }
+
+/* The gutter sits outside the scrolling <pre>, so line numbers hold still
+   while long lines scroll past them -- the way an editor behaves. */
+.markdown .gutter {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  padding: 13px 0;
+  border-right: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.015);
+  user-select: none;
+}
+.markdown .gutter span {
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--code-gutter);
+  text-align: right;
+  padding: 0 10px 0 13px;
+  min-width: 38px;
+}
+
 .markdown .code pre {
   margin: 0;
   padding: 13px 15px;
   overflow-x: auto;
+  flex: 1;
+  min-width: 0;
 }
 
 .markdown .code code {
@@ -370,6 +413,20 @@ button.tiny { padding: 5px 11px; font-size: 13px; }
   font-size: 13px;
   line-height: 1.6;
 }
+
+.t-comment { color: var(--t-comment); font-style: italic; }
+.t-string { color: var(--t-string); }
+.t-number { color: var(--t-number); }
+.t-keyword { color: var(--t-keyword); }
+.t-builtin { color: var(--t-builtin); }
+.t-fn { color: var(--t-fn); }
+.t-key { color: var(--t-key); }
+.t-decorator { color: var(--t-decorator); }
+.t-tag { color: var(--t-tag); }
+.t-attr { color: var(--t-attr); }
+.t-variable { color: var(--t-variable); }
+.t-flag { color: var(--t-flag); }
+.t-doctype { color: var(--t-doctype); }
 
 /* ---- home ---- */
 
@@ -494,7 +551,16 @@ button.tiny { padding: 5px 11px; font-size: 13px; }
 .file.navigable { cursor: pointer; }
 .file.navigable:hover { background: var(--panel-2); }
 
-.file-icon { color: var(--muted); text-align: center; }
+.file-icon { display: flex; align-items: center; justify-content: center; }
+.file-icon svg { display: block; }
+
+.file-name {
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 12.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .file.directory .file-name { color: var(--text); }
 .file.file .file-name { color: var(--muted); }
 .file-size, .file-modified {

@@ -45,13 +45,23 @@ const MD = (() => {
   }
 
   function codeBlock(code, language) {
+    const body = code.replace(/\n$/, "");
+    const lines = body.split("\n").length;
+    const gutter = Array.from({ length: lines }, (_, i) => `<span>${i + 1}</span>`).join("");
+
+    // The gutter is a sibling of the <pre> rather than part of it, so that
+    // horizontal scrolling moves the code and leaves the line numbers in
+    // place -- and so highlighting never has to survive being split by line.
     return (
-      '<div class="code">' +
+      `<div class="code" data-lang="${escapeHtml(HL.normalize(language))}">` +
       '<div class="code-head">' +
       `<span class="code-lang">${escapeHtml(language || "text")}</span>` +
       '<button class="code-copy" type="button">Copy</button>' +
       "</div>" +
-      `<pre><code>${escapeHtml(code)}</code></pre>` +
+      '<div class="code-body">' +
+      `<div class="gutter" aria-hidden="true">${gutter}</div>` +
+      `<pre><code>${HL.highlight(body, language)}</code></pre>` +
+      "</div>" +
       "</div>"
     );
   }

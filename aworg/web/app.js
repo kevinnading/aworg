@@ -543,13 +543,75 @@ function crumb(label, path, isCurrent) {
   return node;
 }
 
+/* File-type icons.
+ *
+ * Colour carries the type, shape carries the category. Recognising a Python
+ * file at a glance is the difference between reading a listing and scanning
+ * one, and the Resident's output deserves to be scannable.
+ */
+
+const ICON_SHAPES = {
+  folder:
+    '<path d="M1.8 12.6V4.4a1 1 0 0 1 1-1h3.3l1.4 1.8h5.7a1 1 0 0 1 1 1v6.4a1 1 0 0 1-1 1H2.8a1 1 0 0 1-1-1z"/>',
+  up: '<path d="M8 12.6V4.3"/><path d="M4.4 7.9 8 4.3l3.6 3.6"/>',
+  page:
+    '<path d="M4 1.9h4.7l3.4 3.4v8.8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V2.9a1 1 0 0 1 1-1z"/>' +
+    '<path d="M8.5 2v3.4h3.4"/>',
+  braces:
+    '<path d="M6.4 2.6c-1.5 0-1.7 1-1.7 2.4s-.2 2.7-1.4 3.1c1.2.4 1.4 1.6 1.4 3s.2 2.4 1.7 2.4"/>' +
+    '<path d="M9.6 2.6c1.5 0 1.7 1 1.7 2.4s.2 2.7 1.4 3.1c-1.2.4-1.4 1.6-1.4 3s-.2 2.4-1.7 2.4"/>',
+  angle: '<path d="M6.1 4.4 2.6 8l3.5 3.6"/><path d="M9.9 4.4 13.4 8l-3.5 3.6"/>',
+  database:
+    '<ellipse cx="8" cy="4.1" rx="4.9" ry="2.1"/>' +
+    '<path d="M3.1 4.1v7.8c0 1.2 2.2 2.1 4.9 2.1s4.9-.9 4.9-2.1V4.1"/>' +
+    '<path d="M3.1 8c0 1.2 2.2 2.1 4.9 2.1s4.9-.9 4.9-2.1"/>',
+  image:
+    '<rect x="2.4" y="3.4" width="11.2" height="9.2" rx="1.2"/>' +
+    '<circle cx="6" cy="6.7" r="1"/><path d="M2.9 11.9 6.4 8.6l2.4 2 2.1-1.7 2.2 2"/>',
+  terminal:
+    '<rect x="2" y="3" width="12" height="10" rx="1.4"/>' +
+    '<path d="M4.9 6.6 7 8.6l-2.1 2"/><path d="M8.6 11.1h3"/>',
+};
+
+const FILE_TYPES = [
+  { match: /\.(py|pyw|pyi)$/i, shape: "page", color: "#61afef" },
+  { match: /\.(js|mjs|cjs|ts|jsx|tsx)$/i, shape: "page", color: "#e5c07b" },
+  { match: /\.(json|ya?ml|toml|ini|cfg|env|lock)$/i, shape: "braces", color: "#d19a66" },
+  { match: /\.(png|jpe?g|gif|webp|ico|bmp|svg)$/i, shape: "image", color: "#56b6c2" },
+  { match: /\.(html?|xml|vue)$/i, shape: "angle", color: "#e06c75" },
+  { match: /\.(css|scss|sass|less)$/i, shape: "page", color: "#56b6c2" },
+  { match: /\.(md|markdown|txt|rst)$/i, shape: "page", color: "#98c379" },
+  { match: /\.(db|sqlite3?|sql)$/i, shape: "database", color: "#c678dd" },
+  { match: /\.(sh|bash|zsh|ps1|bat|cmd)$/i, shape: "terminal", color: "#98c379" },
+];
+
+const ICON_NEUTRAL = "#7f8896";
+
+function iconSvg(shape, color) {
+  return (
+    `<svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="${color}" ` +
+    'stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">' +
+    `${shape}</svg>`
+  );
+}
+
+function fileIcon(entry) {
+  if (entry.name === "..") return iconSvg(ICON_SHAPES.up, ICON_NEUTRAL);
+  if (entry.type === "directory") return iconSvg(ICON_SHAPES.folder, "#e5c07b");
+  const type = FILE_TYPES.find((candidate) => candidate.match.test(entry.name));
+  return iconSvg(
+    ICON_SHAPES[type ? type.shape : "page"],
+    type ? type.color : ICON_NEUTRAL
+  );
+}
+
 function fileRow(entry, navigateTo) {
   const row = document.createElement("div");
   row.className = `file ${entry.type}` + (navigateTo !== null ? " navigable" : "");
 
   const icon = document.createElement("span");
   icon.className = "file-icon";
-  icon.textContent = entry.type === "directory" ? "▸" : "·";
+  icon.innerHTML = fileIcon(entry);
 
   const name = document.createElement("span");
   name.className = "file-name";
