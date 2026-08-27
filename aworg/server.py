@@ -9,6 +9,7 @@ are allowed to talk to a Resident under far tighter restrictions.
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -194,6 +195,73 @@ def create_app(paths: Paths) -> FastAPI:
                 yield json.dumps(event) + "\n"
 
         return StreamingResponse(events(), media_type="application/x-ndjson")
+
+    # -- the Living Workspace -------------------------------------------
+
+    @app.get("/api/workspace")
+    def workspace(path: str = "") -> dict[str, Any]:
+        """List a directory inside the Living Workspace.
+
+        The workspace is the Resident's territory, so the owner should be able
+        to watch it change. Every path is resolved and checked for containment
+        before anything is read -- the boundary is only meaningful if it is
+        enforced here rather than assumed.
+        """
+        root = paths.workspace.resolve()
+        target = (root / path).resolve() if path else root
+
+        if target != root and root not in target.parents:
+            raise HTTPException(400, "Outside the Living Workspace")
+        if not target.is_dir():
+            raise HTTPException(404, "No such directory")
+
+        entries = []
+        for child in sorted(target.iterdir(), key=lambda c: (c.is_file(), c.name.lower())):
+            try:
+                info = child.stat()
+                is_dir = child.is_dir()
+            except OSError:
+                continue  # vanished mid-listing, or unreadable
+            entries.append(
+                {
+                    "name": child.name,
+                    "type": "directory" if is_dir else "file",
+                    "size": None if is_dir else info.st_size,
+                    "modified": datetime.fromtimestamp(info.st_mtime).isoformat(
+                        timespec="seconds"
+                    ),
+                }
+            )
+
+        relative = "" if target == root else target.relative_to(root).as_posix()
+        if target == root:
+            parent = None
+        elif target.parent == root:
+            parent = ""
+        else:
+            parent = target.parent.relative_to(root).as_posix()
+
+        return {
+            "path": relative,
+            "parent": parent,
+            "entries": entries,
+            "root": str(root),
+        }
+
+    @app.get("/api/preview")
+    def preview() -> dict[str, Any]:
+        """Where the owner watches the Resident's application run.
+
+        Nothing can be running yet -- the Resident gains the ability to build
+        and start software in Milestone 2. Saying so plainly is better than an
+        empty frame that looks broken.
+        """
+        return {
+            "available": False,
+            "url": None,
+            "detail": "No preview available",
+            "hint": "Your Resident cannot build or run applications yet.",
+        }
 
     # Mounted last so the API routes above take precedence.
     app.mount("/", StaticFiles(directory=WEB_DIR, html=True), name="web")

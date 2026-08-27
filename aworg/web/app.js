@@ -14,6 +14,9 @@ const app = {
   conversation: { id: null, messages: [] },
   streaming: false,
   editingTags: new Set(),
+  workspacePath: "",
+  workspaceSignature: null,
+  workspaceTimer: null,
 };
 
 /* ---------- api ---------- */
@@ -103,7 +106,15 @@ function messageNode(role, content, label) {
 
   const body = document.createElement("div");
   body.className = "body";
-  body.textContent = content;
+  // What the owner typed is shown exactly as typed. What the Resident says is
+  // rendered, because a developer that cannot show code legibly is hard to work
+  // with -- and that matters well before it can write any.
+  if (role === "resident") {
+    body.classList.add("markdown");
+    body.innerHTML = MD.render(content);
+  } else {
+    body.textContent = content;
+  }
   wrapper.appendChild(body);
 
   // Attribution is what makes switching models mid-conversation legible:
@@ -158,7 +169,7 @@ async function send(text) {
 
         if (event.type === "delta") {
           collected += event.text;
-          body.textContent = collected;
+          body.innerHTML = MD.render(collected);
           box.scrollTop = box.scrollHeight;
         } else if (event.type === "done") {
           const attrib = document.createElement("div");
@@ -406,6 +417,163 @@ function closeForm() {
   app.editingTags = new Set();
 }
 
+/* ---------- workspace ---------- */
+
+/* The Living Workspace is the Resident's territory. The owner should be able to
+ * watch it change rather than take the Resident's word for what it did -- which
+ * is the same instinct the autonomous repair loop will later depend on.
+ *
+ * It is empty until Milestone 2 gives the Resident the ability to act.
+ */
+
+function startWorkspaceWatch() {
+  if (app.workspaceTimer) return;
+  loadPreview();
+  loadWorkspace();
+  app.workspaceTimer = setInterval(loadWorkspace, 2000);
+  el("workspace-live").hidden = false;
+}
+
+function stopWorkspaceWatch() {
+  clearInterval(app.workspaceTimer);
+  app.workspaceTimer = null;
+  el("workspace-live").hidden = true;
+}
+
+async function loadPreview() {
+  const inner = el("preview-inner");
+  let preview;
+  try {
+    preview = await api("/api/preview");
+  } catch (_) {
+    return;
+  }
+
+  inner.innerHTML = "";
+  if (preview.available && preview.url) {
+    const frame = document.createElement("iframe");
+    frame.src = preview.url;
+    frame.title = "Application preview";
+    inner.appendChild(frame);
+    return;
+  }
+
+  const empty = document.createElement("div");
+  empty.className = "preview-empty";
+  const detail = document.createElement("strong");
+  detail.textContent = preview.detail;
+  const hint = document.createElement("span");
+  hint.textContent = preview.hint || "";
+  empty.append(detail, hint);
+  inner.appendChild(empty);
+}
+
+async function loadWorkspace(path) {
+  if (path !== undefined) {
+    app.workspacePath = path;
+    app.workspaceSignature = null;
+  }
+
+  let data;
+  try {
+    data = await api(`/api/workspace?path=${encodeURIComponent(app.workspacePath)}`);
+  } catch (_) {
+    // The directory was probably removed underneath us. Fall back to the root.
+    if (app.workspacePath) loadWorkspace("");
+    return;
+  }
+
+  // Polling redraws would fight with the owner's scroll position, so redraw
+  // only when something actually changed.
+  const signature = JSON.stringify(data);
+  if (signature === app.workspaceSignature) return;
+  app.workspaceSignature = signature;
+  app.workspace = data;
+  renderWorkspace();
+}
+
+function renderWorkspace() {
+  const data = app.workspace;
+  el("workspace-path").textContent = data.root;
+
+  const crumbs = el("crumbs");
+  crumbs.innerHTML = "";
+  const segments = data.path ? data.path.split("/") : [];
+
+  crumbs.appendChild(crumb("workspace", "", segments.length === 0));
+  let walked = "";
+  segments.forEach((segment, index) => {
+    walked = walked ? `${walked}/${segment}` : segment;
+    const separator = document.createElement("span");
+    separator.className = "crumb-sep";
+    separator.textContent = "/";
+    crumbs.appendChild(separator);
+    crumbs.appendChild(crumb(segment, walked, index === segments.length - 1));
+  });
+
+  const files = el("files");
+  files.innerHTML = "";
+
+  if (!data.entries.length) {
+    const empty = document.createElement("div");
+    empty.className = "files-empty";
+    empty.innerHTML =
+      "<strong>Nothing here yet.</strong>" +
+      "Your Resident cannot create files until it is given tools and the " +
+      "ability to act.";
+    files.appendChild(empty);
+    return;
+  }
+
+  if (data.parent !== null) {
+    files.appendChild(fileRow({ name: "..", type: "directory" }, data.parent));
+  }
+  for (const entry of data.entries) {
+    const next = data.path ? `${data.path}/${entry.name}` : entry.name;
+    files.appendChild(fileRow(entry, entry.type === "directory" ? next : null));
+  }
+}
+
+function crumb(label, path, isCurrent) {
+  const node = document.createElement("button");
+  node.type = "button";
+  node.className = "crumb" + (isCurrent ? " current" : "");
+  node.textContent = label;
+  node.onclick = () => loadWorkspace(path);
+  return node;
+}
+
+function fileRow(entry, navigateTo) {
+  const row = document.createElement("div");
+  row.className = `file ${entry.type}` + (navigateTo !== null ? " navigable" : "");
+
+  const icon = document.createElement("span");
+  icon.className = "file-icon";
+  icon.textContent = entry.type === "directory" ? "▸" : "·";
+
+  const name = document.createElement("span");
+  name.className = "file-name";
+  name.textContent = entry.name;
+
+  const size = document.createElement("span");
+  size.className = "file-size";
+  size.textContent = entry.size === null || entry.size === undefined ? "" : formatSize(entry.size);
+
+  const modified = document.createElement("span");
+  modified.className = "file-modified";
+  modified.textContent = entry.modified ? entry.modified.replace("T", " ") : "";
+
+  row.append(icon, name, size, modified);
+  if (navigateTo !== null) row.onclick = () => loadWorkspace(navigateTo);
+  return row;
+}
+
+function formatSize(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 /* ---------- events ---------- */
 
 function wireEvents() {
@@ -417,8 +585,26 @@ function wireEvents() {
       for (const view of document.querySelectorAll(".view")) {
         view.classList.toggle("active", view.id === `view-${tab.dataset.view}`);
       }
+      // Only watch the workspace while the owner is looking at it.
+      if (tab.dataset.view === "workspace") startWorkspaceWatch();
+      else stopWorkspaceWatch();
     };
   }
+
+  // Copy buttons are created by the markdown renderer, so they are handled by
+  // delegation rather than wired up per code block.
+  el("messages").addEventListener("click", async (event) => {
+    const button = event.target.closest(".code-copy");
+    if (!button) return;
+    const code = button.closest(".code").querySelector("code");
+    try {
+      await navigator.clipboard.writeText(code.textContent);
+      button.textContent = "Copied";
+    } catch (_) {
+      button.textContent = "Copy failed";
+    }
+    setTimeout(() => { button.textContent = "Copy"; }, 1500);
+  });
 
   const input = el("input");
   input.addEventListener("input", () => {

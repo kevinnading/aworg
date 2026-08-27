@@ -18,6 +18,7 @@
   </div>
   <nav class="views">
     <button class="viewtab active" data-view="chat">Chat</button>
+    <button class="viewtab" data-view="workspace">Workspace</button>
     <button class="viewtab" data-view="settings">Settings</button>
   </nav>
 </header>
@@ -33,6 +34,40 @@
         <button type="submit" id="send">Send</button>
       </div>
     </form>
+  </section>
+
+  <section id="view-workspace" class="view">
+    <div class="workspace-scroll">
+
+      <div class="panel">
+        <h2>Application</h2>
+        <p class="hint">A live view of whatever your Resident is running.</p>
+        <div class="preview">
+          <div class="preview-inner" id="preview-inner">
+            <div class="preview-empty">
+              <strong id="preview-detail">No preview available</strong>
+              <span id="preview-hint"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>Living Workspace</h2>
+            <p class="hint">Everything your Resident has made. This listing follows
+              along as it works.</p>
+          </div>
+          <span class="live" id="workspace-live" hidden>live</span>
+        </div>
+
+        <div class="crumbs" id="crumbs"></div>
+        <div class="files" id="files"></div>
+        <p class="path-note" id="workspace-path"></p>
+      </div>
+
+    </div>
   </section>
 
   <section id="view-settings" class="view">
@@ -117,6 +152,7 @@
 
 </main>
 
+<script src="/markdown.js"></script>
 <script src="/app.js"></script>
 </body>
 </html>
