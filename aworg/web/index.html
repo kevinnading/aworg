@@ -17,55 +17,53 @@
     </span>
   </div>
   <nav class="views">
-    <button class="viewtab active" data-view="chat">Chat</button>
-    <button class="viewtab" data-view="workspace">Workspace</button>
+    <button class="viewtab active" data-view="home">Home</button>
     <button class="viewtab" data-view="settings">Settings</button>
   </nav>
 </header>
 
 <main>
 
-  <section id="view-chat" class="view active">
-    <div class="messages" id="messages"></div>
-    <form class="composer" id="composer">
-      <textarea id="input" rows="1" placeholder="Say something to your Resident…"></textarea>
-      <div class="composer-actions">
-        <button type="button" class="ghost" id="new-conversation">New conversation</button>
-        <button type="submit" id="send">Send</button>
-      </div>
-    </form>
-  </section>
+  <section id="view-home" class="view active">
+    <div class="home">
 
-  <section id="view-workspace" class="view">
-    <div class="workspace-scroll">
+      <aside class="side">
 
-      <div class="panel">
-        <h2>Application</h2>
-        <p class="hint">A live view of whatever your Resident is running.</p>
-        <div class="preview">
-          <div class="preview-inner" id="preview-inner">
-            <div class="preview-empty">
-              <strong id="preview-detail">No preview available</strong>
-              <span id="preview-hint"></span>
+        <div class="side-block preview-block">
+          <div class="side-head">
+            <h2>Application</h2>
+          </div>
+          <div class="preview">
+            <div class="preview-inner" id="preview-inner">
+              <div class="preview-empty">
+                <strong id="preview-detail">No preview available</strong>
+                <span id="preview-hint"></span>
+              </div>
             </div>
           </div>
         </div>
-      </div>
 
-      <div class="panel">
-        <div class="panel-head">
-          <div>
+        <div class="side-block files-block">
+          <div class="side-head">
             <h2>Living Workspace</h2>
-            <p class="hint">Everything your Resident has made. This listing follows
-              along as it works.</p>
+            <span class="live" id="workspace-live" hidden>live</span>
           </div>
-          <span class="live" id="workspace-live" hidden>live</span>
+          <div class="crumbs" id="crumbs"></div>
+          <div class="files" id="files"></div>
         </div>
 
-        <div class="crumbs" id="crumbs"></div>
-        <div class="files" id="files"></div>
-        <p class="path-note" id="workspace-path"></p>
-      </div>
+      </aside>
+
+      <section class="chat">
+        <div class="messages" id="messages"></div>
+        <form class="composer" id="composer">
+          <textarea id="input" rows="1" placeholder="Say something to your Resident…"></textarea>
+          <div class="composer-actions">
+            <button type="button" class="ghost" id="new-conversation">New conversation</button>
+            <button type="submit" id="send">Send</button>
+          </div>
+        </form>
+      </section>
 
     </div>
   </section>

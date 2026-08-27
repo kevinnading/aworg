@@ -46,6 +46,8 @@ async function boot() {
   buildTagChips();
   await refresh();
   wireEvents();
+  // Home is where the owner lands, and the workspace is part of it.
+  startWorkspaceWatch();
 }
 
 async function refresh() {
@@ -494,8 +496,6 @@ async function loadWorkspace(path) {
 
 function renderWorkspace() {
   const data = app.workspace;
-  el("workspace-path").textContent = data.root;
-
   const crumbs = el("crumbs");
   crumbs.innerHTML = "";
   const segments = data.path ? data.path.split("/") : [];
@@ -586,7 +586,7 @@ function wireEvents() {
         view.classList.toggle("active", view.id === `view-${tab.dataset.view}`);
       }
       // Only watch the workspace while the owner is looking at it.
-      if (tab.dataset.view === "workspace") startWorkspaceWatch();
+      if (tab.dataset.view === "home") startWorkspaceWatch();
       else stopWorkspaceWatch();
     };
   }
