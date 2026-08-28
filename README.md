@@ -1,9 +1,24 @@
 # AWORG
 
-**Autonomous Workspace Organism** — a persistent AI Resident that lives on your
-machine, builds software in its own workspace, and stays on to maintain it.
+**Autonomous Workspace Organism**
 
-The concept lives in [docs/](docs/). This file is about running the code.
+Ive worked on this concept for a long time and now that I have
+substantial enterprise AI experience it makes even more sense.
+
+Basically AWORG is an AI based software development system that
+acts as an entire software development company.
+
+AWORG handles software development for anyone that can speak or
+type with no prior experience.
+
+Install AWORG, run it, tell it what you want to create, it creates
+it, it maintains it and it can be embedded in it. Its part of it.
+
+Imagine you use AWORG to build an ERP and as you need more features
+and changes you just tell AWORG and it does it for you.
+
+The full concept lives in [docs/](docs/). The rest of this file is about
+running the code.
 
 ## Current state
 
@@ -39,7 +54,7 @@ By default `~/.aworg`, overridable with `AWORG_HOME` or `--home`:
 ~/.aworg/
   state.db      configuration, model connections, conversation
   secrets.db    credentials — kept deliberately separate
-  workspace/    the Living Workspace (unused until Milestone 2)
+  workspace/    the Living Workspace (unused until Milestone 3)
   logs/
 ```
 
