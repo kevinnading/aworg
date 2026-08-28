@@ -103,9 +103,11 @@ wrapper around whichever model happens to be configured.
 
 ## What Comes Next
 
-Milestone 2 gives the Resident a **Living Workspace** and the ability to
-act within it — to create, inspect, and change things rather than only
-discuss them.
+Milestone 2 makes the relationship workable: one screen where the
+Resident's replies can be read comfortably, where the Living Workspace
+stays in view, and where a place waits for whatever eventually gets
+built.
 
-That is the step that turns a Resident who can talk into a Resident who
-can build.
+The Resident gains no new abilities there. It gains them in Milestone 3,
+which gives it the ability to act inside its workspace rather than only
+discuss it.

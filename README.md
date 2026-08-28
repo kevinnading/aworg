@@ -7,11 +7,15 @@ The concept lives in [docs/](docs/). This file is about running the code.
 
 ## Current state
 
-**Milestone 1: the Resident is present, but cannot yet act.**
+**Milestones 1 and 2: the Resident is present and legible, but cannot yet act.**
 
-It can hold a persistent conversation and be connected to any model you choose.
-It has no tools, no workspace access, and no ability to run anything — that
-arrives in Milestone 2.
+It holds a persistent conversation and connects to whichever model you choose.
+The owner interface is one screen — the application area and Living Workspace
+on the left, the conversation down the right. Replies render with syntax
+highlighting, and the workspace listing follows along as it changes.
+
+It still has no tools, no workspace access, and no ability to run anything.
+That arrives in Milestone 3.
 
 ## Running it
 
