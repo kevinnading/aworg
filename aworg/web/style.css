@@ -404,6 +404,13 @@ button.tiny { padding: 5px 11px; font-size: 13px; }
   overflow-x: auto;
   flex: 1;
   min-width: 0;
+  /* The line box takes its strut from this block, not from the <code> inside
+     it. Without these, <pre> keeps the body's 15px/23.25px while the code
+     renders at 13px/20.8px, and the gutter drifts a little further out of
+     step with every line. */
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.6;
 }
 
 .markdown .code code {

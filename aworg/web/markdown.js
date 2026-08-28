@@ -46,6 +46,12 @@ const MD = (() => {
 
   function codeBlock(code, language) {
     const body = code.replace(/\n$/, "");
+
+    // A fence that names its language is trusted. One that does not gets
+    // read, because most of them do not.
+    const declared = HL.normalize(language);
+    const resolved = HL.supports(declared) ? declared : HL.detect(body);
+
     const lines = body.split("\n").length;
     const gutter = Array.from({ length: lines }, (_, i) => `<span>${i + 1}</span>`).join("");
 
@@ -53,14 +59,14 @@ const MD = (() => {
     // horizontal scrolling moves the code and leaves the line numbers in
     // place -- and so highlighting never has to survive being split by line.
     return (
-      `<div class="code" data-lang="${escapeHtml(HL.normalize(language))}">` +
+      `<div class="code" data-lang="${escapeHtml(resolved)}">` +
       '<div class="code-head">' +
-      `<span class="code-lang">${escapeHtml(language || "text")}</span>` +
+      `<span class="code-lang">${escapeHtml(language || resolved || "text")}</span>` +
       '<button class="code-copy" type="button">Copy</button>' +
       "</div>" +
       '<div class="code-body">' +
       `<div class="gutter" aria-hidden="true">${gutter}</div>` +
-      `<pre><code>${HL.highlight(body, language)}</code></pre>` +
+      `<pre><code>${HL.highlight(body, resolved)}</code></pre>` +
       "</div>" +
       "</div>"
     );

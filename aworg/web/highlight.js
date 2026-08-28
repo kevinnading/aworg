@@ -134,5 +134,82 @@ const HL = (() => {
 
   const supports = (language) => Boolean(GRAMMARS[normalize(language)]);
 
-  return { highlight, normalize, supports, escapeHtml };
+  /* Language detection.
+   *
+   * Models open a fence without naming the language constantly, and falling
+   * back to plain text there would mean most real replies arrive
+   * unhighlighted. So when the fence says nothing, the content is asked
+   * instead.
+   *
+   * Signatures are weighted by how strongly they point at one language: a
+   * shebang or a SELECT ... FROM is close to proof, while a trailing
+   * semicolon is barely a hint. A guess is only accepted once it clears a
+   * threshold, because guessing wrong is worse than not guessing -- wrongly
+   * coloured code actively misleads, whereas plain code merely fails to help.
+   */
+  const SIGNATURES = {
+    python: [
+      [/^\s*def\s+\w+\s*\(/m, 3],
+      [/^\s*from\s+[\w.]+\s+import\b/m, 3],
+      [/^\s*(?:import|class)\s+\w/m, 2],
+      [/\b__name__\b|\bself\b/, 2],
+      [/^\s*(?:elif|except|finally)\b/m, 2],
+      [/\bprint\(/, 1],
+      [/:\s*$/m, 1],
+    ],
+    javascript: [
+      [/\b(?:const|let)\s+\w+\s*=/, 3],
+      [/=>/, 2],
+      [/\bfunction\s*\w*\s*\(/, 2],
+      [/\bconsole\.\w+/, 2],
+      [/\brequire\(|\bdocument\.|\bwindow\./, 2],
+      [/;\s*$/m, 1],
+    ],
+    json: [
+      [/^\s*[{[]/, 1],
+      [/"[^"]*"\s*:/, 3],
+    ],
+    html: [
+      [/<!DOCTYPE/i, 3],
+      [/<\/[a-z][\w-]*>/i, 3],
+      [/<[a-z][\w-]*(?:\s[^>]*)?>/i, 2],
+    ],
+    css: [
+      [/[.#]?[\w-]+\s*\{[^}]*\}/, 3],
+      [/^\s*[\w-]+\s*:\s*[^;]+;/m, 2],
+    ],
+    bash: [
+      [/^#!.*\b(?:ba|z|d)?sh\b/m, 4],
+      [/^\s*(?:export|cd|echo|sudo|npm|pip|git|curl|mkdir|chmod|apt|brew|source)\s/m, 3],
+      [/\$\{?\w+\}?/, 1],
+    ],
+    sql: [
+      [/\bSELECT\b[\s\S]*\bFROM\b/i, 4],
+      [/\b(?:INSERT\s+INTO|UPDATE\s+\w+\s+SET|CREATE\s+TABLE|DELETE\s+FROM)\b/i, 4],
+    ],
+  };
+
+  const DETECTION_THRESHOLD = 3;
+
+  function detect(code) {
+    if (!code || !code.trim()) return "";
+
+    let best = "";
+    let bestScore = 0;
+
+    for (const [language, signatures] of Object.entries(SIGNATURES)) {
+      let score = 0;
+      for (const [pattern, weight] of signatures) {
+        if (pattern.test(code)) score += weight;
+      }
+      if (score > bestScore) {
+        bestScore = score;
+        best = language;
+      }
+    }
+
+    return bestScore >= DETECTION_THRESHOLD ? best : "";
+  }
+
+  return { highlight, normalize, supports, detect, escapeHtml };
 })();
