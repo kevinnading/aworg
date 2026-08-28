@@ -1,33 +1,25 @@
 # AWORG
 
-**Autonomous Workspace Organism**
+**Autonomous Workspace Organism** — a persistent AI Resident that lives on your
+machine, builds software in its own workspace, and stays on to maintain it.
 
-Ive worked on this concept for a long time and now that I have
-substantial enterprise AI experience it makes even more sense.
+Most AI tools write code and leave. An Aworg moves in. It takes a workspace on
+a host you control, builds what you ask for in plain language, keeps developing
+it through conversation, watches it run, and repairs it when it breaks — without
+you needing to read a line of what it wrote.
 
-Basically AWORG is an AI based software development system that
-acts as an entire software development company.
-
-AWORG handles software development for anyone that can speak or
-type with no prior experience.
-
-Install AWORG, run it, tell it what you want to create, it creates
-it, it maintains it and it can be embedded in it. Its part of it.
-
-Imagine you use AWORG to build an ERP and as you need more features
-and changes you just tell AWORG and it does it for you.
-
-The full concept lives in [docs/](docs/). The rest of this file is about
-running the code.
+The full concept lives in [docs/](docs/). The rest of this file is about running
+the code.
 
 ## Current state
 
 **Milestones 1 and 2: the Resident is present and legible, but cannot yet act.**
 
-It holds a persistent conversation and connects to whichever model you choose.
-The owner interface is one screen — the application area and Living Workspace
-on the left, the conversation down the right. Replies render with syntax
-highlighting, and the workspace listing follows along as it changes.
+It holds a persistent conversation and connects to whichever model you choose —
+hosted, or one running on your own hardware. The owner interface is one screen:
+the application area and Living Workspace on the left, the conversation down the
+right. Replies render with syntax highlighting, and the workspace listing
+follows along as it changes.
 
 It still has no tools, no workspace access, and no ability to run anything.
 That arrives in Milestone 3.
@@ -58,8 +50,8 @@ By default `~/.aworg`, overridable with `AWORG_HOME` or `--home`:
   logs/
 ```
 
-Those three zones are separate on disk from the start. Once snapshots exist,
-"what may be published" and "what never leaves this machine" must already be
+Those zones are separate on disk from the start. Once snapshots exist, "what
+may be published" and "what never leaves this machine" must already be
 distinguishable, and that is expensive to retrofit.
 
 ## Connecting a model
