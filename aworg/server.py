@@ -23,6 +23,7 @@ from .paths import Paths
 from .resident import Resident
 from .secrets import SecretStore, credential_ref
 from . import layout as layout_settings
+from . import lifecycle, panes
 from .storage import Store
 from .theme import (
     PRESETS,
@@ -304,6 +305,33 @@ def create_app(paths: Paths) -> FastAPI:
             # copy would outlive the choice.
             headers={"Cache-Control": "no-store"},
         )
+
+    # -- the status column ------------------------------------------------
+
+    def workspace_has_files() -> bool:
+        try:
+            return any(paths.workspace.iterdir())
+        except OSError:
+            return False
+
+    @app.get("/api/lifecycle")
+    def app_lifecycle() -> dict[str, Any]:
+        """Where the Resident's application is in its life.
+
+        Assessed from what is observably true rather than from anything the
+        Resident reports, because an owner who could audit the Resident's
+        claims would not need AWORG in the first place.
+        """
+        return lifecycle.assess(workspace_has_files())
+
+    @app.get("/api/panes")
+    def status_panes() -> list[dict[str, Any]]:
+        """Every pane in the status column, and what it currently holds.
+
+        One request rather than seven. These are read together, and they
+        stay together until one of them grows enough to want its own.
+        """
+        return panes.describe()
 
     # -- the Living Workspace -------------------------------------------
 

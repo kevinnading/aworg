@@ -20,6 +20,8 @@ const app = {
   appearance: null,
   appearanceTimer: null,
   layout: null,
+  panes: [],
+  lifecycle: null,
 };
 
 /* ---------- api ---------- */
@@ -43,36 +45,51 @@ async function api(path, options = {}) {
 /* ---------- boot ---------- */
 
 async function boot() {
-  app.meta = await api("/api/meta");
+  const [meta, panes, layout] = await Promise.all([
+    api("/api/meta"),
+    api("/api/panes"),
+    api("/api/layout"),
+  ]);
+  app.meta = meta;
+  app.panes = panes;
+  app.layout = layout;
+
   el("home-note").textContent = `This Aworg lives at ${app.meta.home}`;
   buildProviderOptions();
   buildTagChips();
   buildSettingsNav();
+
+  // The column is assembled before anything reaches into it -- the preview,
+  // the workspace listing and every resizer address elements that only exist
+  // once the panes have been built.
+  buildPanes();
+  wireResizers();
+
   await refresh();
   wireEvents();
-  wireResizers();
   // Home is where the owner lands, and the workspace is part of it.
   startWorkspaceWatch();
 }
 
 async function refresh() {
-  const [state, connections, conversation, appearance, layout] = await Promise.all([
+  const [state, connections, conversation, appearance, lifecycle] = await Promise.all([
     api("/api/state"),
     api("/api/connections"),
     api("/api/conversation"),
     api("/api/appearance"),
-    api("/api/layout"),
+    api("/api/lifecycle"),
   ]);
   app.state = state;
   app.connections = connections;
   app.conversation = conversation;
   app.appearance = appearance;
-  app.layout = layout;
+  app.lifecycle = lifecycle;
   renderStatus();
   renderChat();
   renderSettings();
   renderAppearance();
   renderResetView();
+  renderLifecycle();
 }
 
 /* ---------- status ---------- */
@@ -462,6 +479,138 @@ function closeForm() {
   app.editingTags = new Set();
 }
 
+/* ---------- the status column ---------- */
+
+/* The control room. Every pane is open at once -- a pane hidden behind a tab
+ * is an instrument nobody is watching, and watching is the entire purpose of
+ * this column. The column scrolls instead, and the owner decides by dragging
+ * which instruments deserve the room.
+ *
+ * The order and the empty text come from panes.py. The two panes above them
+ * are AWORG's own rather than the Resident's, so they are declared here. */
+
+const FIXED_PANES = [
+  { id: "preview", label: "Application", hint: "The software the Resident is responsible for." },
+  { id: "lifecycle", label: "Lifecycle", hint: "How far along that software is." },
+];
+
+function buildPanes() {
+  const column = el("panes");
+  column.innerHTML = "";
+
+  const all = [...FIXED_PANES, ...app.panes];
+  all.forEach((pane, index) => {
+    column.appendChild(paneNode(pane));
+    // A divider belongs between two panes, not after the last one.
+    if (index < all.length - 1) column.appendChild(paneResizer(pane));
+  });
+}
+
+function paneNode(pane) {
+  const section = document.createElement("section");
+  section.className = "pane";
+  section.dataset.pane = pane.id;
+  section.id = `pane-${pane.id}`;
+  section.style.height = `var(--${pane.id}-height)`;
+
+  const head = document.createElement("div");
+  head.className = "pane-head";
+
+  const heading = document.createElement("h2");
+  heading.textContent = pane.label;
+  head.appendChild(heading);
+
+  // The workspace is the one pane that already updates on its own, and it
+  // says so. The rest have nothing to be live about yet.
+  if (pane.id === "workspace") {
+    const live = document.createElement("span");
+    live.className = "live";
+    live.id = "workspace-live";
+    live.textContent = "live";
+    live.hidden = true;
+    head.appendChild(live);
+  } else if (pane.available === false) {
+    const mark = document.createElement("span");
+    mark.className = "pane-pending";
+    mark.textContent = "not yet";
+    mark.title = pane.hint;
+    head.appendChild(mark);
+  }
+
+  const body = document.createElement("div");
+  body.className = "pane-body";
+
+  const template = document.getElementById(`body-${pane.id}`);
+  if (template) {
+    body.appendChild(template.content.cloneNode(true));
+  } else {
+    body.appendChild(emptyPane(pane));
+  }
+
+  section.append(head, body);
+  return section;
+}
+
+function emptyPane(pane) {
+  const empty = document.createElement("div");
+  empty.className = "pane-empty";
+
+  const heading = document.createElement("strong");
+  heading.textContent = pane.empty_heading;
+  empty.appendChild(heading);
+
+  if (pane.empty_detail) {
+    const detail = document.createElement("span");
+    detail.textContent = pane.empty_detail;
+    empty.appendChild(detail);
+  }
+  return empty;
+}
+
+function paneResizer(pane) {
+  const handle = document.createElement("div");
+  handle.className = "resizer horizontal";
+  handle.id = `resize-${pane.id}`;
+  handle.setAttribute("role", "separator");
+  handle.setAttribute("aria-orientation", "horizontal");
+  handle.setAttribute("tabindex", "0");
+  handle.setAttribute("aria-label", `Height of ${pane.label}`);
+  handle.setAttribute("aria-controls", `pane-${pane.id}`);
+  return handle;
+}
+
+/* ---------- lifecycle ---------- */
+
+function renderLifecycle() {
+  const list = el("stages");
+  if (!list || !app.lifecycle) return;
+  list.innerHTML = "";
+
+  for (const stage of app.lifecycle.stages) {
+    const item = document.createElement("li");
+    item.className = `stage ${stage.state}`;
+    item.title = `Reached when: ${stage.evidence}`;
+
+    const mark = document.createElement("span");
+    mark.className = "stage-mark";
+
+    const label = document.createElement("span");
+    label.className = "stage-label";
+    label.textContent = stage.label;
+
+    item.append(mark, label);
+    if (stage.state === "current") item.setAttribute("aria-current", "step");
+    list.appendChild(item);
+  }
+
+  const current = app.lifecycle.stages.find((s) => s.state === "current");
+  const caption = el("stage-detail");
+  caption.textContent = current ? current.detail : app.lifecycle.reason;
+  // The evidence, for an owner who wants to know why it says that. It is not
+  // in the caption because for the early stages it only restates it.
+  caption.title = app.lifecycle.reason;
+}
+
 /* ---------- resizing ---------- */
 
 /* The sizes are already applied before this file runs -- /api/interface.css
@@ -473,16 +622,29 @@ function closeForm() {
  * sizes the owner was moving through rather than choosing. */
 
 function wireResizers() {
-  bindResizer(el("resize-side"), {
-    pane: "side-width",
-    axis: "col",
-    measure: (event) => event.clientX - el("resize-side").parentElement.getBoundingClientRect().left,
-  });
-  bindResizer(el("resize-preview"), {
-    pane: "preview-height",
-    axis: "row",
-    measure: (event) => event.clientY - document.querySelector(".preview-block").getBoundingClientRect().top,
-  });
+  // One rule, applied to whatever dividers the column happens to contain.
+  // Nine panes today; the machinery does not care how many.
+  for (const handle of document.querySelectorAll(".resizer")) {
+    const controlled = document.getElementById(handle.getAttribute("aria-controls"));
+    if (!controlled) continue;
+
+    if (handle.classList.contains("vertical")) {
+      bindResizer(handle, {
+        pane: "side-width",
+        axis: "col",
+        measure: (event) =>
+          event.clientX - controlled.parentElement.getBoundingClientRect().left,
+      });
+    } else {
+      bindResizer(handle, {
+        pane: `${controlled.dataset.pane}-height`,
+        axis: "row",
+        // Measured against the pane's own top, so a pane scrolled part-way
+        // up the column still resizes from where the owner grabbed it.
+        measure: (event) => event.clientY - controlled.getBoundingClientRect().top,
+      });
+    }
+  }
 }
 
 function bindResizer(handle, { pane, axis, measure }) {
@@ -823,6 +985,21 @@ async function loadWorkspace(path) {
   app.workspaceSignature = signature;
   app.workspace = data;
   renderWorkspace();
+
+  // The workspace changing is the only evidence that can currently move the
+  // application's stage, so this is the moment to ask again -- and the only
+  // moment worth asking. A lifecycle that updates on reload would show the
+  // owner a stale stage for exactly as long as they were watching.
+  refreshLifecycle();
+}
+
+async function refreshLifecycle() {
+  try {
+    app.lifecycle = await api("/api/lifecycle");
+  } catch (_) {
+    return;  // the server will be back; the stage on screen is still the last true one
+  }
+  renderLifecycle();
 }
 
 function renderWorkspace() {

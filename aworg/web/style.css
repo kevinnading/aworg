@@ -525,33 +525,160 @@ button.tiny { padding: 5px 11px; font-size: 13px; }
   border-right: 1px solid var(--line);
 }
 
-.side-block { padding: 15px 16px; }
+/* ---- panes ---- */
 
-/* The preview takes the height the owner dragged it to rather than a fixed
-   ratio. What is being watched decides the shape it wants to be watched in. */
-.preview-block {
-  flex: none;
-  height: var(--preview-height);
-  display: flex;
-  flex-direction: column;
-  border-bottom: 1px solid var(--line);
+/* Every pane is open. Hiding instruments behind tabs would make the column
+   tidier and the control room useless, so the column scrolls instead and the
+   owner decides by dragging what deserves the room. Each pane holds the
+   height it was given; none of them flex, or one would quietly eat the space
+   the owner meant for another. */
+
+.panes {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
-.files-block {
+.pane {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  padding: 14px 16px;
+  min-height: 0;
+}
+
+.pane-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+  flex: none;
+}
+.pane-head h2 { margin: 0; font-size: 13px; font-weight: 600; }
+
+.pane-body {
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
 }
 
-.side-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  margin-bottom: 11px;
+/* A pane whose ability does not exist yet says so in its own header, so the
+   owner can tell an instrument reading zero from one not wired up. */
+.pane-pending {
+  font-size: 10.5px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: 2px 9px;
+  white-space: nowrap;
+  opacity: 0.75;
 }
-.side-head h2 { margin: 0; font-size: 13px; font-weight: 600; }
+
+.pane-empty {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  text-align: center;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.pane-empty strong {
+  color: var(--text);
+  font-weight: 500;
+  font-size: 13px;
+}
+.pane-empty span {
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.45;
+  max-width: 40ch;
+}
+
+/* ---- lifecycle ---- */
+
+/* Where the application is, and what would have to be observed for it to be
+   somewhere else. Stages past what this milestone can evidence are drawn as
+   out of reach rather than merely not done -- an owner should be able to see
+   the difference between "mine has not got there" and "nothing has yet". */
+
+.lifecycle { display: flex; flex-direction: column; gap: 10px; min-height: 0; }
+
+.stages {
+  display: flex;
+  align-items: flex-start;
+  list-style: none;
+  margin: 0;
+  padding: 0 2px;
+  gap: 2px;
+}
+
+.stage {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  position: relative;
+}
+
+/* The rail between marks, drawn from each stage back to the one before it. */
+.stage + .stage::before {
+  content: "";
+  position: absolute;
+  top: 4px;
+  right: 50%;
+  left: -50%;
+  height: 1px;
+  background: var(--line);
+}
+.stage.done::before, .stage.current::before { background: var(--accent-dim); }
+
+.stage-mark {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  position: relative;
+  z-index: 1;
+  flex: none;
+}
+.stage.done .stage-mark { background: var(--accent-dim); border-color: var(--accent-dim); }
+.stage.current .stage-mark {
+  background: var(--accent);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.stage-label {
+  font-size: 10.5px;
+  line-height: 1.25;
+  text-align: center;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.stage.current .stage-label { color: var(--text); font-weight: 500; }
+.stage.unreachable .stage-mark { opacity: 0.4; }
+.stage.unreachable .stage-label { opacity: 0.45; }
+
+.stage-detail {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--muted);
+}
 
 .chat {
   flex: 1;
@@ -569,6 +696,10 @@ button.tiny { padding: 5px 11px; font-size: 13px; }
   overflow: hidden;
   background: var(--code-bg);
 }
+
+/* Panes are separated by their divider, which draws the line. Without this
+   the last pane's padding runs to the bottom of a scrolling column. */
+.pane:last-child { padding-bottom: 18px; }
 
 .preview-inner { width: 100%; height: 100%; }
 /* The one colour in this file that is not a token, deliberately. Inside the
@@ -677,9 +808,12 @@ button.tiny { padding: 5px 11px; font-size: 13px; }
     border-right: none;
     border-bottom: 1px solid var(--line);
   }
-  .files-block { max-height: 240px; }
-  /* Stacked, there is no column edge to drag. The preview's height still
-     means something, so that handle stays. */
+  /* Stacked, the column gets a bounded share rather than the whole page,
+     so the conversation is still reachable without scrolling past nine
+     panes to find it. */
+  .panes { max-height: 55vh; }
+  /* And there is no column edge to drag. The pane heights still mean
+     something, so those handles stay. */
   .resizer.vertical { display: none; }
 }
 

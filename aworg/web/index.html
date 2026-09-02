@@ -31,41 +31,18 @@
   <section id="view-home" class="view active">
     <div class="home">
 
+      <!-- The status column. Its panes are assembled by app.js from the
+           register the server keeps, so that adding an instrument to the
+           control room is a change to panes.py and layout.py rather than a
+           change in four files. The bodies that are more than a list live in
+           the templates at the foot of this document. -->
       <aside class="side" id="side">
-
-        <div class="side-block preview-block" id="preview-block">
-          <div class="side-head">
-            <h2>Application</h2>
-          </div>
-          <div class="preview">
-            <div class="preview-inner" id="preview-inner">
-              <div class="preview-empty">
-                <strong id="preview-detail">No preview available</strong>
-                <span id="preview-hint"></span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="resizer horizontal" id="resize-preview"
-             role="separator" aria-orientation="horizontal" tabindex="0"
-             aria-label="Height of the application preview"
-             aria-controls="preview-block"></div>
-
-        <div class="side-block files-block">
-          <div class="side-head">
-            <h2>Living Workspace</h2>
-            <span class="live" id="workspace-live" hidden>live</span>
-          </div>
-          <div class="crumbs" id="crumbs"></div>
-          <div class="files" id="files"></div>
-        </div>
-
+        <div class="panes" id="panes"></div>
       </aside>
 
       <div class="resizer vertical" id="resize-side"
            role="separator" aria-orientation="vertical" tabindex="0"
-           aria-label="Width of the application and workspace column"
+           aria-label="Width of the status column"
            aria-controls="side"></div>
 
       <section class="chat">
@@ -195,6 +172,32 @@
   </section>
 
 </main>
+
+<!-- Pane bodies that are more than a list. A pane with no template here gets
+     the ordinary empty state, which is most of them for now. -->
+
+<template id="body-preview">
+  <div class="preview">
+    <div class="preview-inner" id="preview-inner">
+      <div class="preview-empty">
+        <strong id="preview-detail">No preview available</strong>
+        <span id="preview-hint"></span>
+      </div>
+    </div>
+  </div>
+</template>
+
+<template id="body-lifecycle">
+  <div class="lifecycle" id="lifecycle">
+    <ol class="stages" id="stages"></ol>
+    <p class="stage-detail" id="stage-detail"></p>
+  </div>
+</template>
+
+<template id="body-workspace">
+  <div class="crumbs" id="crumbs"></div>
+  <div class="files" id="files"></div>
+</template>
 
 <script src="/highlight.js"></script>
 <script src="/markdown.js"></script>

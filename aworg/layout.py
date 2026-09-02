@@ -27,10 +27,22 @@ from typing import Any
 #: nothing is a pane the owner cannot find the edge of again, and one dragged
 #: past the window takes the conversation off screen with it.
 PANES: dict[str, dict[str, int]] = {
-    #: Width of the left column: the application preview and the workspace.
+    #: Width of the status column, which holds everything below.
     "side-width": {"default": 400, "min": 260, "max": 900},
-    #: Height of the application preview, within that column.
+    #: Then the height of each pane in that column, top to bottom. Every pane
+    #: is open at once rather than hidden behind a tab: this is a control
+    #: room, and a control room whose instruments are stacked behind each
+    #: other is a list of instruments. The column scrolls; the owner decides
+    #: what deserves the room.
     "preview-height": {"default": 269, "min": 130, "max": 700},
+    "lifecycle-height": {"default": 132, "min": 96, "max": 300},
+    "workspace-height": {"default": 260, "min": 110, "max": 800},
+    "workers-height": {"default": 172, "min": 90, "max": 600},
+    "tasks-height": {"default": 160, "min": 90, "max": 600},
+    "log-height": {"default": 176, "min": 90, "max": 800},
+    "tools-height": {"default": 166, "min": 90, "max": 600},
+    "skills-height": {"default": 176, "min": 90, "max": 600},
+    "capabilities-height": {"default": 182, "min": 90, "max": 600},
 }
 
 DEFAULTS: dict[str, int] = {name: spec["default"] for name, spec in PANES.items()}

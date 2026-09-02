@@ -84,6 +84,37 @@ Custom colours layer over the preset rather than replacing it, so trying a
 different preset does not discard them. Each changed colour can be reverted on
 its own, or all of them at once.
 
+## The status column
+
+The left side of Home is a control room. Every pane is open at once rather
+than hidden behind tabs — an instrument nobody is looking at is not an
+instrument — and the column scrolls:
+
+```
+Application       the software the Resident is responsible for
+Lifecycle         how far along it is
+Living Workspace  everything the Resident has made
+Workers           temporary sub-agents put to work
+Tasks             what the Resident is doing
+Living Log        what the running application reports about itself
+Tools             what the Resident can directly do
+Skills            procedures it knows how to carry out
+Capabilities      the sum of what this Aworg is able to do
+```
+
+Most of those are empty, and several are for abilities the Resident does not
+have yet. They say which: a pane marked **not yet** is one whose ability does
+not exist, as distinct from one that exists and is reading zero. That
+difference matters to an owner who cannot check for themselves.
+
+The **Lifecycle** stepper runs Nothing yet → Being built → Running → Verified
+→ Watched → Published. The stage is derived from what is observably true —
+files in the workspace, a process answering, a check the Resident actually
+performed — never from anything the Resident says about itself. An owner who
+could audit that claim would not need AWORG. Stages beyond what the current
+milestone can produce evidence for are drawn as out of reach rather than
+merely unfinished.
+
 ## The view
 
 Drag the divider between any two panes to resize them. Double-click a divider
@@ -105,6 +136,8 @@ aworg/
   storage.py     runtime and Resident state
   theme.py       the owner interface's colour tokens and presets
   layout.py      the owner interface's pane sizes
+  panes.py       the register of what the status column holds
+  lifecycle.py   how far along the Resident's application is
   resident.py    the Resident itself
   server.py      the owner interface's backing service
   models/        provider-neutral model interface and adapters
