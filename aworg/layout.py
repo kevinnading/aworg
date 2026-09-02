@@ -46,13 +46,18 @@ from typing import Any
 #: everything, the way a console does, because it reports on all of it.
 #:
 #: The last pane in a column takes whatever height is left rather than
-#: carrying its own, so a column always fills exactly.
+#: carrying its own, so a column always fills exactly. The preview takes its
+#: height from this column's width instead, to hold 16:9.
 PANES: dict[str, dict[str, int]] = {
     # -- the columns, left to right
     "side-width": {"default": 400, "min": 260, "max": 900},
     "faculties-width": {"default": 232, "min": 170, "max": 500},
     # -- panes within them, top to bottom (the last of each flexes)
-    "preview-height": {"default": 269, "min": 130, "max": 700},
+    #
+    #: The preview has no height here on purpose. It is a screen, so it keeps
+    #: a screen's shape: its height follows the column's width at 16:9. One
+    #: box with a fixed ratio has one dimension worth dragging, and it is the
+    #: column's.
     "lifecycle-height": {"default": 132, "min": 96, "max": 300},
     "capabilities-height": {"default": 180, "min": 90, "max": 600},
     "skills-height": {"default": 190, "min": 90, "max": 600},

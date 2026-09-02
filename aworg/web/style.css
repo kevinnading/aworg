@@ -41,7 +41,6 @@
 
   /* Default pane sizes; see layout.py, which is where they are defined. */
   --side-width: 400px;
-  --preview-height: 269px;
 }
 
 * { box-sizing: border-box; }
@@ -117,7 +116,7 @@ main { flex: 1; min-height: 0; display: flex; }
 .messages {
   flex: 1;
   overflow-y: auto;
-  padding: 28px 20px 8px;
+  padding: 22px 20px 4px;
   display: flex;
   flex-direction: column;
   gap: 20px;
@@ -166,34 +165,66 @@ main { flex: 1; min-height: 0; display: flex; }
 }
 .empty strong { display: block; color: var(--text); margin-bottom: 8px; font-weight: 500; }
 
+/* The composer is one field, not a field with a button under it. The Send
+   control sits inside the input's own box the way it does in every chat the
+   owner already uses, and the whole thing takes the focus ring together --
+   so it reads as one place to type rather than two controls that happen to
+   be near each other. */
+
 .composer {
-  border-top: 1px solid var(--line);
-  padding: 14px 20px 18px;
-  background: var(--panel);
   flex: none;
+  padding: 12px 16px 16px;
 }
 .composer > * { max-width: 760px; margin: 0 auto; }
 
-.composer textarea {
-  display: block;
-  width: 100%;
-  max-height: 200px;
-  resize: none;
+.composer-box {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
   background: var(--panel-2);
   border: 1px solid var(--line);
-  color: var(--text);
-  border-radius: 10px;
-  padding: 11px 14px;
-  font: inherit;
+  border-radius: 22px;
+  padding: 7px 7px 7px 8px;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
 }
-.composer textarea:focus { outline: none; border-color: var(--accent-dim); }
+/* The ring belongs to the box, so focusing the textarea lights the whole
+   control rather than drawing a second border inside the first. */
+.composer-box:focus-within {
+  border-color: var(--accent-dim);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);
+}
 
-.composer-actions {
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  margin-top: 10px;
+.composer textarea {
+  display: block;
+  flex: 1;
+  min-width: 0;
+  max-height: 200px;
+  resize: none;
+  background: none;
+  border: none;
+  color: var(--text);
+  padding: 8px 4px 8px 10px;
+  font: inherit;
+  line-height: 1.5;
 }
+.composer textarea:focus { outline: none; }
+.composer textarea::placeholder { color: var(--muted); }
+
+/* Round, and sized to sit on the bottom line of the input however tall the
+   input has grown. */
+.composer #send {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 0;
+}
+.composer #send svg { display: block; }
+.composer #send:disabled { opacity: 0.4; }
 
 /* ---- settings ---- */
 
@@ -576,12 +607,21 @@ button.tiny { padding: 5px 11px; font-size: 13px; }
   border-top: 1px solid var(--line);
 }
 
+/* The conversation is where the owner works, so it is the one region drawn
+   as an object rather than a division of the window: rounder corners, its
+   own surface, a border all the way round. Everything else is a pane in a
+   frame; this is the thing in the middle of it. */
 .chat {
   flex: 1;
   min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
+  margin: 12px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  overflow: hidden;
 }
 
 /* ---- panes ---- */
@@ -619,6 +659,38 @@ button.tiny { padding: 5px 11px; font-size: 13px; }
   display: flex;
   flex-direction: column;
 }
+
+/* Controls that belong to a pane rather than to the thing inside it. Quiet
+   until reached for -- a header full of visible buttons is an interface
+   describing its own features. */
+.pane-action {
+  flex: none;
+  background: none;
+  border: 1px solid transparent;
+  color: var(--muted);
+  border-radius: 6px;
+  padding: 3px;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+.pane-action:hover { color: var(--text); border-color: var(--line); filter: none; }
+.pane-action:focus-visible { outline: none; color: var(--text); border-color: var(--accent-dim); }
+.pane-action svg { display: block; }
+
+/* Expanded, the preview takes everything under the top bar. The top bar
+   stays: the owner should always be able to see that they are still in
+   AWORG and get back out, and Escape does the same. */
+.pane.maximised {
+  position: fixed;
+  inset: 56px 0 0 0;
+  z-index: 40;
+  height: auto !important;
+  width: auto !important;
+  background: var(--panel);
+  padding: 14px 18px 18px;
+}
+body.has-maximised-pane .resizer { pointer-events: none; }
 
 /* A pane whose ability does not exist yet says so in its own header, so the
    owner can tell an instrument reading zero from one not wired up. */
@@ -754,13 +826,30 @@ button.tiny { padding: 5px 11px; font-size: 13px; }
 .console .pane-empty strong { font-weight: 500; }
 .console .pane-empty span { font-family: inherit; max-width: 70ch; }
 
+/* The preview is a screen, so it keeps a screen's shape. Its height comes
+   from the column's width rather than a divider of its own: dragging the
+   column wider makes the picture bigger, which is what bigger means for
+   something you watch. */
 .preview {
-  flex: 1;
-  min-height: 0;
+  flex: none;
+  width: 100%;
+  aspect-ratio: 16 / 9;
   border: 1px solid var(--line);
   border-radius: 9px;
   overflow: hidden;
   background: var(--code-bg);
+}
+
+.pane.derived { flex: none; }
+
+/* Expanded, the ratio is dropped rather than half-kept. This is the
+   application at full size, not a bigger thumbnail of it, and a box that
+   claims 16:9 while quietly being 16:9.1 because two constraints disagreed
+   is worse than one that fills honestly. */
+.pane.maximised .preview {
+  width: 100%;
+  height: 100%;
+  aspect-ratio: auto;
 }
 
 

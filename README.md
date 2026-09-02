@@ -113,6 +113,11 @@ yet. They say which: a pane marked **not yet** is one whose ability does not
 exist, as distinct from one that exists and is reading zero. That difference
 matters to an owner who cannot check for themselves.
 
+The **Application** preview holds 16:9. It has no height of its own — widen
+the column and the picture grows with it, which is what bigger means for
+something you watch. The button in its header expands it to fill everything
+under the top bar; the same button or **Esc** brings it back.
+
 The **Lifecycle** stepper runs Nothing yet → Being built → Running → Verified
 → Watched → Published. The stage is derived from what is observably true —
 files in the workspace, a process answering, a check the Resident actually

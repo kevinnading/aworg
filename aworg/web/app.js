@@ -490,7 +490,14 @@ function closeForm() {
  * are AWORG's own rather than the Resident's, so they are declared here. */
 
 const FIXED_PANES = {
-  preview: { label: "Application", hint: "The software the Resident is responsible for." },
+  // `derived` means the pane sizes itself -- the preview holds 16:9 against
+  // the column's width -- so it carries no stored size and offers no divider
+  // of its own. Dragging the column is how you make the picture bigger.
+  preview: {
+    label: "Application",
+    hint: "The software the Resident is responsible for.",
+    derived: true,
+  },
   lifecycle: { label: "Lifecycle", hint: "How far along that software is." },
 };
 
@@ -520,10 +527,10 @@ function buildPanes() {
     members.forEach((pane, index) => {
       const last = index === members.length - 1;
       container.appendChild(paneNode(pane, { region, last }));
-      // The last pane in a region takes the space that is left, so it has no
-      // size of its own and nothing to drag. Every other pane gets a divider
-      // after it.
-      if (!last) container.appendChild(paneResizer(pane, region));
+      // The last pane in a region takes the space that is left, and a derived
+      // pane computes its own -- neither has a size to drag. Everything else
+      // gets a divider after it.
+      if (!last && !pane.derived) container.appendChild(paneResizer(pane, region));
     });
   }
 }
@@ -535,7 +542,10 @@ function paneNode(pane, { region, last }) {
   section.dataset.region = region.id;
   section.id = `pane-${pane.id}`;
 
-  if (last) {
+  if (pane.derived) {
+    // Sizes itself from its content; see .preview in the stylesheet.
+    section.classList.add("derived");
+  } else if (last) {
     // Fills whatever the panes above or beside it left over.
     section.classList.add("fills");
   } else if (region.axis === "column") {
@@ -551,9 +561,13 @@ function paneNode(pane, { region, last }) {
   heading.textContent = pane.label;
   head.appendChild(heading);
 
-  // The workspace is the one pane that already updates on its own, and it
-  // says so. The rest have nothing to be live about yet.
-  if (pane.id === "workspace") {
+  // The application is the one pane worth filling the screen with, so it is
+  // the one that gets to. Everything else is read at a glance.
+  if (pane.id === "preview") {
+    head.appendChild(maximizeButton());
+  } else if (pane.id === "workspace") {
+    // The one pane that already updates on its own, and says so. The rest
+    // have nothing to be live about yet.
     const live = document.createElement("span");
     live.className = "live";
     live.id = "workspace-live";
@@ -580,6 +594,49 @@ function paneNode(pane, { region, last }) {
 
   section.append(head, body);
   return section;
+}
+
+const MAXIMIZE_ICON =
+  '<path d="M6 2.6H2.6v3.4"/><path d="M10 13.4h3.4V10"/>' +
+  '<path d="M13.4 6V2.6H10"/><path d="M2.6 10v3.4H6"/>';
+const RESTORE_ICON =
+  '<path d="M2.6 6H6V2.6"/><path d="M13.4 10H10v3.4"/>' +
+  '<path d="M10 2.6V6h3.4"/><path d="M6 13.4V10H2.6"/>';
+
+function maximizeButton() {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "pane-action";
+  button.id = "maximize-preview";
+  button.onclick = () => togglePreviewMaximised();
+  paintMaximizeButton(button, false);
+  return button;
+}
+
+function paintMaximizeButton(button, maximised) {
+  const label = maximised ? "Restore the application preview" : "Expand the application preview";
+  button.setAttribute("aria-label", label);
+  button.setAttribute("aria-pressed", String(maximised));
+  button.title = maximised ? `${label} (Esc)` : label;
+  button.innerHTML =
+    '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" ' +
+    'stroke="currentColor" stroke-width="1.5" stroke-linecap="round" ' +
+    `stroke-linejoin="round" aria-hidden="true">${maximised ? RESTORE_ICON : MAXIMIZE_ICON}</svg>`;
+}
+
+/* Expanding the preview is a way of looking at something, not a preference
+ * about how the interface is arranged, so it is deliberately not stored. It
+ * lasts as long as the owner is looking, and a reload puts them back in the
+ * room rather than in whatever they last peered at. */
+function togglePreviewMaximised(force) {
+  const pane = el("pane-preview");
+  if (!pane) return;
+
+  const next = force === undefined ? !pane.classList.contains("maximised") : force;
+  pane.classList.toggle("maximised", next);
+  document.body.classList.toggle("has-maximised-pane", next);
+  paintMaximizeButton(el("maximize-preview"), next);
+  if (!next) el("maximize-preview").focus();
 }
 
 function emptyPane(pane) {
@@ -1220,6 +1277,13 @@ function wireEvents() {
       button.textContent = "Copy failed";
     }
     setTimeout(() => { button.textContent = "Copy"; }, 1500);
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    if (!document.body.classList.contains("has-maximised-pane")) return;
+    event.preventDefault();
+    togglePreviewMaximised(false);
   });
 
   const input = el("input");
