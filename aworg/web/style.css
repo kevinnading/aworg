@@ -504,41 +504,93 @@ button.tiny { padding: 5px 11px; font-size: 13px; }
 
 /* ---- home ---- */
 
-/* Mission control rather than an IDE: what the Resident has made sits on the
-   left where it can be watched, and the conversation -- the thing the owner
-   actually works through -- gets the whole right side. */
+/* Four regions, arranged by what changes least.
+ *
+ *   +-----------+-------------+--------------------------+
+ *   | Capabil.  | Application | Tasks     |   Workers    |
+ *   | Skills    | Lifecycle   +--------------------------+
+ *   | Tools     | Workspace   |     Conversation         |
+ *   +-----------+-------------+--------------------------+
+ *   |            Living Log, the full width              |
+ *   +----------------------------------------------------+
+ *
+ * What the Resident can do sits furthest from the conversation because it
+ * changes least. What it is doing sits directly above the conversation,
+ * because that is what the owner is talking to it about. The log runs the
+ * whole width underneath, the way a console does, because it is the one
+ * thing that reports on all of it. */
 
 .home {
   display: flex;
+  flex-direction: column;
   flex: 1;
   min-height: 0;
   width: 100%;
 }
 
-.side {
-  width: var(--side-width);
+.workbench {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.column {
   flex: none;
   display: flex;
   flex-direction: column;
   min-height: 0;
   background: var(--panel);
   border-right: 1px solid var(--line);
+  overflow-y: auto;
+}
+
+.faculties { width: var(--faculties-width); }
+.side { width: var(--side-width); }
+
+.main {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.activity {
+  flex: none;
+  height: var(--activity-height);
+  display: flex;
+  min-height: 0;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+.activity .pane + .pane,
+.activity .resizer + .pane { border-left: 1px solid var(--line); }
+
+.console {
+  flex: none;
+  height: var(--log-height);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--panel);
+  border-top: 1px solid var(--line);
+}
+
+.chat {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 /* ---- panes ---- */
 
-/* Every pane is open. Hiding instruments behind tabs would make the column
-   tidier and the control room useless, so the column scrolls instead and the
-   owner decides by dragging what deserves the room. Each pane holds the
-   height it was given; none of them flex, or one would quietly eat the space
-   the owner meant for another. */
-
-.panes {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
-}
+/* Every pane is open. Hiding instruments behind tabs would make a region
+   tidier and the control room useless, so the owner decides by dragging what
+   deserves the room. A pane holds the size it was given and does not flex,
+   or one would quietly eat the space meant for another -- except the last in
+   each region, which takes what is left so a region always fills exactly. */
 
 .pane {
   flex: none;
@@ -546,7 +598,10 @@ button.tiny { padding: 5px 11px; font-size: 13px; }
   flex-direction: column;
   padding: 14px 16px;
   min-height: 0;
+  min-width: 0;
 }
+
+.pane.fills { flex: 1; }
 
 .pane-head {
   display: flex;
@@ -680,13 +735,24 @@ button.tiny { padding: 5px 11px; font-size: 13px; }
   color: var(--muted);
 }
 
-.chat {
-  flex: 1;
-  min-width: 0;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
+/* ---- the console ---- */
+
+/* The Living Log is a console, so it is dressed as one: the code surface,
+   monospace, full width. An owner who has ever seen a terminal should be
+   able to tell what this pane is before reading a word of it. */
+
+.console .pane-body {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--code-bg);
+  overflow: auto;
 }
+.console .pane-empty {
+  border: none;
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+}
+.console .pane-empty strong { font-weight: 500; }
+.console .pane-empty span { font-family: inherit; max-width: 70ch; }
 
 .preview {
   flex: 1;
@@ -697,9 +763,6 @@ button.tiny { padding: 5px 11px; font-size: 13px; }
   background: var(--code-bg);
 }
 
-/* Panes are separated by their divider, which draws the line. Without this
-   the last pane's padding runs to the bottom of a scrolling column. */
-.pane:last-child { padding-bottom: 18px; }
 
 .preview-inner { width: 100%; height: 100%; }
 /* The one colour in this file that is not a token, deliberately. Inside the
@@ -802,17 +865,30 @@ button.tiny { padding: 5px 11px; font-size: 13px; }
 }
 
 @media (max-width: 900px) {
-  .home { flex-direction: column; }
-  .side {
+  /* One column of everything. Regions keep their order, so what was on the
+     left is now on top and the conversation still comes before the log. */
+  .workbench { flex-direction: column; overflow-y: auto; }
+
+  .column, .activity {
     width: 100%;
+    flex: none;
     border-right: none;
     border-bottom: 1px solid var(--line);
+    overflow-y: visible;
   }
-  /* Stacked, the column gets a bounded share rather than the whole page,
-     so the conversation is still reachable without scrolling past nine
-     panes to find it. */
-  .panes { max-height: 55vh; }
-  /* And there is no column edge to drag. The pane heights still mean
+
+  /* The conversation needs a floor of its own here, or nine stacked panes
+     push it off the bottom of the page. */
+  .main { flex: none; }
+  .chat { min-height: 60vh; }
+
+  /* Side by side stops meaning anything in a single column. */
+  .activity { flex-direction: column; height: auto; }
+  .activity .pane { width: 100% !important; }
+  .activity .pane + .pane,
+  .activity .resizer + .pane { border-left: none; border-top: 1px solid var(--line); }
+
+  /* Nothing has a vertical edge left to drag. The heights still mean
      something, so those handles stay. */
   .resizer.vertical { display: none; }
 }

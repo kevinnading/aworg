@@ -29,31 +29,66 @@
 <main>
 
   <section id="view-home" class="view active">
+    <!-- Four regions. app.js fills each with the panes assigned to it, from
+         the register the server keeps, so that moving an instrument between
+         regions is a one-line change rather than a rewrite of this file.
+         Pane bodies that are more than a list live in the templates at the
+         foot of this document. -->
     <div class="home">
 
-      <!-- The status column. Its panes are assembled by app.js from the
-           register the server keeps, so that adding an instrument to the
-           control room is a change to panes.py and layout.py rather than a
-           change in four files. The bodies that are more than a list live in
-           the templates at the foot of this document. -->
-      <aside class="side" id="side">
-        <div class="panes" id="panes"></div>
-      </aside>
+      <div class="workbench">
 
-      <div class="resizer vertical" id="resize-side"
-           role="separator" aria-orientation="vertical" tabindex="0"
-           aria-label="Width of the status column"
-           aria-controls="side"></div>
+        <!-- What the Resident can do. Furthest from the conversation
+             because it changes the least. -->
+        <aside class="column faculties" id="faculties"></aside>
 
-      <section class="chat">
-        <div class="messages" id="messages"></div>
-        <form class="composer" id="composer">
-          <textarea id="input" rows="1" placeholder="Say something to your Resident…"></textarea>
-          <div class="composer-actions">
-            <button type="submit" id="send">Send</button>
-          </div>
-        </form>
-      </section>
+        <div class="resizer vertical" id="resize-faculties"
+             role="separator" aria-orientation="vertical" tabindex="0"
+             aria-label="Width of the capabilities column"
+             aria-controls="faculties"></div>
+
+        <!-- The application and what the Resident has made of it. -->
+        <aside class="column side" id="side"></aside>
+
+        <div class="resizer vertical" id="resize-side"
+             role="separator" aria-orientation="vertical" tabindex="0"
+             aria-label="Width of the workspace column"
+             aria-controls="side"></div>
+
+        <section class="main">
+
+          <!-- What the Resident is doing right now, directly above the
+               conversation the owner is having with it about that. -->
+          <div class="activity" id="activity"></div>
+
+          <div class="resizer horizontal" id="resize-activity"
+               role="separator" aria-orientation="horizontal" tabindex="0"
+               aria-label="Height of the tasks and workers row"
+               aria-controls="activity"></div>
+
+          <section class="chat">
+            <div class="messages" id="messages"></div>
+            <form class="composer" id="composer">
+              <textarea id="input" rows="1" placeholder="Say something to your Resident…"></textarea>
+              <div class="composer-actions">
+                <button type="submit" id="send">Send</button>
+              </div>
+            </form>
+          </section>
+
+        </section>
+
+      </div>
+
+      <!-- The console. It runs under everything because it reports on
+           everything. Its divider is above it, so the drag is anchored to
+           its bottom edge rather than its top. -->
+      <div class="resizer horizontal" id="resize-log" data-anchor="end"
+           role="separator" aria-orientation="horizontal" tabindex="0"
+           aria-label="Height of the Living Log"
+           aria-controls="console"></div>
+
+      <div class="console" id="console" data-pane="log"></div>
 
     </div>
   </section>

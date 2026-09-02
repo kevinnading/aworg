@@ -84,36 +84,39 @@ Custom colours layer over the preset rather than replacing it, so trying a
 different preset does not discard them. Each changed colour can be reverted on
 its own, or all of them at once.
 
-## The status column
+## The Home screen
 
-The left side of Home is a control room. Every pane is open at once rather
-than hidden behind tabs — an instrument nobody is looking at is not an
-instrument — and the column scrolls:
+Home is a control room. Every pane is open at once rather than hidden behind
+tabs — an instrument nobody is looking at is not an instrument — and each one
+can be dragged to whatever size it deserves.
 
 ```
-Application       the software the Resident is responsible for
-Lifecycle         how far along it is
-Living Workspace  everything the Resident has made
-Workers           temporary sub-agents put to work
-Tasks             what the Resident is doing
-Living Log        what the running application reports about itself
-Tools             what the Resident can directly do
-Skills            procedures it knows how to carry out
-Capabilities      the sum of what this Aworg is able to do
++-----------+-------------+--------------------------+
+| Capabil.  | Application | Tasks     |   Workers    |
+| Skills    | Lifecycle   +--------------------------+
+| Tools     | Workspace   |                          |
+|           |             |     Conversation         |
++-----------+-------------+--------------------------+
+|            Living Log, the full width              |
++----------------------------------------------------+
 ```
 
-Most of those are empty, and several are for abilities the Resident does not
-have yet. They say which: a pane marked **not yet** is one whose ability does
-not exist, as distinct from one that exists and is reading zero. That
-difference matters to an owner who cannot check for themselves.
+The arrangement follows how fast things change. What the Resident *can* do
+sits furthest from the conversation, because it changes least. What it *is*
+doing sits directly above the conversation, because that is what the owner is
+talking to it about. The Living Log runs the whole width underneath, the way
+a console does, because it is the one thing that reports on all of it.
+
+Most panes are empty, and several are for abilities the Resident does not have
+yet. They say which: a pane marked **not yet** is one whose ability does not
+exist, as distinct from one that exists and is reading zero. That difference
+matters to an owner who cannot check for themselves.
 
 The **Lifecycle** stepper runs Nothing yet → Being built → Running → Verified
 → Watched → Published. The stage is derived from what is observably true —
 files in the workspace, a process answering, a check the Resident actually
 performed — never from anything the Resident says about itself. An owner who
-could audit that claim would not need AWORG. Stages beyond what the current
-milestone can produce evidence for are drawn as out of reach rather than
-merely unfinished.
+could audit that claim would not need AWORG.
 
 ## The view
 

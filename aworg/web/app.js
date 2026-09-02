@@ -489,29 +489,60 @@ function closeForm() {
  * The order and the empty text come from panes.py. The two panes above them
  * are AWORG's own rather than the Resident's, so they are declared here. */
 
-const FIXED_PANES = [
-  { id: "preview", label: "Application", hint: "The software the Resident is responsible for." },
-  { id: "lifecycle", label: "Lifecycle", hint: "How far along that software is." },
+const FIXED_PANES = {
+  preview: { label: "Application", hint: "The software the Resident is responsible for." },
+  lifecycle: { label: "Lifecycle", hint: "How far along that software is." },
+};
+
+/* Which pane goes where, and in what order within its region.
+ *
+ * This is the only place the arrangement is written down. Moving Tasks out of
+ * the activity row and into the workspace column is a line moved here; every
+ * other file goes on not caring where anything is. */
+const REGIONS = [
+  { id: "faculties", element: "faculties", axis: "column", panes: ["capabilities", "skills", "tools"] },
+  { id: "side", element: "side", axis: "column", panes: ["preview", "lifecycle", "workspace"] },
+  { id: "activity", element: "activity", axis: "row", panes: ["tasks", "workers"] },
+  { id: "console", element: "console", axis: "column", panes: ["log"] },
 ];
 
 function buildPanes() {
-  const column = el("panes");
-  column.innerHTML = "";
+  const known = new Map();
+  for (const [id, pane] of Object.entries(FIXED_PANES)) known.set(id, { id, ...pane });
+  for (const pane of app.panes) known.set(pane.id, pane);
 
-  const all = [...FIXED_PANES, ...app.panes];
-  all.forEach((pane, index) => {
-    column.appendChild(paneNode(pane));
-    // A divider belongs between two panes, not after the last one.
-    if (index < all.length - 1) column.appendChild(paneResizer(pane));
-  });
+  for (const region of REGIONS) {
+    const container = el(region.element);
+    container.innerHTML = "";
+    container.classList.add("region", `region-${region.axis}`);
+
+    const members = region.panes.map((id) => known.get(id)).filter(Boolean);
+    members.forEach((pane, index) => {
+      const last = index === members.length - 1;
+      container.appendChild(paneNode(pane, { region, last }));
+      // The last pane in a region takes the space that is left, so it has no
+      // size of its own and nothing to drag. Every other pane gets a divider
+      // after it.
+      if (!last) container.appendChild(paneResizer(pane, region));
+    });
+  }
 }
 
-function paneNode(pane) {
+function paneNode(pane, { region, last }) {
   const section = document.createElement("section");
   section.className = "pane";
   section.dataset.pane = pane.id;
+  section.dataset.region = region.id;
   section.id = `pane-${pane.id}`;
-  section.style.height = `var(--${pane.id}-height)`;
+
+  if (last) {
+    // Fills whatever the panes above or beside it left over.
+    section.classList.add("fills");
+  } else if (region.axis === "column") {
+    section.style.height = `var(--${pane.id}-height)`;
+  } else {
+    section.style.width = `var(--${pane.id}-width)`;
+  }
 
   const head = document.createElement("div");
   head.className = "pane-head";
@@ -567,14 +598,15 @@ function emptyPane(pane) {
   return empty;
 }
 
-function paneResizer(pane) {
+function paneResizer(pane, region) {
+  const vertical = region.axis === "row";
   const handle = document.createElement("div");
-  handle.className = "resizer horizontal";
+  handle.className = `resizer ${vertical ? "vertical" : "horizontal"}`;
   handle.id = `resize-${pane.id}`;
   handle.setAttribute("role", "separator");
-  handle.setAttribute("aria-orientation", "horizontal");
+  handle.setAttribute("aria-orientation", vertical ? "vertical" : "horizontal");
   handle.setAttribute("tabindex", "0");
-  handle.setAttribute("aria-label", `Height of ${pane.label}`);
+  handle.setAttribute("aria-label", `${vertical ? "Width" : "Height"} of ${pane.label}`);
   handle.setAttribute("aria-controls", `pane-${pane.id}`);
   return handle;
 }
@@ -622,32 +654,37 @@ function renderLifecycle() {
  * sizes the owner was moving through rather than choosing. */
 
 function wireResizers() {
-  // One rule, applied to whatever dividers the column happens to contain.
-  // Nine panes today; the machinery does not care how many.
+  // One rule for every divider on the screen, whatever it separates.
+  //
+  // A divider names the element it sizes, and the size is read off that
+  // element's own edge rather than its container's -- so a column in the
+  // middle of the row measures as correctly as the one at the edge.
   for (const handle of document.querySelectorAll(".resizer")) {
     const controlled = document.getElementById(handle.getAttribute("aria-controls"));
     if (!controlled) continue;
 
-    if (handle.classList.contains("vertical")) {
-      bindResizer(handle, {
-        pane: "side-width",
-        axis: "col",
-        measure: (event) =>
-          event.clientX - controlled.parentElement.getBoundingClientRect().left,
-      });
-    } else {
-      bindResizer(handle, {
-        pane: `${controlled.dataset.pane}-height`,
-        axis: "row",
-        // Measured against the pane's own top, so a pane scrolled part-way
-        // up the column still resizes from where the owner grabbed it.
-        measure: (event) => event.clientY - controlled.getBoundingClientRect().top,
-      });
-    }
+    const vertical = handle.classList.contains("vertical");
+    // Most dividers sit after the thing they size, so dragging away from it
+    // makes it bigger. The console's sits before it, and dragging down has
+    // to make it smaller.
+    const fromEnd = handle.dataset.anchor === "end";
+
+    bindResizer(handle, {
+      pane: `${controlled.dataset.pane || controlled.id}-${vertical ? "width" : "height"}`,
+      axis: vertical ? "col" : "row",
+      fromEnd,
+      measure: (event) => {
+        const box = controlled.getBoundingClientRect();
+        if (vertical) {
+          return fromEnd ? box.right - event.clientX : event.clientX - box.left;
+        }
+        return fromEnd ? box.bottom - event.clientY : event.clientY - box.top;
+      },
+    });
   }
 }
 
-function bindResizer(handle, { pane, axis, measure }) {
+function bindResizer(handle, { pane, axis, measure, fromEnd = false }) {
   const bounds = app.layout.panes[pane];
 
   handle.dataset.pane = pane;
@@ -709,10 +746,14 @@ function bindResizer(handle, { pane, axis, measure }) {
     const back = axis === "col" ? "ArrowLeft" : "ArrowUp";
     if (event.key !== forward && event.key !== back) return;
     event.preventDefault();
+    // The key moves the divider, not the number. On a pane anchored to the
+    // far edge, moving the divider forward makes it smaller -- pressing Down
+    // on the console must lower the console, not raise it.
+    const towards = event.key === forward ? 1 : -1;
     const current = app.layout.sizes[pane];
     saveLayout({
       ...app.layout.sizes,
-      [pane]: clamp(current + (event.key === forward ? step : -step)),
+      [pane]: clamp(current + step * towards * (fromEnd ? -1 : 1)),
     });
   });
 }
