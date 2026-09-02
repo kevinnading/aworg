@@ -44,6 +44,7 @@ class ConnectionBody(BaseModel):
     model: str
     base_url: str | None = None
     tags: list[str] = []
+    reasoning: str = "auto"
     enabled: bool = True
     credential: str | None = None
 
@@ -54,6 +55,7 @@ class ConnectionPatch(BaseModel):
     model: str | None = None
     base_url: str | None = None
     tags: list[str] | None = None
+    reasoning: str | None = None
     enabled: bool | None = None
     credential: str | None = None
 
@@ -136,6 +138,7 @@ def create_app(paths: Paths) -> FastAPI:
             model=body.model.strip(),
             base_url=(body.base_url or "").strip() or None,
             tags=body.tags,
+            reasoning=body.reasoning,
             enabled=body.enabled,
         )
         if body.credential:
@@ -159,6 +162,7 @@ def create_app(paths: Paths) -> FastAPI:
             model=body.model,
             base_url=body.base_url,
             tags=body.tags,
+            reasoning=body.reasoning,
             enabled=body.enabled,
         )
         # An empty string means "leave the stored credential alone", so that

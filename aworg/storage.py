@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS connections (
     model      TEXT NOT NULL,
     base_url   TEXT,
     tags       TEXT NOT NULL DEFAULT '[]',
+    reasoning  TEXT NOT NULL DEFAULT 'auto',
     enabled    INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -110,6 +111,7 @@ class Store:
     #: column has to be asked for separately or it silently is not there.
     MIGRATIONS = [
         ("resident", "worker_connection_id", "TEXT"),
+        ("connections", "reasoning", "TEXT NOT NULL DEFAULT 'auto'"),
     ]
 
     def _init(self) -> None:
@@ -164,13 +166,14 @@ class Store:
         model: str,
         base_url: str | None = None,
         tags: list[str] | None = None,
+        reasoning: str = "auto",
         enabled: bool = True,
     ) -> dict[str, Any]:
         connection_id = uuid.uuid4().hex[:12]
         with self._connect() as conn:
             conn.execute(
                 "INSERT INTO connections (id, name, provider, model, base_url, "
-                "tags, enabled) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "tags, reasoning, enabled) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     connection_id,
                     name,
@@ -178,13 +181,14 @@ class Store:
                     model,
                     base_url or None,
                     json.dumps(tags or []),
+                    reasoning,
                     1 if enabled else 0,
                 ),
             )
         return self.get_connection(connection_id)  # type: ignore[return-value]
 
     def update_connection(self, connection_id: str, **fields: Any) -> dict[str, Any] | None:
-        allowed = {"name", "provider", "model", "base_url", "tags", "enabled"}
+        allowed = {"name", "provider", "model", "base_url", "tags", "reasoning", "enabled"}
         sets, values = [], []
         for key, value in fields.items():
             if key not in allowed or value is None:
@@ -228,6 +232,7 @@ class Store:
             "model": row["model"],
             "base_url": row["base_url"],
             "tags": json.loads(row["tags"]),
+            "reasoning": row["reasoning"],
             "enabled": bool(row["enabled"]),
             "created_at": row["created_at"],
         }

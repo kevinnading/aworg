@@ -173,7 +173,19 @@ async function send(text) {
 
   setStreaming(true);
   let collected = "";
+  let thinking = "";
   let failed = false;
+
+  // Shown only while the model is thinking and nothing has been said yet.
+  // It is removed the moment a real word arrives, so the reply is never
+  // preceded by leftover scaffolding.
+  const thoughts = document.createElement("details");
+  thoughts.className = "thinking";
+  const summary = document.createElement("summary");
+  summary.textContent = "Thinking…";
+  const stream = document.createElement("div");
+  stream.className = "thinking-stream";
+  thoughts.append(summary, stream);
 
   try {
     const response = await fetch("/api/chat", {
@@ -197,8 +209,23 @@ async function send(text) {
         if (!line.trim()) continue;
         const event = JSON.parse(line);
 
-        if (event.type === "delta") {
+        if (event.type === "thinking") {
+          // Reasoning models send this long before their first word. Without
+          // it the interface shows an empty bubble and a blinking cursor for
+          // as long as the model takes, which reads as a hang.
+          thinking += event.text;
+          if (!thoughts.isConnected) replyNode.insertBefore(thoughts, body);
+          stream.textContent = thinking;
+          summary.textContent = `Thinking… (${thinking.length} characters)`;
+          box.scrollTop = box.scrollHeight;
+        } else if (event.type === "delta") {
           collected += event.text;
+          if (thoughts.isConnected) {
+            // It has started answering. Keep the reasoning available but get
+            // it out of the way.
+            summary.textContent = "Thought before answering";
+            thoughts.open = false;
+          }
           body.innerHTML = MD.render(collected);
           box.scrollTop = box.scrollHeight;
         } else if (event.type === "done") {
@@ -214,6 +241,7 @@ async function send(text) {
         } else if (event.type === "error") {
           failed = true;
           if (!collected) replyNode.remove();
+          thoughts.remove();
           box.appendChild(messageNode("error", event.message, null));
           box.scrollTop = box.scrollHeight;
         }
@@ -374,6 +402,7 @@ function connectionNode(connection) {
   meta.textContent =
     `${app.meta.providers[connection.provider] || connection.provider} · ${connection.model}` +
     (connection.base_url ? ` · ${connection.base_url}` : "") +
+    (connection.reasoning === "off" ? " · no thinking" : "") +
     (connection.has_credential ? "" : " · no credential");
   left.append(name, meta);
   top.appendChild(left);
@@ -478,6 +507,7 @@ function openForm(connection) {
   el("conn-provider").value = connection ? connection.provider : Object.keys(app.meta.providers)[0];
   el("conn-model").value = connection ? connection.model : "";
   el("conn-base-url").value = connection && connection.base_url ? connection.base_url : "";
+  el("conn-reasoning").value = (connection && connection.reasoning) || "auto";
   el("conn-credential").value = "";
   el("conn-credential").placeholder = connection && connection.has_credential
     ? "Stored — leave blank to keep it"
@@ -1375,6 +1405,7 @@ function wireEvents() {
       provider: el("conn-provider").value,
       model: el("conn-model").value.trim(),
       base_url: el("conn-base-url").value.trim() || null,
+      reasoning: el("conn-reasoning").value,
       tags: [...app.editingTags],
       credential: el("conn-credential").value || null,
     };

@@ -102,14 +102,23 @@ class Resident:
 
         label = _label(connection)
         collected: list[str] = []
+        thought = False
 
         try:
             adapter = build_adapter(connection, api_key)
             async for fragment in adapter.stream(
                 history, system=resident_config["system_prompt"]
             ):
-                collected.append(fragment)
-                yield {"type": "delta", "text": fragment}
+                if fragment.kind == "thinking":
+                    # Thinking is not what the Resident said, so it is never
+                    # kept. It is still reported, because a model that thinks
+                    # for thirty seconds before its first word is
+                    # indistinguishable from one that has hung.
+                    thought = True
+                    yield {"type": "thinking", "text": fragment.text}
+                    continue
+                collected.append(fragment.text)
+                yield {"type": "delta", "text": fragment.text}
         except ModelError as exc:
             # A partial reply is still something the Resident said. Keep it,
             # so the conversation reflects what actually happened.
@@ -123,6 +132,18 @@ class Resident:
         reply = "".join(collected)
         if reply.strip():
             self.store.add_message(conversation_id, "resident", reply, label)
+        elif thought:
+            # It reasoned its whole budget away and never answered. Silence
+            # here would look identical to a crash, and the owner would have
+            # no idea the model was the thing that needed changing.
+            yield {
+                "type": "error",
+                "message": (
+                    f"{label} spent its whole reply thinking and never answered. "
+                    "Its reasoning budget is likely too small for this request."
+                ),
+            }
+            return
         yield {"type": "done", "model_label": label}
 
 

@@ -28,6 +28,25 @@ class Message:
     content: str
 
 
+@dataclass
+class Fragment:
+    """One piece of a reply, as it arrives.
+
+    Some models think out loud before answering, and they send that thinking
+    down the same stream as the answer. It is not the answer: it must not be
+    saved as what the Resident said, and it must not be silently dropped
+    either -- a Resident that shows nothing for thirty seconds looks broken,
+    and an owner cannot tell a model that is working from one that has hung.
+
+    So a fragment says which it is, and everything above this layer decides
+    what to do about it.
+    """
+
+    #: "reply" -- part of the answer. "thinking" -- reasoning on the way to it.
+    kind: str
+    text: str
+
+
 class ModelError(Exception):
     """A model could not be reached, or refused the request.
 
@@ -43,19 +62,33 @@ class ModelAdapter:
     #: Short provider identifier, e.g. "anthropic".
     provider: str = "unknown"
 
-    def __init__(self, model: str, api_key: str, base_url: str | None = None):
+    def __init__(
+        self,
+        model: str,
+        api_key: str,
+        base_url: str | None = None,
+        reasoning: str = "auto",
+    ):
         self.model = model
         self.api_key = api_key
         self.base_url = (base_url or self.default_base_url).rstrip("/")
+        #: "auto" leaves the model as configured; "off" asks it not to think
+        #: before answering. Thinking costs real time -- a 9B spent 99 seconds
+        #: on an eighty-word paragraph -- and whether that is worth paying
+        #: depends on the model and the job, so it is the owner's choice and
+        #: belongs to the connection rather than being decided here.
+        self.reasoning = reasoning
 
     @property
     def default_base_url(self) -> str:
         raise NotImplementedError
 
-    async def stream(self, messages: list[Message], system: str) -> AsyncIterator[str]:
+    async def stream(
+        self, messages: list[Message], system: str
+    ) -> AsyncIterator[Fragment]:
         """Yield the reply as it arrives, one fragment at a time."""
         raise NotImplementedError
-        yield ""  # pragma: no cover - signals an async generator to type checkers
+        yield Fragment("reply", "")  # pragma: no cover - marks this a generator
 
     async def probe(self) -> None:
         """Verify the connection works. Raises ModelError if it does not."""

@@ -7,10 +7,17 @@ from typing import AsyncIterator
 
 import httpx
 
-from .base import Message, ModelAdapter, ModelError
+from .base import Fragment, Message, ModelAdapter, ModelError
 
 
 ANTHROPIC_VERSION = "2023-06-01"
+
+#: A thinking model can be silent for a long time before its first word, so a
+#: single overall deadline is wrong: it cuts off work that is going fine. What
+#: should fail fast is a connection that is not there, and what should fail
+#: eventually is a stream that has genuinely stalled -- hence a short connect
+#: and a generous gap between chunks.
+STREAM_TIMEOUT = httpx.Timeout(connect=10.0, read=300.0, write=30.0, pool=10.0)
 
 
 class AnthropicAdapter(ModelAdapter):
@@ -20,7 +27,9 @@ class AnthropicAdapter(ModelAdapter):
     def default_base_url(self) -> str:
         return "https://api.anthropic.com"
 
-    async def stream(self, messages: list[Message], system: str) -> AsyncIterator[str]:
+    async def stream(
+        self, messages: list[Message], system: str
+    ) -> AsyncIterator[Fragment]:
         payload = {
             "model": self.model,
             "max_tokens": 4096,
@@ -43,7 +52,7 @@ class AnthropicAdapter(ModelAdapter):
         }
 
         try:
-            async with httpx.AsyncClient(timeout=120.0) as client:
+            async with httpx.AsyncClient(timeout=STREAM_TIMEOUT) as client:
                 async with client.stream(
                     "POST",
                     f"{self.base_url}/v1/messages",
@@ -66,7 +75,9 @@ class AnthropicAdapter(ModelAdapter):
                         if event.get("type") == "content_block_delta":
                             delta = event.get("delta") or {}
                             if delta.get("type") == "text_delta":
-                                yield delta.get("text", "")
+                                yield Fragment("reply", delta.get("text", ""))
+                            elif delta.get("type") == "thinking_delta":
+                                yield Fragment("thinking", delta.get("thinking", ""))
                         elif event.get("type") == "error":
                             detail = (event.get("error") or {}).get("message", "unknown error")
                             raise ModelError(detail)

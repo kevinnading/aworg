@@ -55,6 +55,19 @@ Those zones are separate on disk from the start. Once snapshots exist, "what
 may be published" and "what never leaves this machine" must already be
 distinguishable, and that is expensive to retrofit.
 
+## Models that think
+
+Some models reason at length before answering. That reasoning is not the
+reply: it is never saved, never sent back as context, and never shown as
+something the Resident said. It *is* shown while it happens, folded away, as
+"Thinking…" with a live count — because a model that says nothing for ninety
+seconds and a model that has hung look identical otherwise.
+
+Whether a model thinks at all is a property of its connection, alongside the
+endpoint and the credential. Set **Thinking → Off** on a connection and it
+answers straight away. On the 9B developed against, the same request went from
+99 seconds to under 1.
+
 ## Connections and roles
 
 A **connection** is one model and how to reach it: provider, model, endpoint,

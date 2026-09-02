@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from .anthropic import AnthropicAdapter
-from .base import Message, ModelAdapter, ModelError
+from .base import Fragment, Message, ModelAdapter, ModelError
 from .openai_compatible import OpenAICompatibleAdapter
 
 
@@ -32,10 +32,12 @@ def build_adapter(connection: dict, api_key: str) -> ModelAdapter:
         model=connection["model"],
         api_key=api_key,
         base_url=connection.get("base_url"),
+        reasoning=connection.get("reasoning") or "auto",
     )
 
 
 __all__ = [
+    "Fragment",
     "Message",
     "ModelAdapter",
     "ModelError",
