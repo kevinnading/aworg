@@ -1,3 +1,11 @@
+/* These are the fallback scheme -- the Midnight preset, inlined.
+   The scheme actually in force is served by /api/theme.css, which loads after
+   this file and overrides every one of them. They are kept here so the
+   interface is still legible if that request ever fails, and so this file can
+   be read on its own without wondering what the names resolve to.
+
+   Nothing in this stylesheet should introduce a colour that is not one of
+   these tokens. A hardcoded colour is a colour no theme can reach. */
 :root {
   --bg: #0e1013;
   --panel: #16191e;
@@ -7,6 +15,7 @@
   --muted: #8a9199;
   --accent: #5eead4;
   --accent-dim: #2c7a70;
+  --on-accent: #06201c;
   --owner: #2a3138;
   --danger: #f87171;
   --ok: #4ade80;
@@ -72,7 +81,7 @@ body {
 .dot {
   width: 8px; height: 8px; border-radius: 50%;
   background: var(--muted);
-  box-shadow: 0 0 0 3px rgba(255,255,255,0.04);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--text) 5%, transparent);
 }
 .dot.present { background: var(--ok); }
 .dot.unconfigured { background: var(--warn); }
@@ -225,7 +234,7 @@ textarea { resize: vertical; }
 
 button {
   background: var(--accent);
-  color: #06201c;
+  color: var(--on-accent);
   border: none;
   border-radius: 8px;
   padding: 9px 16px;
@@ -385,7 +394,7 @@ button.tiny { padding: 5px 11px; font-size: 13px; }
   flex-direction: column;
   padding: 13px 0;
   border-right: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.015);
+  background: color-mix(in srgb, var(--text) 3%, transparent);
   user-select: none;
 }
 .markdown .gutter span {
@@ -490,11 +499,15 @@ button.tiny { padding: 5px 11px; font-size: 13px; }
   border: 1px solid var(--line);
   border-radius: 9px;
   overflow: hidden;
-  background: #0b0d10;
+  background: var(--code-bg);
   aspect-ratio: 16 / 9;
 }
 
 .preview-inner { width: 100%; height: 100%; }
+/* The one colour in this file that is not a token, deliberately. Inside the
+   frame is the Resident's application, not AWORG's interface, and a page's
+   canvas is white before it says otherwise. Theming it would be AWORG
+   reaching into something that is not its to style. */
 .preview-inner iframe { width: 100%; height: 100%; border: none; background: #fff; }
 
 .preview-empty {
@@ -602,4 +615,129 @@ button.tiny { padding: 5px 11px; font-size: 13px; }
 
 @media (max-width: 640px) {
   .grid { grid-template-columns: 1fr; }
+}
+
+/* ---- appearance ---- */
+
+/* Choosing a scheme is looking, not reading. The presets are shown as the
+   colours they are; the names are only there to say them out loud. */
+
+.presets {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  gap: 10px;
+  margin-bottom: 22px;
+}
+
+.preset {
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0;
+  overflow: hidden;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+}
+.preset:hover { filter: none; border-color: var(--accent-dim); }
+.preset.on { border-color: var(--accent); }
+
+.preset-swatches { display: flex; height: 34px; }
+.preset-swatches span { flex: 1; }
+
+.preset-label {
+  padding: 8px 11px 9px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.preset-name { font-size: 13px; font-weight: 500; }
+.preset-kind { font-size: 11px; color: var(--muted); text-transform: lowercase; }
+
+.preset-note {
+  padding: 0 11px 10px;
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+/* ---- custom colours ---- */
+
+.token-group { margin-top: 20px; }
+.token-group h3 {
+  margin: 0 0 3px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.token-group .hint { margin-bottom: 12px; }
+
+.tokens {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 8px 16px;
+}
+
+.token {
+  display: grid;
+  grid-template-columns: 26px 1fr auto;
+  align-items: center;
+  gap: 9px;
+  padding: 4px 6px 4px 4px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+}
+/* An edited colour is marked, because the only way back to the preset's own
+   value is knowing you left it. */
+.token.edited { border-color: var(--accent-dim); }
+
+.token input[type="color"] {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: none;
+  cursor: pointer;
+}
+.token input[type="color"]::-webkit-color-swatch-wrapper { padding: 2px; }
+.token input[type="color"]::-webkit-color-swatch { border: none; border-radius: 4px; }
+
+.token-text { min-width: 0; }
+.token-label {
+  font-size: 12.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.token-hex {
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+.token-revert {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1;
+  padding: 3px 5px;
+  border-radius: 5px;
+  visibility: hidden;
+}
+.token-revert:hover { color: var(--text); filter: none; }
+.token.edited .token-revert { visibility: visible; }
+
+.appearance-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
 }

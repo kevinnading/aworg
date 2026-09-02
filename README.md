@@ -68,6 +68,25 @@ Credentials pass through one interface (`aworg/secrets.py`) and are never
 returned to the browser once stored — the interface can only ask whether a
 credential exists.
 
+## Appearance
+
+An Aworg is meant to be lived with, so the interface is themeable from the
+start rather than as a later concession.
+
+Open **Settings → Appearance**. Eight presets cover the usual ground — Midnight
+(the default), Slate, Nord, Gruvbox, Solarized in both directions, Paper, and a
+high-contrast scheme. Any of the 28 colour tokens can then be changed
+individually: surfaces, text, accent, status colours, the code area, and the
+full syntax palette.
+
+Custom colours layer over the preset rather than replacing it, so trying a
+different preset does not discard them. Each changed colour can be reverted on
+its own, or all of them at once.
+
+The scheme lives in `state.db`, not the browser, and is served as a stylesheet
+that loads before the first paint — so it survives a restart, follows the owner
+to another browser, and never flashes the wrong theme on the way in.
+
 ## Layout
 
 ```
@@ -75,6 +94,7 @@ aworg/
   paths.py       where an Aworg keeps its life
   secrets.py     the credential choke point
   storage.py     runtime and Resident state
+  theme.py       the owner interface's colour tokens and presets
   resident.py    the Resident itself
   server.py      the owner interface's backing service
   models/        provider-neutral model interface and adapters

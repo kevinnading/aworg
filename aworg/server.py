@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -23,6 +23,14 @@ from .paths import Paths
 from .resident import Resident
 from .secrets import SecretStore, credential_ref
 from .storage import Store
+from .theme import (
+    PRESETS,
+    TOKEN_GROUPS,
+    describe,
+    resolve,
+    sanitize_overrides,
+    to_css,
+)
 
 
 WEB_DIR = Path(__file__).parent / "web"
@@ -55,6 +63,11 @@ class ResidentPatch(BaseModel):
 
 class ChatBody(BaseModel):
     message: str
+
+
+class AppearancePatch(BaseModel):
+    preset: str | None = None
+    overrides: dict[str, str] | None = None
 
 
 def create_app(paths: Paths) -> FastAPI:
@@ -195,6 +208,65 @@ def create_app(paths: Paths) -> FastAPI:
                 yield json.dumps(event) + "\n"
 
         return StreamingResponse(events(), media_type="application/x-ndjson")
+
+    # -- appearance -----------------------------------------------------
+
+    def appearance_payload() -> dict[str, Any]:
+        stored = store.get_appearance()
+        return {
+            "preset": stored["preset"],
+            "overrides": stored["overrides"],
+            "colors": resolve(stored["preset"], stored["overrides"]),
+            "presets": describe(),
+            "groups": [
+                {
+                    "id": group["id"],
+                    "label": group["label"],
+                    "hint": group["hint"],
+                    "tokens": [
+                        {"name": name, "label": label} for name, label in group["tokens"]
+                    ],
+                }
+                for group in TOKEN_GROUPS
+            ],
+        }
+
+    @app.get("/api/appearance")
+    def get_appearance() -> dict[str, Any]:
+        return appearance_payload()
+
+    @app.patch("/api/appearance")
+    def update_appearance(body: AppearancePatch) -> dict[str, Any]:
+        fields: dict[str, Any] = {}
+        if body.preset is not None:
+            if body.preset not in PRESETS:
+                raise HTTPException(404, "No such preset")
+            fields["preset"] = body.preset
+        if body.overrides is not None:
+            # Whatever the interface sends, only known tokens holding real hex
+            # colours are kept. This is the last point before these values
+            # become a stylesheet, so it is the point that has to be strict.
+            fields["overrides"] = sanitize_overrides(body.overrides)
+        if fields:
+            store.update_appearance(**fields)
+        return appearance_payload()
+
+    @app.get("/api/theme.css")
+    def theme_css() -> Response:
+        """The scheme as a stylesheet, loaded before the first paint.
+
+        A blocking stylesheet rather than colours applied by script on load:
+        the owner should never watch the interface flash the default theme and
+        then correct itself into theirs.
+        """
+        stored = store.get_appearance()
+        return Response(
+            content=to_css(resolve(stored["preset"], stored["overrides"])),
+            media_type="text/css",
+            # The scheme changes the moment the owner picks a colour, and a
+            # cached copy would outlive the choice.
+            headers={"Cache-Control": "no-store"},
+        )
 
     # -- the Living Workspace -------------------------------------------
 

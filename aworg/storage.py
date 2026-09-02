@@ -37,6 +37,13 @@ CREATE TABLE IF NOT EXISTS resident (
     updated_at              TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS appearance (
+    id         INTEGER PRIMARY KEY CHECK (id = 1),
+    preset     TEXT NOT NULL DEFAULT 'midnight',
+    overrides  TEXT NOT NULL DEFAULT '{}',
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS conversations (
     id         TEXT PRIMARY KEY,
     title      TEXT NOT NULL DEFAULT 'Conversation',
@@ -98,6 +105,9 @@ class Store:
                 "INSERT INTO resident (id, system_prompt) VALUES (1, ?) "
                 "ON CONFLICT(id) DO NOTHING",
                 (DEFAULT_SYSTEM_PROMPT,),
+            )
+            conn.execute(
+                "INSERT INTO appearance (id) VALUES (1) ON CONFLICT(id) DO NOTHING"
             )
 
     # -- connections ----------------------------------------------------
@@ -210,6 +220,44 @@ class Store:
             with self._connect() as conn:
                 conn.execute(f"UPDATE resident SET {', '.join(sets)} WHERE id = 1", values)
         return self.get_resident()
+
+    # -- appearance -----------------------------------------------------
+
+    def get_appearance(self) -> dict[str, Any]:
+        """The owner's chosen scheme: a preset, plus any colours they changed.
+
+        Kept in state.db rather than the browser. An Aworg is a place the owner
+        returns to, and it should look the way they left it whichever browser
+        they open it from.
+        """
+        with self._connect() as conn:
+            row = conn.execute("SELECT * FROM appearance WHERE id = 1").fetchone()
+        try:
+            overrides = json.loads(row["overrides"])
+        except (ValueError, TypeError):
+            overrides = {}
+        return {
+            "preset": row["preset"],
+            "overrides": overrides if isinstance(overrides, dict) else {},
+        }
+
+    def update_appearance(
+        self,
+        preset: str | None = None,
+        overrides: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
+        sets, values = [], []
+        if preset is not None:
+            sets.append("preset = ?")
+            values.append(preset)
+        if overrides is not None:
+            sets.append("overrides = ?")
+            values.append(json.dumps(overrides))
+        if sets:
+            sets.append("updated_at = datetime('now')")
+            with self._connect() as conn:
+                conn.execute(f"UPDATE appearance SET {', '.join(sets)} WHERE id = 1", values)
+        return self.get_appearance()
 
     # -- conversation ---------------------------------------------------
 

@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>AWORG</title>
 <link rel="stylesheet" href="/style.css">
+<!-- The owner's scheme, loaded after the stylesheet so it wins, and as a
+     blocking stylesheet so the interface is never painted in the wrong one. -->
+<link rel="stylesheet" href="/api/theme.css">
 </head>
 <body>
 
@@ -70,6 +73,25 @@
 
   <section id="view-settings" class="view">
     <div class="settings-scroll">
+
+      <div class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>Appearance</h2>
+            <p class="hint">You will be looking at this for as long as the
+              Resident is yours. Pick a scheme, or change any colour in it.</p>
+          </div>
+        </div>
+
+        <div class="presets" id="presets"></div>
+
+        <div id="token-groups"></div>
+
+        <div class="appearance-foot">
+          <button type="button" class="ghost" id="reset-appearance">Reset to preset</button>
+          <span class="hint" id="appearance-note" style="margin: 0;"></span>
+        </div>
+      </div>
 
       <div class="panel">
         <h2>The Resident</h2>

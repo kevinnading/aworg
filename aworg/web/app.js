@@ -17,6 +17,8 @@ const app = {
   workspacePath: "",
   workspaceSignature: null,
   workspaceTimer: null,
+  appearance: null,
+  appearanceTimer: null,
 };
 
 /* ---------- api ---------- */
@@ -51,17 +53,20 @@ async function boot() {
 }
 
 async function refresh() {
-  const [state, connections, conversation] = await Promise.all([
+  const [state, connections, conversation, appearance] = await Promise.all([
     api("/api/state"),
     api("/api/connections"),
     api("/api/conversation"),
+    api("/api/appearance"),
   ]);
   app.state = state;
   app.connections = connections;
   app.conversation = conversation;
+  app.appearance = appearance;
   renderStatus();
   renderChat();
   renderSettings();
+  renderAppearance();
 }
 
 /* ---------- status ---------- */
@@ -419,6 +424,173 @@ function closeForm() {
   app.editingTags = new Set();
 }
 
+/* ---------- appearance ---------- */
+
+/* The scheme is already on screen before this file runs -- /api/theme.css saw
+ * to that. What happens here is editing it: every change is shown immediately
+ * on the real interface rather than in a preview swatch, because the only
+ * useful question about a colour scheme is what it looks like to work in. */
+
+function applyColors(colors) {
+  for (const [token, value] of Object.entries(colors)) {
+    document.documentElement.style.setProperty(`--${token}`, value);
+  }
+}
+
+function renderAppearance() {
+  const { preset, presets, groups, colors, overrides } = app.appearance;
+
+  const presetBox = el("presets");
+  presetBox.innerHTML = "";
+  for (const option of presets) {
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = "preset" + (option.id === preset ? " on" : "");
+
+    const swatches = document.createElement("div");
+    swatches.className = "preset-swatches";
+    for (const colour of option.swatches) {
+      const band = document.createElement("span");
+      band.style.background = colour;
+      swatches.appendChild(band);
+    }
+
+    const label = document.createElement("div");
+    label.className = "preset-label";
+    const name = document.createElement("span");
+    name.className = "preset-name";
+    name.textContent = option.label;
+    const kind = document.createElement("span");
+    kind.className = "preset-kind";
+    kind.textContent = option.dark ? "dark" : "light";
+    label.append(name, kind);
+
+    const note = document.createElement("p");
+    note.className = "preset-note";
+    note.textContent = option.note;
+
+    card.append(swatches, label, note);
+    card.onclick = () => choosePreset(option.id);
+    presetBox.appendChild(card);
+  }
+
+  const groupBox = el("token-groups");
+  groupBox.innerHTML = "";
+  for (const group of groups) {
+    const section = document.createElement("div");
+    section.className = "token-group";
+
+    const heading = document.createElement("h3");
+    heading.textContent = group.label;
+    const hint = document.createElement("p");
+    hint.className = "hint";
+    hint.textContent = group.hint;
+
+    const tokens = document.createElement("div");
+    tokens.className = "tokens";
+    for (const token of group.tokens) {
+      tokens.appendChild(tokenRow(token, colors[token.name], token.name in overrides));
+    }
+
+    section.append(heading, hint, tokens);
+    groupBox.appendChild(section);
+  }
+
+  const changed = Object.keys(overrides).length;
+  const label = (presets.find((p) => p.id === preset) || {}).label || preset;
+  el("appearance-note").textContent = changed
+    ? `${changed} colour${changed === 1 ? "" : "s"} changed from ${label}.`
+    : `Unchanged from ${label}.`;
+  el("reset-appearance").disabled = changed === 0;
+}
+
+function tokenRow(token, value, edited) {
+  const row = document.createElement("div");
+  row.className = "token" + (edited ? " edited" : "");
+
+  const picker = document.createElement("input");
+  picker.type = "color";
+  picker.value = expandHex(value);
+  picker.title = token.label;
+
+  const text = document.createElement("div");
+  text.className = "token-text";
+  const label = document.createElement("div");
+  label.className = "token-label";
+  label.textContent = token.label;
+  const hex = document.createElement("div");
+  hex.className = "token-hex";
+  hex.textContent = value;
+  text.append(label, hex);
+
+  const revert = document.createElement("button");
+  revert.type = "button";
+  revert.className = "token-revert";
+  revert.textContent = "×";
+  revert.title = "Back to the preset's colour";
+  revert.onclick = () => setOverride(token.name, null);
+
+  picker.addEventListener("input", () => {
+    // Paint first, persist after. Dragging a colour picker fires constantly,
+    // and the owner should see the interface follow their thumb rather than
+    // wait on a round trip for every intermediate shade.
+    document.documentElement.style.setProperty(`--${token.name}`, picker.value);
+    hex.textContent = picker.value;
+    row.classList.add("edited");
+    setOverride(token.name, picker.value, { debounce: true });
+  });
+
+  row.append(picker, text, revert);
+  return row;
+}
+
+function expandHex(value) {
+  // <input type="color"> only understands the six-digit form.
+  if (/^#[0-9a-fA-F]{3}$/.test(value)) {
+    return "#" + value.slice(1).split("").map((c) => c + c).join("");
+  }
+  return value;
+}
+
+async function choosePreset(presetId) {
+  // Overrides are deliberately kept. Someone who set their accent to a
+  // particular green meant it, and should not lose it for trying a preset on.
+  app.appearance = await api("/api/appearance", {
+    method: "PATCH",
+    body: JSON.stringify({ preset: presetId }),
+  });
+  applyColors(app.appearance.colors);
+  renderAppearance();
+}
+
+function setOverride(token, value, { debounce = false } = {}) {
+  const overrides = { ...app.appearance.overrides };
+  if (value === null) delete overrides[token];
+  else overrides[token] = value;
+
+  const commit = async () => {
+    app.appearance = await api("/api/appearance", {
+      method: "PATCH",
+      body: JSON.stringify({ overrides }),
+    });
+    applyColors(app.appearance.colors);
+    renderAppearance();
+  };
+
+  clearTimeout(app.appearanceTimer);
+  if (debounce) app.appearanceTimer = setTimeout(commit, 300);
+  else commit();
+}
+
+async function resetAppearance() {
+  app.appearance = await api("/api/appearance", {
+    method: "PATCH",
+    body: JSON.stringify({ overrides: {} }),
+  });
+  applyColors(app.appearance.colors);
+  renderAppearance();
+}
+
 /* ---------- workspace ---------- */
 
 /* The Living Workspace is the Resident's territory. The owner should be able to
@@ -573,23 +745,28 @@ const ICON_SHAPES = {
     '<path d="M4.9 6.6 7 8.6l-2.1 2"/><path d="M8.6 11.1h3"/>',
 };
 
+/* File icons borrow the syntax palette rather than carrying colours of their
+ * own -- a Python file in the listing is the colour Python is in a code block.
+ * The token is named in a style attribute rather than resolved here, so the
+ * icons follow a theme change without anything having to redraw them. */
 const FILE_TYPES = [
-  { match: /\.(py|pyw|pyi)$/i, shape: "page", color: "#61afef" },
-  { match: /\.(js|mjs|cjs|ts|jsx|tsx)$/i, shape: "page", color: "#e5c07b" },
-  { match: /\.(json|ya?ml|toml|ini|cfg|env|lock)$/i, shape: "braces", color: "#d19a66" },
-  { match: /\.(png|jpe?g|gif|webp|ico|bmp|svg)$/i, shape: "image", color: "#56b6c2" },
-  { match: /\.(html?|xml|vue)$/i, shape: "angle", color: "#e06c75" },
-  { match: /\.(css|scss|sass|less)$/i, shape: "page", color: "#56b6c2" },
-  { match: /\.(md|markdown|txt|rst)$/i, shape: "page", color: "#98c379" },
-  { match: /\.(db|sqlite3?|sql)$/i, shape: "database", color: "#c678dd" },
-  { match: /\.(sh|bash|zsh|ps1|bat|cmd)$/i, shape: "terminal", color: "#98c379" },
+  { match: /\.(py|pyw|pyi)$/i, shape: "page", token: "--t-fn" },
+  { match: /\.(js|mjs|cjs|ts|jsx|tsx)$/i, shape: "page", token: "--t-decorator" },
+  { match: /\.(json|ya?ml|toml|ini|cfg|env|lock)$/i, shape: "braces", token: "--t-number" },
+  { match: /\.(png|jpe?g|gif|webp|ico|bmp|svg)$/i, shape: "image", token: "--t-builtin" },
+  { match: /\.(html?|xml|vue)$/i, shape: "angle", token: "--t-tag" },
+  { match: /\.(css|scss|sass|less)$/i, shape: "page", token: "--t-builtin" },
+  { match: /\.(md|markdown|txt|rst)$/i, shape: "page", token: "--t-string" },
+  { match: /\.(db|sqlite3?|sql)$/i, shape: "database", token: "--t-keyword" },
+  { match: /\.(sh|bash|zsh|ps1|bat|cmd)$/i, shape: "terminal", token: "--t-string" },
 ];
 
-const ICON_NEUTRAL = "#7f8896";
+const ICON_NEUTRAL = "--muted";
 
-function iconSvg(shape, color) {
+function iconSvg(shape, token) {
   return (
-    `<svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="${color}" ` +
+    '<svg viewBox="0 0 16 16" width="15" height="15" fill="none" ' +
+    `style="stroke: var(${token})" ` +
     'stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">' +
     `${shape}</svg>`
   );
@@ -597,11 +774,11 @@ function iconSvg(shape, color) {
 
 function fileIcon(entry) {
   if (entry.name === "..") return iconSvg(ICON_SHAPES.up, ICON_NEUTRAL);
-  if (entry.type === "directory") return iconSvg(ICON_SHAPES.folder, "#e5c07b");
+  if (entry.type === "directory") return iconSvg(ICON_SHAPES.folder, "--t-decorator");
   const type = FILE_TYPES.find((candidate) => candidate.match.test(entry.name));
   return iconSvg(
     ICON_SHAPES[type ? type.shape : "page"],
-    type ? type.color : ICON_NEUTRAL
+    type ? type.token : ICON_NEUTRAL
   );
 }
 
@@ -709,6 +886,8 @@ function wireEvents() {
     saved.textContent = "Saved";
     setTimeout(() => { saved.textContent = ""; }, 2000);
   };
+
+  el("reset-appearance").onclick = resetAppearance;
 
   el("add-connection").onclick = () => openForm(null);
   el("conn-cancel").onclick = closeForm;
