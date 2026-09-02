@@ -137,12 +137,19 @@
       <section class="settings-section" data-section="resident" data-label="The Resident">
       <div class="panel">
         <h2>The Resident</h2>
-        <p class="hint">Which mind the Resident currently thinks with, and the
-          standing instructions that describe who it is.</p>
+        <p class="hint">Which mind the Resident thinks with, which one its
+          workers think with, and the standing instructions that describe who
+          it is. The instructions belong to the Resident, not to the model —
+          change the model and it carries on as itself.</p>
 
         <label class="field">
           <span>Primary Resident</span>
           <select id="primary-select"></select>
+        </label>
+
+        <label class="field">
+          <span>Workers <em>the model temporary workers think with</em></span>
+          <select id="worker-select"></select>
         </label>
 
         <label class="field">
@@ -162,8 +169,9 @@
         <div class="panel-head">
           <div>
             <h2>Model Pool</h2>
-            <p class="hint">Every model this Aworg can reach. Only the primary
-              is in use today; the rest are here for the workers that come later.</p>
+            <p class="hint">Every model this Aworg can reach. A connection is
+              one model and how to reach it — never a personality. Who is using
+              it, and how, is set above.</p>
           </div>
           <button id="add-connection">Add connection</button>
         </div>

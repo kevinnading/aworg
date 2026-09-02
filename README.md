@@ -55,6 +55,21 @@ Those zones are separate on disk from the start. Once snapshots exist, "what
 may be published" and "what never leaves this machine" must already be
 distinguishable, and that is expensive to retrofit.
 
+## Connections and roles
+
+A **connection** is one model and how to reach it: provider, model, endpoint,
+credential, tags. It never carries a system prompt.
+
+A **role** is who is using a model and why, and it does carry the prompt. The
+Resident is a role; workers will be roles too, each with its own prompt and its
+own set of tools it is allowed to use. Many roles may share one connection —
+one connection to a 9B, and any number of specialist workers pointing at it.
+
+That separation is deliberate. It is what lets the owner change the mind the
+Resident thinks with and have it carry on as itself, and it means repointing a
+connection at a different model updates every role at once. See
+[docs/06_ARCHITECTURE.md](docs/06_ARCHITECTURE.md).
+
 ## Connecting a model
 
 Two adapters cover most of what an owner will want:

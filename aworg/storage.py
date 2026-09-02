@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS connections (
 CREATE TABLE IF NOT EXISTS resident (
     id                      INTEGER PRIMARY KEY CHECK (id = 1),
     primary_connection_id   TEXT,
+    worker_connection_id    TEXT,
     system_prompt           TEXT NOT NULL DEFAULT '',
     current_conversation_id TEXT,
     updated_at              TEXT NOT NULL DEFAULT (datetime('now'))
@@ -104,9 +105,17 @@ class Store:
         finally:
             conn.close()
 
+    #: Columns added after an Aworg may already have a database. CREATE TABLE
+    #: IF NOT EXISTS leaves an existing table exactly as it was, so a new
+    #: column has to be asked for separately or it silently is not there.
+    MIGRATIONS = [
+        ("resident", "worker_connection_id", "TEXT"),
+    ]
+
     def _init(self) -> None:
         with self._connect() as conn:
             conn.executescript(SCHEMA)
+            self._migrate(conn)
             conn.execute(
                 "INSERT INTO resident (id, system_prompt) VALUES (1, ?) "
                 "ON CONFLICT(id) DO NOTHING",
@@ -118,6 +127,19 @@ class Store:
             conn.execute(
                 "INSERT INTO layout (id) VALUES (1) ON CONFLICT(id) DO NOTHING"
             )
+
+    @classmethod
+    def _migrate(cls, conn) -> None:
+        """Add any column a newer build expects and an older database lacks.
+
+        Deliberately additive only. An owner's Aworg holds their
+        conversation and their configuration; a migration that can drop or
+        rewrite either is a migration that can lose them.
+        """
+        for table, column, decl in cls.MIGRATIONS:
+            existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+            if column not in existing:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
 
     # -- connections ----------------------------------------------------
 
@@ -191,6 +213,11 @@ class Store:
                 "WHERE primary_connection_id = ?",
                 (connection_id,),
             )
+            conn.execute(
+                "UPDATE resident SET worker_connection_id = NULL "
+                "WHERE worker_connection_id = ?",
+                (connection_id,),
+            )
 
     @staticmethod
     def _connection_row(row: sqlite3.Row) -> dict[str, Any]:
@@ -212,12 +239,18 @@ class Store:
             row = conn.execute("SELECT * FROM resident WHERE id = 1").fetchone()
         return {
             "primary_connection_id": row["primary_connection_id"],
+            "worker_connection_id": row["worker_connection_id"],
             "system_prompt": row["system_prompt"],
             "current_conversation_id": row["current_conversation_id"],
         }
 
     def update_resident(self, **fields: Any) -> dict[str, Any]:
-        allowed = {"primary_connection_id", "system_prompt", "current_conversation_id"}
+        allowed = {
+            "primary_connection_id",
+            "worker_connection_id",
+            "system_prompt",
+            "current_conversation_id",
+        }
         sets, values = [], []
         for key, value in fields.items():
             if key not in allowed:

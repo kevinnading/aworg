@@ -319,6 +319,22 @@ function renderSettings() {
     select.appendChild(option);
   }
 
+  const worker = el("worker-select");
+  worker.innerHTML = "";
+  // Unassigned is a real choice, not a missing one: workers then think with
+  // whatever the Resident does.
+  const same = document.createElement("option");
+  same.value = "";
+  same.textContent = "Same as the Resident";
+  worker.appendChild(same);
+  for (const connection of app.connections) {
+    const option = document.createElement("option");
+    option.value = connection.id;
+    option.textContent = `${connection.name} (${connection.model})`;
+    option.selected = connection.id === app.state.worker_connection_id;
+    worker.appendChild(option);
+  }
+
   el("system-prompt").value = app.state.system_prompt;
   renderConnections();
 }
@@ -1334,6 +1350,8 @@ function wireEvents() {
     };
     const chosen = el("primary-select").value;
     if (chosen) body.primary_connection_id = chosen;
+    // Sent even when empty -- that is how the assignment is cleared.
+    body.worker_connection_id = el("worker-select").value;
     await api("/api/resident", { method: "PATCH", body: JSON.stringify(body) });
     await refresh();
     const saved = el("resident-saved");

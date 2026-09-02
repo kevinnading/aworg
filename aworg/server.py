@@ -60,6 +60,7 @@ class ConnectionPatch(BaseModel):
 
 class ResidentPatch(BaseModel):
     primary_connection_id: str | None = None
+    worker_connection_id: str | None = None
     system_prompt: str | None = None
 
 
@@ -117,6 +118,7 @@ def create_app(paths: Paths) -> FastAPI:
         return {
             "resident": resident.state(),
             "primary_connection_id": config["primary_connection_id"],
+            "worker_connection_id": config["worker_connection_id"],
             "system_prompt": config["system_prompt"],
         }
 
@@ -196,6 +198,15 @@ def create_app(paths: Paths) -> FastAPI:
             if store.get_connection(body.primary_connection_id) is None:
                 raise HTTPException(404, "No such connection")
             fields["primary_connection_id"] = body.primary_connection_id
+        if body.worker_connection_id is not None:
+            # An empty string clears the assignment; workers then fall back to
+            # whatever the Resident itself is using.
+            if body.worker_connection_id == "":
+                fields["worker_connection_id"] = None
+            elif store.get_connection(body.worker_connection_id) is None:
+                raise HTTPException(404, "No such connection")
+            else:
+                fields["worker_connection_id"] = body.worker_connection_id
         if body.system_prompt is not None:
             fields["system_prompt"] = body.system_prompt
         if fields:
