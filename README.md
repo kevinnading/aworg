@@ -113,6 +113,10 @@ yet. They say which: a pane marked **not yet** is one whose ability does not
 exist, as distinct from one that exists and is reading zero. That difference
 matters to an owner who cannot check for themselves.
 
+The conversation sits on the darker ground between the panes rather than in
+a card of its own — the panes are the objects, and the composer is the only
+thing in that space that needs an edge.
+
 The **Application** preview holds 16:9. It has no height of its own — widen
 the column and the picture grows with it, which is what bigger means for
 something you watch. The button in its header expands it to fill everything

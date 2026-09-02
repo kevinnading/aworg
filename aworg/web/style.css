@@ -607,21 +607,16 @@ button.tiny { padding: 5px 11px; font-size: 13px; }
   border-top: 1px solid var(--line);
 }
 
-/* The conversation is where the owner works, so it is the one region drawn
-   as an object rather than a division of the window: rounder corners, its
-   own surface, a border all the way round. Everything else is a pane in a
-   frame; this is the thing in the middle of it. */
+/* The conversation takes the darker ground it sits on rather than being
+   drawn as a card on top of it. The panes around it are the objects; this is
+   the space between them, and the composer is the only thing in it that
+   needs an edge. */
 .chat {
   flex: 1;
   min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  margin: 12px;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 16px;
-  overflow: hidden;
 }
 
 /* ---- panes ---- */
