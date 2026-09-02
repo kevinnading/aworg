@@ -113,6 +113,13 @@ yet. They say which: a pane marked **not yet** is one whose ability does not
 exist, as distinct from one that exists and is reading zero. That difference
 matters to an owner who cannot check for themselves.
 
+The three columns are shares of the window — **33% / 40% / 27%** — rather
+than fixed widths, so a bigger screen is a bigger everything instead of a
+bigger conversation beside the same laptop-sized panes. The conversation is
+the remainder rather than a share of its own, so the numbers never have to be
+kept summing to a hundred. Heights stay in pixels: a taller screen does not
+make a log worth more rows.
+
 The conversation sits on the darker ground between the panes rather than in
 a card of its own — the panes are the objects, and the composer is the only
 thing in that space that needs an edge.

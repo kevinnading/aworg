@@ -48,10 +48,18 @@ from typing import Any
 #: The last pane in a column takes whatever height is left rather than
 #: carrying its own, so a column always fills exactly. The preview takes its
 #: height from this column's width instead, to hold 16:9.
-PANES: dict[str, dict[str, int]] = {
-    # -- the columns, left to right
-    "side-width": {"default": 400, "min": 260, "max": 900},
-    "faculties-width": {"default": 232, "min": 170, "max": 500},
+#: Widths are proportions, not pixels. A wider window should be a wider
+#: everything -- when the columns were fixed, every pixel a bigger screen
+#: gained went to the conversation and the panes stayed the size they were on
+#: a laptop. Heights stay in pixels: a taller screen does not make a log worth
+#: more rows, and the pane at the foot of each column already absorbs the
+#: slack.
+PANES: dict[str, dict[str, Any]] = {
+    # -- the columns, left to right. The conversation is not listed because it
+    #    is the remainder: 33 + 27 leaves it 40, and it stays whatever is left
+    #    over as the other two are dragged.
+    "side-width": {"default": 33, "min": 15, "max": 55, "unit": "%"},
+    "faculties-width": {"default": 27, "min": 12, "max": 45, "unit": "%"},
     # -- panes within them, top to bottom (the last of each flexes)
     #
     #: The preview has no height here on purpose. It is a screen, so it keeps
@@ -63,55 +71,72 @@ PANES: dict[str, dict[str, int]] = {
     "skills-height": {"default": 190, "min": 90, "max": 600},
     # -- the activity row above the conversation, and the split within it
     "activity-height": {"default": 186, "min": 96, "max": 600},
-    "tasks-width": {"default": 330, "min": 180, "max": 900},
+    #: A proportion of that row, for the same reason the columns are: Workers
+    #: should not be the only thing that grows when the window does.
+    "tasks-width": {"default": 45, "min": 20, "max": 75, "unit": "%"},
     # -- the console along the bottom
     "log-height": {"default": 172, "min": 90, "max": 800},
 }
 
-DEFAULTS: dict[str, int] = {name: spec["default"] for name, spec in PANES.items()}
+DEFAULTS: dict[str, float] = {name: spec["default"] for name, spec in PANES.items()}
 
 
-def sanitize(raw: Any) -> dict[str, int]:
+def unit_of(name: str) -> str:
+    return PANES[name].get("unit", "px")
+
+
+def sanitize(raw: Any) -> dict[str, float]:
     """Keep only real, in-range sizes.
 
-    These values become CSS lengths, so they are held to being integers
-    within their declared bounds rather than trusted. A browser sending
-    something else -- or an older build sending a pane that no longer exists
-    -- is dropped rather than refused, so one stale key cannot make an
-    otherwise good layout unsavable.
+    These values become CSS lengths, so they are held to being numbers within
+    their declared bounds rather than trusted. A browser sending something
+    else -- or an older build sending a pane that no longer exists -- is
+    dropped rather than refused, so one stale key cannot make an otherwise
+    good layout unsavable.
+
+    Pixels stay whole; proportions keep one decimal, because one percent of a
+    wide window is fifteen pixels and a drag that can only land on whole
+    percents does not feel like dragging.
     """
     if not isinstance(raw, dict):
         return {}
 
-    clean: dict[str, int] = {}
+    clean: dict[str, float] = {}
     for name, value in raw.items():
         spec = PANES.get(name)
         if spec is None or isinstance(value, bool):
             continue
         try:
-            size = int(value)
+            size = float(value)
         except (TypeError, ValueError):
             continue
-        clean[name] = max(spec["min"], min(spec["max"], size))
+        # NaN and the infinities are floats and would survive the clamp --
+        # int(inf) then raises, and NaN loses every comparison, so a window
+        # dragged to either would take the whole request down.
+        if size != size or size in (float("inf"), float("-inf")):
+            continue
+        size = max(spec["min"], min(spec["max"], size))
+        clean[name] = round(size, 1) if unit_of(name) == "%" else int(size)
     return clean
 
 
-def resolve(stored: dict[str, int] | None = None) -> dict[str, int]:
+def resolve(stored: dict[str, float] | None = None) -> dict[str, float]:
     """The sizes in force: the defaults, with whatever the owner dragged."""
     sizes = dict(DEFAULTS)
     sizes.update(sanitize(stored or {}))
     return sizes
 
 
-def is_default(sizes: dict[str, int]) -> bool:
+def is_default(sizes: dict[str, float]) -> bool:
     """Whether there is anything for a reset to undo."""
     return all(sizes.get(name) == value for name, value in DEFAULTS.items())
 
 
-def to_css(sizes: dict[str, int]) -> str:
-    return "".join(f"  --{name}: {sizes[name]}px;\n" for name in PANES)
+def to_css(sizes: dict[str, float]) -> str:
+    return "".join(f"  --{name}: {sizes[name]}{unit_of(name)};\n" for name in PANES)
 
 
 def describe() -> dict[str, Any]:
-    """The bounds, so the interface can stop a drag at the same place."""
-    return {name: dict(spec) for name, spec in PANES.items()}
+    """The bounds and units, so the interface can stop a drag where the server
+    would, and knows whether it is dragging pixels or a share of the window."""
+    return {name: {"unit": "px", **spec} for name, spec in PANES.items()}

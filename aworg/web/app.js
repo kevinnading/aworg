@@ -726,36 +726,53 @@ function wireResizers() {
     // to make it smaller.
     const fromEnd = handle.dataset.anchor === "end";
 
+    const token = `${controlled.dataset.pane || controlled.id}-${vertical ? "width" : "height"}`;
+    const unit = (app.layout.panes[token] || {}).unit || "px";
+
     bindResizer(handle, {
-      pane: `${controlled.dataset.pane || controlled.id}-${vertical ? "width" : "height"}`,
+      pane: token,
       axis: vertical ? "col" : "row",
       fromEnd,
+      unit,
       measure: (event) => {
         const box = controlled.getBoundingClientRect();
-        if (vertical) {
-          return fromEnd ? box.right - event.clientX : event.clientX - box.left;
-        }
-        return fromEnd ? box.bottom - event.clientY : event.clientY - box.top;
+        const pixels = vertical
+          ? (fromEnd ? box.right - event.clientX : event.clientX - box.left)
+          : (fromEnd ? box.bottom - event.clientY : event.clientY - box.top);
+        if (unit !== "%") return pixels;
+
+        // A share is measured against whatever the pane is a share of -- the
+        // row of columns for a column, the activity row for Tasks -- so the
+        // same drag means the same proportion on any size of screen.
+        const whole = controlled.parentElement.getBoundingClientRect();
+        const against = vertical ? whole.width : whole.height;
+        return against ? (pixels / against) * 100 : 0;
       },
     });
   }
 }
 
-function bindResizer(handle, { pane, axis, measure, fromEnd = false }) {
+function bindResizer(handle, { pane, axis, measure, fromEnd = false, unit = "px" }) {
   const bounds = app.layout.panes[pane];
 
   handle.dataset.pane = pane;
   handle.setAttribute("aria-valuemin", bounds.min);
   handle.setAttribute("aria-valuemax", bounds.max);
   handle.setAttribute("aria-valuenow", app.layout.sizes[pane]);
+  if (unit === "%") handle.setAttribute("aria-valuetext", `${app.layout.sizes[pane]}%`);
 
-  const clamp = (value) => Math.round(Math.max(bounds.min, Math.min(bounds.max, value)));
+  // Whole pixels, but tenths of a percent: one percent of a wide window is
+  // fifteen pixels, and a drag that can only land on whole percents does not
+  // feel like a drag. The server rounds to the same places.
+  const round = (value) => (unit === "%" ? Math.round(value * 10) / 10 : Math.round(value));
+  const clamp = (value) => round(Math.max(bounds.min, Math.min(bounds.max, value)));
 
   // A splitter that reports its position only when the drag ends is a
   // splitter nobody driving it by keyboard can follow.
   const apply = (value) => {
-    document.documentElement.style.setProperty(`--${pane}`, `${value}px`);
+    document.documentElement.style.setProperty(`--${pane}`, `${value}${unit}`);
     handle.setAttribute("aria-valuenow", value);
+    if (unit === "%") handle.setAttribute("aria-valuetext", `${value}%`);
   };
 
   handle.addEventListener("pointerdown", (event) => {
@@ -798,7 +815,7 @@ function bindResizer(handle, { pane, axis, measure, fromEnd = false }) {
   // Reachable without a pointer. The arrow keys nudge, as they do on any
   // separator that claims the role.
   handle.addEventListener("keydown", (event) => {
-    const step = event.shiftKey ? 40 : 10;
+    const step = unit === "%" ? (event.shiftKey ? 5 : 1) : (event.shiftKey ? 40 : 10);
     const forward = axis === "col" ? "ArrowRight" : "ArrowDown";
     const back = axis === "col" ? "ArrowLeft" : "ArrowUp";
     if (event.key !== forward && event.key !== back) return;
@@ -826,9 +843,13 @@ async function saveLayout(sizes) {
 
 function applyLayout() {
   for (const [pane, size] of Object.entries(app.layout.sizes)) {
-    document.documentElement.style.setProperty(`--${pane}`, `${size}px`);
+    const unit = (app.layout.panes[pane] || {}).unit || "px";
+    document.documentElement.style.setProperty(`--${pane}`, `${size}${unit}`);
     const handle = document.querySelector(`.resizer[aria-controls][data-pane="${pane}"]`);
-    if (handle) handle.setAttribute("aria-valuenow", size);
+    if (handle) {
+      handle.setAttribute("aria-valuenow", size);
+      if (unit === "%") handle.setAttribute("aria-valuetext", `${size}%`);
+    }
   }
 }
 

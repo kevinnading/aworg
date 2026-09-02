@@ -39,8 +39,19 @@
   --t-flag: #56b6c2;
   --t-doctype: #6b7480;
 
-  /* Default pane sizes; see layout.py, which is where they are defined. */
-  --side-width: 400px;
+  /* Default pane sizes, mirroring layout.py, which is where they are
+     defined. Only a fallback: /api/interface.css carries the owner's own.
+     Widths are shares of the window so a bigger screen is a bigger
+     everything; heights are pixels, because a taller screen does not make a
+     log worth more rows. */
+  --side-width: 33%;
+  --faculties-width: 27%;
+  --tasks-width: 45%;
+  --lifecycle-height: 132px;
+  --capabilities-height: 180px;
+  --skills-height: 190px;
+  --activity-height: 186px;
+  --log-height: 172px;
 }
 
 * { box-sizing: border-box; }
@@ -565,8 +576,13 @@ button.tiny { padding: 5px 11px; font-size: 13px; }
   display: flex;
 }
 
+/* The columns are shares of the window rather than fixed widths, so a wider
+   screen is a wider everything. Their proportion is a flex-basis rather than
+   a width: when the window gets small enough that the shares would squeeze
+   the conversation past its floor, all three give ground together instead of
+   the middle collapsing on its own. */
 .column {
-  flex: none;
+  flex: 0 1 auto;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -575,12 +591,23 @@ button.tiny { padding: 5px 11px; font-size: 13px; }
 }
 
 /* Each column's border faces the middle, where the conversation is. */
-.side { width: var(--side-width); border-right: 1px solid var(--line); }
-.faculties { width: var(--faculties-width); border-left: 1px solid var(--line); }
+.side {
+  flex-basis: var(--side-width);
+  min-width: 240px;
+  border-right: 1px solid var(--line);
+}
+.faculties {
+  flex-basis: var(--faculties-width);
+  min-width: 170px;
+  border-left: 1px solid var(--line);
+}
 
+/* The conversation is the remainder, not a share of its own: 33 and 27 leave
+   it 40, and it stays whatever is left as the other two are dragged. One
+   fewer number to keep summing to a hundred. */
 .main {
-  flex: 1;
-  min-width: 0;
+  flex: 1 1 0;
+  min-width: 300px;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -596,6 +623,9 @@ button.tiny { padding: 5px 11px; font-size: 13px; }
 }
 .activity .pane + .pane,
 .activity .resizer + .pane { border-left: 1px solid var(--line); }
+/* Tasks takes a share of the row for the same reason, so Workers is not the
+   only one of the pair that grows when the window does. */
+.activity > .pane:first-child { flex: 0 1 auto; flex-basis: var(--tasks-width); min-width: 0; }
 
 .console {
   flex: none;
