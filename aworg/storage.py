@@ -44,6 +44,12 @@ CREATE TABLE IF NOT EXISTS appearance (
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS layout (
+    id         INTEGER PRIMARY KEY CHECK (id = 1),
+    sizes      TEXT NOT NULL DEFAULT '{}',
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS conversations (
     id         TEXT PRIMARY KEY,
     title      TEXT NOT NULL DEFAULT 'Conversation',
@@ -108,6 +114,9 @@ class Store:
             )
             conn.execute(
                 "INSERT INTO appearance (id) VALUES (1) ON CONFLICT(id) DO NOTHING"
+            )
+            conn.execute(
+                "INSERT INTO layout (id) VALUES (1) ON CONFLICT(id) DO NOTHING"
             )
 
     # -- connections ----------------------------------------------------
@@ -259,21 +268,57 @@ class Store:
                 conn.execute(f"UPDATE appearance SET {', '.join(sets)} WHERE id = 1", values)
         return self.get_appearance()
 
+    # -- layout ---------------------------------------------------------
+
+    def get_layout(self) -> dict[str, int]:
+        """The sizes the owner has dragged panes to. Empty means untouched."""
+        with self._connect() as conn:
+            row = conn.execute("SELECT sizes FROM layout WHERE id = 1").fetchone()
+        try:
+            sizes = json.loads(row["sizes"])
+        except (ValueError, TypeError):
+            sizes = {}
+        return sizes if isinstance(sizes, dict) else {}
+
+    def update_layout(self, sizes: dict[str, int]) -> dict[str, int]:
+        """Replace the stored sizes outright.
+
+        Replacing rather than merging is what makes resetting the view a
+        matter of storing nothing, instead of storing the defaults back and
+        hoping they still match what the defaults are.
+        """
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE layout SET sizes = ?, updated_at = datetime('now') WHERE id = 1",
+                (json.dumps(sizes),),
+            )
+        return self.get_layout()
+
     # -- conversation ---------------------------------------------------
 
     def current_conversation_id(self) -> str:
-        """The conversation in progress, created on first use.
+        """The one ongoing conversation, created the first time it is needed.
 
-        There is always exactly one current conversation. Restarting AWORG
-        returns the owner to it rather than to a blank slate -- that
-        continuity is most of what makes the Resident feel resident.
+        There is exactly one, and nothing ends it. Restarting AWORG returns
+        the owner to it rather than to a blank slate, and no button offers to
+        start over -- that continuity is most of what makes the Resident feel
+        resident rather than summoned.
+
+        A Resident that can be reset to a stranger is not one anybody would
+        leave running on their machine for a year.
         """
         resident = self.get_resident()
         if resident["current_conversation_id"]:
             return resident["current_conversation_id"]
-        return self.new_conversation()
+        return self._begin_conversation()
 
-    def new_conversation(self) -> str:
+    def _begin_conversation(self) -> str:
+        """Create the conversation. Called once in an Aworg's life.
+
+        Private because nothing should be able to reach past the ongoing
+        conversation and replace it. When casual chats arrive they will be
+        their own thing alongside this one, not a way to end it.
+        """
         conversation_id = uuid.uuid4().hex[:12]
         with self._connect() as conn:
             conn.execute("INSERT INTO conversations (id) VALUES (?)", (conversation_id,))

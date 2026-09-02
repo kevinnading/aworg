@@ -22,14 +22,15 @@ from .models import CAPABILITY_TAGS, PROVIDER_LABELS, ModelError, build_adapter
 from .paths import Paths
 from .resident import Resident
 from .secrets import SecretStore, credential_ref
+from . import layout as layout_settings
 from .storage import Store
 from .theme import (
     PRESETS,
     TOKEN_GROUPS,
     describe,
+    declarations,
     resolve,
     sanitize_overrides,
-    to_css,
 )
 
 
@@ -68,6 +69,17 @@ class ChatBody(BaseModel):
 class AppearancePatch(BaseModel):
     preset: str | None = None
     overrides: dict[str, str] | None = None
+
+
+class LayoutPatch(BaseModel):
+    #: The whole set of dragged sizes. An empty object resets the view.
+    #:
+    #: Deliberately untyped past "an object". Declaring int here would make
+    #: pydantic refuse the entire request over one bad value, which is the
+    #: opposite of what is wanted: one stale or malformed pane should be
+    #: dropped, not take a good layout down with it. layout.sanitize is the
+    #: single gate, and it is strict.
+    sizes: dict[str, Any]
 
 
 def create_app(paths: Paths) -> FastAPI:
@@ -193,10 +205,6 @@ def create_app(paths: Paths) -> FastAPI:
     def conversation() -> dict[str, Any]:
         return resident.conversation()
 
-    @app.post("/api/conversation/new")
-    def new_conversation() -> dict[str, Any]:
-        return resident.new_conversation()
-
     @app.post("/api/chat")
     async def chat(body: ChatBody) -> StreamingResponse:
         text = body.message.strip()
@@ -251,20 +259,49 @@ def create_app(paths: Paths) -> FastAPI:
             store.update_appearance(**fields)
         return appearance_payload()
 
-    @app.get("/api/theme.css")
-    def theme_css() -> Response:
-        """The scheme as a stylesheet, loaded before the first paint.
+    # -- layout ---------------------------------------------------------
 
-        A blocking stylesheet rather than colours applied by script on load:
-        the owner should never watch the interface flash the default theme and
-        then correct itself into theirs.
+    def layout_payload() -> dict[str, Any]:
+        sizes = layout_settings.resolve(store.get_layout())
+        return {
+            "sizes": sizes,
+            "panes": layout_settings.describe(),
+            "is_default": layout_settings.is_default(sizes),
+        }
+
+    @app.get("/api/layout")
+    def get_layout() -> dict[str, Any]:
+        return layout_payload()
+
+    @app.patch("/api/layout")
+    def update_layout(body: LayoutPatch) -> dict[str, Any]:
+        # Sizes are clamped here as well as in the browser. The browser stops a
+        # drag at the boundary out of courtesy; this is the copy that has to
+        # hold, because it is the one that becomes a CSS length.
+        store.update_layout(layout_settings.sanitize(body.sizes))
+        return layout_payload()
+
+    # -- how the interface is set up, as a stylesheet ---------------------
+
+    @app.get("/api/interface.css")
+    def interface_css() -> Response:
+        """The owner's colours and proportions, loaded before the first paint.
+
+        A blocking stylesheet rather than values applied by script on load:
+        the owner should never watch the interface appear in the default
+        scheme, at the default sizes, and then correct itself into theirs.
+
+        Colour and layout ride together because they arrive together. Two
+        stylesheets would mean two chances to paint half-configured.
         """
-        stored = store.get_appearance()
+        appearance = store.get_appearance()
+        colors = declarations(resolve(appearance["preset"], appearance["overrides"]))
+        sizes = layout_settings.to_css(layout_settings.resolve(store.get_layout()))
         return Response(
-            content=to_css(resolve(stored["preset"], stored["overrides"])),
+            content=":root {\n" + colors + sizes + "}\n",
             media_type="text/css",
-            # The scheme changes the moment the owner picks a colour, and a
-            # cached copy would outlive the choice.
+            # Both change the moment the owner drags or picks, and a cached
+            # copy would outlive the choice.
             headers={"Cache-Control": "no-store"},
         )
 

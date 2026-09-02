@@ -15,7 +15,8 @@ the code.
 
 **Milestones 1 and 2: the Resident is present and legible, but cannot yet act.**
 
-It holds a persistent conversation and connects to whichever model you choose —
+It holds one ongoing conversation — the only one there is, with nothing that
+ends it — and connects to whichever model you choose —
 hosted, or one running on your own hardware. The owner interface is one screen:
 the application area and Living Workspace on the left, the conversation down the
 right. Replies render with syntax highlighting, and the workspace listing
@@ -83,9 +84,17 @@ Custom colours layer over the preset rather than replacing it, so trying a
 different preset does not discard them. Each changed colour can be reverted on
 its own, or all of them at once.
 
-The scheme lives in `state.db`, not the browser, and is served as a stylesheet
-that loads before the first paint — so it survives a restart, follows the owner
-to another browser, and never flashes the wrong theme on the way in.
+## The view
+
+Drag the divider between any two panes to resize them. Double-click a divider
+to reset that one pane; **Reset view**, which appears in the top bar as soon as
+anything has been moved, puts them all back. The dividers are focusable, so the
+arrow keys work too.
+
+Sizes live in `state.db` alongside the colour scheme, and both arrive in the
+same stylesheet before the first paint — so the interface survives a restart,
+follows the owner to another browser, and never flashes the wrong scheme or
+jumps into position on the way in.
 
 ## Layout
 
@@ -95,6 +104,7 @@ aworg/
   secrets.py     the credential choke point
   storage.py     runtime and Resident state
   theme.py       the owner interface's colour tokens and presets
+  layout.py      the owner interface's pane sizes
   resident.py    the Resident itself
   server.py      the owner interface's backing service
   models/        provider-neutral model interface and adapters

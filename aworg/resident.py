@@ -64,10 +64,6 @@ class Resident:
             "messages": self.store.messages(conversation_id),
         }
 
-    def new_conversation(self) -> dict[str, Any]:
-        self.store.new_conversation()
-        return self.conversation()
-
     # -- conversing -----------------------------------------------------
 
     async def respond_to(self, text: str) -> AsyncIterator[dict[str, Any]]:

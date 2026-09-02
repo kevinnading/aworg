@@ -303,14 +303,15 @@ def resolve(preset_id: str, overrides: dict[str, str] | None = None) -> dict[str
     return colors
 
 
-def to_css(colors: dict[str, str]) -> str:
-    """Render the scheme as the stylesheet the browser loads before first paint.
+def declarations(colors: dict[str, str]) -> str:
+    """The colour tokens as CSS declarations, without the enclosing rule.
 
-    Served as its own stylesheet rather than applied by script on load, so the
-    owner never sees the interface repaint itself into their theme.
+    Kept separate from the rule so that the layout's tokens can join them in
+    a single :root block. Two blocks would work, but they would also invite
+    the two to be served as two stylesheets, and a browser holding the
+    colours but not yet the proportions paints a half-configured interface.
     """
-    lines = [f"  --{token}: {colors[token]};" for token in TOKENS]
-    return ":root {\n" + "\n".join(lines) + "\n}\n"
+    return "".join(f"  --{token}: {colors[token]};\n" for token in TOKENS)
 
 
 def describe() -> list[dict[str, Any]]:

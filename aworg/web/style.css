@@ -1,6 +1,6 @@
-/* These are the fallback scheme -- the Midnight preset, inlined.
-   The scheme actually in force is served by /api/theme.css, which loads after
-   this file and overrides every one of them. They are kept here so the
+/* These are the fallback scheme -- the Midnight preset, inlined, along with
+   the default pane sizes. What is actually in force is served by
+   /api/interface.css, which loads after this file and overrides every one. They are kept here so the
    interface is still legible if that request ever fails, and so this file can
    be read on its own without wondering what the names resolve to.
 
@@ -38,6 +38,10 @@
   --t-variable: #e06c75;
   --t-flag: #56b6c2;
   --t-doctype: #6b7480;
+
+  /* Default pane sizes; see layout.py, which is where they are defined. */
+  --side-width: 400px;
+  --preview-height: 269px;
 }
 
 * { box-sizing: border-box; }
@@ -186,7 +190,7 @@ main { flex: 1; min-height: 0; display: flex; }
 
 .composer-actions {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   align-items: center;
   margin-top: 10px;
 }
@@ -512,7 +516,7 @@ button.tiny { padding: 5px 11px; font-size: 13px; }
 }
 
 .side {
-  width: 400px;
+  width: var(--side-width);
   flex: none;
   display: flex;
   flex-direction: column;
@@ -523,7 +527,15 @@ button.tiny { padding: 5px 11px; font-size: 13px; }
 
 .side-block { padding: 15px 16px; }
 
-.preview-block { flex: none; border-bottom: 1px solid var(--line); }
+/* The preview takes the height the owner dragged it to rather than a fixed
+   ratio. What is being watched decides the shape it wants to be watched in. */
+.preview-block {
+  flex: none;
+  height: var(--preview-height);
+  display: flex;
+  flex-direction: column;
+  border-bottom: 1px solid var(--line);
+}
 
 .files-block {
   flex: 1;
@@ -550,11 +562,12 @@ button.tiny { padding: 5px 11px; font-size: 13px; }
 }
 
 .preview {
+  flex: 1;
+  min-height: 0;
   border: 1px solid var(--line);
   border-radius: 9px;
   overflow: hidden;
   background: var(--code-bg);
-  aspect-ratio: 16 / 9;
 }
 
 .preview-inner { width: 100%; height: 100%; }
@@ -665,6 +678,9 @@ button.tiny { padding: 5px 11px; font-size: 13px; }
     border-bottom: 1px solid var(--line);
   }
   .files-block { max-height: 240px; }
+  /* Stacked, there is no column edge to drag. The preview's height still
+     means something, so that handle stays. */
+  .resizer.vertical { display: none; }
 }
 
 @media (max-width: 900px) {
@@ -810,3 +826,52 @@ button.tiny { padding: 5px 11px; font-size: 13px; }
   padding-top: 18px;
   border-top: 1px solid var(--line);
 }
+
+/* ---- resizing ---- */
+
+/* A one-pixel border is a fair divider and a poor handle. The handle straddles
+   the border with negative margins so it is a comfortable target without
+   changing where anything sits, and it shows itself only when reached for --
+   an interface covered in visible grab bars is telling the owner about its own
+   construction, which is not what they came here to look at. */
+
+.resizer {
+  flex: none;
+  position: relative;
+  z-index: 2;
+  background: none;
+  border: none;
+  padding: 0;
+  touch-action: none;
+}
+
+.resizer.vertical { width: 9px; margin: 0 -5px; cursor: col-resize; }
+.resizer.horizontal { height: 9px; margin: -5px 0; cursor: row-resize; }
+
+.resizer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: none;
+  transition: background 120ms ease;
+}
+.resizer.vertical::after { left: 4px; right: 4px; }
+.resizer.horizontal::after { top: 4px; bottom: 4px; }
+
+.resizer:hover::after,
+.resizer:focus-visible::after,
+.resizer.dragging::after { background: var(--accent); }
+
+.resizer:focus-visible { outline: none; }
+
+/* While a drag is in progress the cursor belongs to the drag, not to whatever
+   happens to be under the pointer, and nothing should select. */
+body.resizing { user-select: none; }
+body.resizing.col * { cursor: col-resize !important; }
+body.resizing.row * { cursor: row-resize !important; }
+
+/* Shown only once there is something to undo. A permanent control for a state
+   the owner is usually not in is clutter; appearing the moment they drag makes
+   it findable exactly when it is wanted. */
+.viewtab.reset-view { color: var(--muted); }
+.viewtab.reset-view:hover { color: var(--text); }

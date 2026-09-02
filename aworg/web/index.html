@@ -7,7 +7,7 @@
 <link rel="stylesheet" href="/style.css">
 <!-- The owner's scheme, loaded after the stylesheet so it wins, and as a
      blocking stylesheet so the interface is never painted in the wrong one. -->
-<link rel="stylesheet" href="/api/theme.css">
+<link rel="stylesheet" href="/api/interface.css">
 </head>
 <body>
 
@@ -20,6 +20,7 @@
     </span>
   </div>
   <nav class="views">
+    <button class="viewtab reset-view" id="reset-view" hidden>Reset view</button>
     <button class="viewtab active" data-view="home">Home</button>
     <button class="viewtab" data-view="settings">Settings</button>
   </nav>
@@ -30,9 +31,9 @@
   <section id="view-home" class="view active">
     <div class="home">
 
-      <aside class="side">
+      <aside class="side" id="side">
 
-        <div class="side-block preview-block">
+        <div class="side-block preview-block" id="preview-block">
           <div class="side-head">
             <h2>Application</h2>
           </div>
@@ -46,6 +47,11 @@
           </div>
         </div>
 
+        <div class="resizer horizontal" id="resize-preview"
+             role="separator" aria-orientation="horizontal" tabindex="0"
+             aria-label="Height of the application preview"
+             aria-controls="preview-block"></div>
+
         <div class="side-block files-block">
           <div class="side-head">
             <h2>Living Workspace</h2>
@@ -57,12 +63,16 @@
 
       </aside>
 
+      <div class="resizer vertical" id="resize-side"
+           role="separator" aria-orientation="vertical" tabindex="0"
+           aria-label="Width of the application and workspace column"
+           aria-controls="side"></div>
+
       <section class="chat">
         <div class="messages" id="messages"></div>
         <form class="composer" id="composer">
           <textarea id="input" rows="1" placeholder="Say something to your Resident…"></textarea>
           <div class="composer-actions">
-            <button type="button" class="ghost" id="new-conversation">New conversation</button>
             <button type="submit" id="send">Send</button>
           </div>
         </form>

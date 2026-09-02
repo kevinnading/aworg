@@ -19,6 +19,7 @@ const app = {
   workspaceTimer: null,
   appearance: null,
   appearanceTimer: null,
+  layout: null,
 };
 
 /* ---------- api ---------- */
@@ -49,25 +50,29 @@ async function boot() {
   buildSettingsNav();
   await refresh();
   wireEvents();
+  wireResizers();
   // Home is where the owner lands, and the workspace is part of it.
   startWorkspaceWatch();
 }
 
 async function refresh() {
-  const [state, connections, conversation, appearance] = await Promise.all([
+  const [state, connections, conversation, appearance, layout] = await Promise.all([
     api("/api/state"),
     api("/api/connections"),
     api("/api/conversation"),
     api("/api/appearance"),
+    api("/api/layout"),
   ]);
   app.state = state;
   app.connections = connections;
   app.conversation = conversation;
   app.appearance = appearance;
+  app.layout = layout;
   renderStatus();
   renderChat();
   renderSettings();
   renderAppearance();
+  renderResetView();
 }
 
 /* ---------- status ---------- */
@@ -457,10 +462,131 @@ function closeForm() {
   app.editingTags = new Set();
 }
 
+/* ---------- resizing ---------- */
+
+/* The sizes are already applied before this file runs -- /api/interface.css
+ * carries them alongside the colours. What happens here is changing them.
+ *
+ * A drag writes straight to the custom property, so the pane follows the
+ * pointer with no re-render in between. Only the release is written down.
+ * Persisting every intermediate pixel would be a request per frame to record
+ * sizes the owner was moving through rather than choosing. */
+
+function wireResizers() {
+  bindResizer(el("resize-side"), {
+    pane: "side-width",
+    axis: "col",
+    measure: (event) => event.clientX - el("resize-side").parentElement.getBoundingClientRect().left,
+  });
+  bindResizer(el("resize-preview"), {
+    pane: "preview-height",
+    axis: "row",
+    measure: (event) => event.clientY - document.querySelector(".preview-block").getBoundingClientRect().top,
+  });
+}
+
+function bindResizer(handle, { pane, axis, measure }) {
+  const bounds = app.layout.panes[pane];
+
+  handle.dataset.pane = pane;
+  handle.setAttribute("aria-valuemin", bounds.min);
+  handle.setAttribute("aria-valuemax", bounds.max);
+  handle.setAttribute("aria-valuenow", app.layout.sizes[pane]);
+
+  const clamp = (value) => Math.round(Math.max(bounds.min, Math.min(bounds.max, value)));
+
+  // A splitter that reports its position only when the drag ends is a
+  // splitter nobody driving it by keyboard can follow.
+  const apply = (value) => {
+    document.documentElement.style.setProperty(`--${pane}`, `${value}px`);
+    handle.setAttribute("aria-valuenow", value);
+  };
+
+  handle.addEventListener("pointerdown", (event) => {
+    // Ignore anything but a plain primary-button drag.
+    if (event.button !== 0) return;
+    event.preventDefault();
+
+    let size = clamp(measure(event));
+    handle.setPointerCapture(event.pointerId);
+    handle.classList.add("dragging");
+    document.body.classList.add("resizing", axis);
+
+    const onMove = (moveEvent) => {
+      size = clamp(measure(moveEvent));
+      apply(size);
+    };
+
+    const onUp = () => {
+      handle.removeEventListener("pointermove", onMove);
+      handle.removeEventListener("pointerup", onUp);
+      handle.removeEventListener("pointercancel", onUp);
+      handle.classList.remove("dragging");
+      document.body.classList.remove("resizing", axis);
+      saveLayout({ ...app.layout.sizes, [pane]: size });
+    };
+
+    handle.addEventListener("pointermove", onMove);
+    handle.addEventListener("pointerup", onUp);
+    handle.addEventListener("pointercancel", onUp);
+  });
+
+  // Double-clicking a divider resets that one pane. Every editor does this,
+  // and it saves reaching for the general reset to undo one mistake.
+  handle.addEventListener("dblclick", () => {
+    const sizes = { ...app.layout.sizes };
+    delete sizes[pane];
+    saveLayout(sizes);
+  });
+
+  // Reachable without a pointer. The arrow keys nudge, as they do on any
+  // separator that claims the role.
+  handle.addEventListener("keydown", (event) => {
+    const step = event.shiftKey ? 40 : 10;
+    const forward = axis === "col" ? "ArrowRight" : "ArrowDown";
+    const back = axis === "col" ? "ArrowLeft" : "ArrowUp";
+    if (event.key !== forward && event.key !== back) return;
+    event.preventDefault();
+    const current = app.layout.sizes[pane];
+    saveLayout({
+      ...app.layout.sizes,
+      [pane]: clamp(current + (event.key === forward ? step : -step)),
+    });
+  });
+}
+
+async function saveLayout(sizes) {
+  app.layout = await api("/api/layout", {
+    method: "PATCH",
+    body: JSON.stringify({ sizes }),
+  });
+  applyLayout();
+  renderResetView();
+}
+
+function applyLayout() {
+  for (const [pane, size] of Object.entries(app.layout.sizes)) {
+    document.documentElement.style.setProperty(`--${pane}`, `${size}px`);
+    const handle = document.querySelector(`.resizer[aria-controls][data-pane="${pane}"]`);
+    if (handle) handle.setAttribute("aria-valuenow", size);
+  }
+}
+
+function renderResetView() {
+  el("reset-view").hidden = app.layout.is_default;
+}
+
+async function resetView() {
+  // Storing nothing rather than storing the defaults back: the view then
+  // means "whatever the defaults are", not "whatever they were the day this
+  // was reset".
+  await saveLayout({});
+}
+
 /* ---------- appearance ---------- */
 
-/* The scheme is already on screen before this file runs -- /api/theme.css saw
- * to that. What happens here is editing it: every change is shown immediately
+/* The scheme is already on screen before this file runs -- /api/interface.css
+ * saw to that. What happens here is editing it: every change is shown immediately
  * on the real interface rather than in a preview swatch, because the only
  * useful question about a colour scheme is what it looks like to work in. */
 
@@ -899,14 +1025,6 @@ function wireEvents() {
     send(text);
   };
 
-  el("new-conversation").onclick = async () => {
-    if (app.streaming) return;
-    if (app.conversation.messages.length &&
-        !confirm("Start a new conversation? The Resident will not carry this one forward.")) return;
-    app.conversation = await api("/api/conversation/new", { method: "POST" });
-    renderChat();
-  };
-
   el("save-resident").onclick = async () => {
     const body = {
       system_prompt: el("system-prompt").value,
@@ -921,6 +1039,7 @@ function wireEvents() {
   };
 
   el("reset-appearance").onclick = resetAppearance;
+  el("reset-view").onclick = resetView;
 
   el("add-connection").onclick = () => openForm(null);
   el("conn-cancel").onclick = closeForm;
