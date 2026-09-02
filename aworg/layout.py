@@ -29,32 +29,33 @@ from typing import Any
 #:
 #: The arrangement these describe:
 #:
-#:     +-----------+-------------+--------------------------+
-#:     | Capabil.  | Application | Tasks     |   Workers    |
-#:     | Skills    | Lifecycle   +--------------------------+
-#:     | Tools     | Workspace   |                          |
-#:     |           |             |     Conversation         |
-#:     +-----------+-------------+--------------------------+
+#:     +-------------+--------------------------+-----------+
+#:     | Application | Tasks     |   Workers    | Capabil.  |
+#:     | Lifecycle   +--------------------------+ Skills    |
+#:     | Workspace   |                          | Tools     |
+#:     |             |     Conversation         |           |
+#:     +-------------+--------------------------+-----------+
 #:     |            Living Log, the full width              |
 #:     +----------------------------------------------------+
 #:
-#: What the Resident can do is furthest from the conversation, because it
-#: changes least. What it is doing right now sits directly above the
-#: conversation, because that is what the owner is talking to it about. The
-#: log runs the width of the screen underneath everything, the way a console
-#: does, because it is the one thing that reports on all of it.
+#: The workspace and the conversation hold the middle, because that is where
+#: the work happens. What the Resident can do is held at the right edge: it
+#: changes least and is glanced at rather than worked in. What it is doing
+#: sits directly above the conversation, because that is what the owner is
+#: talking to it about. The log runs the width of the screen underneath
+#: everything, the way a console does, because it reports on all of it.
 #:
 #: The last pane in a column takes whatever height is left rather than
 #: carrying its own, so a column always fills exactly.
 PANES: dict[str, dict[str, int]] = {
     # -- the columns, left to right
-    "faculties-width": {"default": 232, "min": 170, "max": 500},
     "side-width": {"default": 400, "min": 260, "max": 900},
+    "faculties-width": {"default": 232, "min": 170, "max": 500},
     # -- panes within them, top to bottom (the last of each flexes)
-    "capabilities-height": {"default": 180, "min": 90, "max": 600},
-    "skills-height": {"default": 190, "min": 90, "max": 600},
     "preview-height": {"default": 269, "min": 130, "max": 700},
     "lifecycle-height": {"default": 132, "min": 96, "max": 300},
+    "capabilities-height": {"default": 180, "min": 90, "max": 600},
+    "skills-height": {"default": 190, "min": 90, "max": 600},
     # -- the activity row above the conversation, and the split within it
     "activity-height": {"default": 186, "min": 96, "max": 600},
     "tasks-width": {"default": 330, "min": 180, "max": 900},

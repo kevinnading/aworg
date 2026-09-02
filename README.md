@@ -91,21 +91,22 @@ tabs — an instrument nobody is looking at is not an instrument — and each on
 can be dragged to whatever size it deserves.
 
 ```
-+-----------+-------------+--------------------------+
-| Capabil.  | Application | Tasks     |   Workers    |
-| Skills    | Lifecycle   +--------------------------+
-| Tools     | Workspace   |                          |
-|           |             |     Conversation         |
-+-----------+-------------+--------------------------+
++-------------+--------------------------+-----------+
+| Application | Tasks     |   Workers    | Capabil.  |
+| Lifecycle   +--------------------------+ Skills    |
+| Workspace   |                          | Tools     |
+|             |     Conversation         |           |
++-------------+--------------------------+-----------+
 |            Living Log, the full width              |
 +----------------------------------------------------+
 ```
 
-The arrangement follows how fast things change. What the Resident *can* do
-sits furthest from the conversation, because it changes least. What it *is*
-doing sits directly above the conversation, because that is what the owner is
-talking to it about. The Living Log runs the whole width underneath, the way
-a console does, because it is the one thing that reports on all of it.
+The workspace and the conversation hold the middle, because that is where the
+work happens. What the Resident *can* do is held at the right edge — it
+changes least and is glanced at rather than worked in. What it *is* doing sits
+directly above the conversation, because that is what the owner is talking to
+it about. The Living Log runs the whole width underneath, the way a console
+does, because it is the one thing that reports on all of it.
 
 Most panes are empty, and several are for abilities the Resident does not have
 yet. They say which: a pane marked **not yet** is one whose ability does not

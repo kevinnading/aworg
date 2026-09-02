@@ -540,12 +540,12 @@ button.tiny { padding: 5px 11px; font-size: 13px; }
   flex-direction: column;
   min-height: 0;
   background: var(--panel);
-  border-right: 1px solid var(--line);
   overflow-y: auto;
 }
 
-.faculties { width: var(--faculties-width); }
-.side { width: var(--side-width); }
+/* Each column's border faces the middle, where the conversation is. */
+.side { width: var(--side-width); border-right: 1px solid var(--line); }
+.faculties { width: var(--faculties-width); border-left: 1px solid var(--line); }
 
 .main {
   flex: 1;
@@ -873,6 +873,7 @@ button.tiny { padding: 5px 11px; font-size: 13px; }
     width: 100%;
     flex: none;
     border-right: none;
+    border-left: none;
     border-bottom: 1px solid var(--line);
     overflow-y: visible;
   }

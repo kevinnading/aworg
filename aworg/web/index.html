@@ -38,15 +38,6 @@
 
       <div class="workbench">
 
-        <!-- What the Resident can do. Furthest from the conversation
-             because it changes the least. -->
-        <aside class="column faculties" id="faculties"></aside>
-
-        <div class="resizer vertical" id="resize-faculties"
-             role="separator" aria-orientation="vertical" tabindex="0"
-             aria-label="Width of the capabilities column"
-             aria-controls="faculties"></div>
-
         <!-- The application and what the Resident has made of it. -->
         <aside class="column side" id="side"></aside>
 
@@ -77,6 +68,17 @@
           </section>
 
         </section>
+
+        <!-- What the Resident can do. Held at the right edge, out of the
+             path between the workspace and the conversation, because it is
+             reference the owner glances at rather than works in. Its divider
+             sits before it, so the drag is anchored to its right edge. -->
+        <div class="resizer vertical" id="resize-faculties" data-anchor="end"
+             role="separator" aria-orientation="vertical" tabindex="0"
+             aria-label="Width of the capabilities column"
+             aria-controls="faculties"></div>
+
+        <aside class="column faculties" id="faculties"></aside>
 
       </div>
 
