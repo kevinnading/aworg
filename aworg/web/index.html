@@ -72,8 +72,18 @@
   </section>
 
   <section id="view-settings" class="view">
-    <div class="settings-scroll">
+    <div class="settings">
 
+      <!-- Generated from the sections themselves, so adding one is a matter of
+           adding a section and nothing else. -->
+      <nav class="settings-nav">
+        <div class="settings-nav-items" id="settings-nav"></div>
+        <p class="home-note" id="home-note"></p>
+      </nav>
+
+      <div class="settings-scroll" id="settings-scroll">
+
+      <section class="settings-section" data-section="appearance" data-label="Appearance">
       <div class="panel">
         <div class="panel-head">
           <div>
@@ -92,7 +102,9 @@
           <span class="hint" id="appearance-note" style="margin: 0;"></span>
         </div>
       </div>
+      </section>
 
+      <section class="settings-section" data-section="resident" data-label="The Resident">
       <div class="panel">
         <h2>The Resident</h2>
         <p class="hint">Which mind the Resident currently thinks with, and the
@@ -113,7 +125,9 @@
           <span class="saved" id="resident-saved"></span>
         </div>
       </div>
+      </section>
 
+      <section class="settings-section" data-section="models" data-label="Model Pool">
       <div class="panel">
         <div class="panel-head">
           <div>
@@ -164,9 +178,9 @@
           </div>
         </form>
       </div>
+      </section>
 
-      <p class="home-note" id="home-note"></p>
-
+      </div>
     </div>
   </section>
 

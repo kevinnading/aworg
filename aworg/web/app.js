@@ -46,6 +46,7 @@ async function boot() {
   el("home-note").textContent = `This Aworg lives at ${app.meta.home}`;
   buildProviderOptions();
   buildTagChips();
+  buildSettingsNav();
   await refresh();
   wireEvents();
   // Home is where the owner lands, and the workspace is part of it.
@@ -217,6 +218,38 @@ function setStreaming(on) {
 }
 
 /* ---------- settings ---------- */
+
+/* The rail is generated from the sections in the document rather than from a
+ * list kept alongside them. There will be more sections than there are today,
+ * and a second place to remember to update is a second place to forget. */
+
+function buildSettingsNav() {
+  const nav = el("settings-nav");
+  nav.innerHTML = "";
+
+  const sections = [...document.querySelectorAll(".settings-section")];
+  for (const section of sections) {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.dataset.section = section.dataset.section;
+    item.textContent = section.dataset.label;
+    item.onclick = () => showSettingsSection(section.dataset.section);
+    nav.appendChild(item);
+  }
+
+  if (sections.length) showSettingsSection(sections[0].dataset.section);
+}
+
+function showSettingsSection(id) {
+  for (const section of document.querySelectorAll(".settings-section")) {
+    section.classList.toggle("on", section.dataset.section === id);
+  }
+  for (const item of el("settings-nav").children) {
+    item.classList.toggle("on", item.dataset.section === id);
+  }
+  // A new section starts at its own top, not at wherever the last one was left.
+  el("settings-scroll").scrollTop = 0;
+}
 
 function buildProviderOptions() {
   const select = el("conn-provider");
