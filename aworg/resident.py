@@ -64,9 +64,11 @@ class Resident:
     def __init__(self, store: Store, secrets: SecretStore):
         self.store = store
         self.secrets = secrets
-        #: Observed once at startup rather than at install, because a machine
+        #: Observed at startup rather than at install, because a machine
         #: surveyed at install time is wrong the first time its owner
-        #: installs anything. About 230ms, so it costs nothing to be right.
+        #: installs anything -- and refreshed as it ages, because an Aworg
+        #: started once and left running for weeks would otherwise be
+        #: working from a picture of the machine as it was on the first day.
         self.host = host.observe()
         #: At most one, because there is one Resident and one conversation.
         self.turn: Turn | None = None
@@ -137,6 +139,17 @@ class Resident:
     #: at length. A fifth of the window, never less than 512 tokens.
     REPLY_RESERVE_SHARE = 5
     REPLY_RESERVE_MIN = 512
+
+    async def refresh_host(self) -> None:
+        """Look at the machine again if what we know has gone stale.
+
+        On a worker thread: the look takes about a quarter of a second, and
+        holding the event loop for that would stall every other request in
+        an interface that is streaming a reply at the time.
+        """
+        if not host.is_stale(self.host):
+            return
+        self.host = await asyncio.to_thread(host.observe)
 
     def system_prompt(self) -> str:
         """What the model is told about itself, and about where it is.
@@ -327,6 +340,10 @@ class Resident:
         distinguish a reply arriving from a failure to reply.
         """
         conversation_id = self.store.current_conversation_id()
+
+        # About to describe the machine to the model, so make sure the
+        # description is not months old.
+        await self.refresh_host()
 
         # The owner said it, so it happened. Record it before attempting a
         # reply -- if the model is unreachable, the message should not vanish.

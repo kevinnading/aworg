@@ -127,6 +127,13 @@ lives outside any workspace by definition. A boundary drawn around the
 workspace would either be a lie the moment the Resident installed anything,
 or a cage that stopped it doing the job.
 
+The Living Workspace is a *suggestion*, then, not a fence: the place the
+Resident builds an application by convention, so that "the thing that was
+built" stays identifiable when snapshots arrive. It says nothing about where
+the Resident may work. Helping run the machine — installing services,
+changing configuration, tidying what is already there — is part of the job,
+and none of it happens in `workspace/`.
+
 So there is no boundary here. **AWORG runs with exactly the privileges of
 the account that started it.** Run it as yourself and it is you; run it as
 root and it is root; run it inside bubblewrap, a container, or a VM and it
@@ -141,9 +148,11 @@ Capabilities pane and sent to the Resident with every message. An owner about
 to ask for postgres can see beforehand whether this Aworg could install it.
 A Resident that knows it is on Windows does not propose `apt install`.
 
-The facts are gathered at every start rather than once at install, because a
+The facts are gathered at start rather than once at install, because a
 machine surveyed at install time is wrong the first time its owner installs
-anything. They are kept beside the owner's standing instructions rather than
+anything — and re-gathered once they are more than a few hours old, because
+an Aworg is started once and then left running for weeks. A picture of the
+machine taken at boot describes the first day of a month-long life. They are kept beside the owner's standing instructions rather than
 written into them: the instructions are the owner's to write, the facts are
 AWORG's to observe, and mixing the two would leave the owner maintaining a
 description of their own machine.

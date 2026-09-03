@@ -50,10 +50,18 @@ class Paths:
 
     @property
     def workspace(self) -> Path:
-        """The Living Workspace.
+        """The Living Workspace: where the Resident builds, by convention.
 
-        Created now but untouched until Milestone 2, when the Resident gains
-        the ability to act rather than only converse.
+        A suggested home for what it makes, not a boundary around what it
+        may touch. AWORG is meant to help run the machine -- installing
+        services, changing configuration, managing what is already there --
+        and most of that lives nowhere near here. The Resident has whatever
+        the account that started AWORG has; see docs/06_ARCHITECTURE.md.
+
+        What this directory is for is the separation the white paper draws
+        between what may eventually be published and what must never leave
+        the machine. Keeping the built thing in one known place is what
+        makes that distinction cheap later.
         """
         return self.home / "workspace"
 

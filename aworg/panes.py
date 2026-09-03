@@ -33,7 +33,7 @@ PANES: list[dict[str, Any]] = [
     {
         "id": "workspace",
         "label": "Living Workspace",
-        "hint": "Everything the Resident has made.",
+        "hint": "Where the Resident builds by default. Not a limit on where it can work.",
         "available": True,
         "empty": ("Nothing here yet.",
                   "Your Resident cannot create files until it is given tools "

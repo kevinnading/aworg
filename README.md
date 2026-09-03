@@ -76,13 +76,18 @@ elevated, and what is on PATH. About 230ms, no extra dependencies.
 
 Those facts go two places — the **Capabilities** pane, so you can see before
 asking whether this Aworg could install postgres, and the Resident's context,
-so it does not propose `apt install` on Windows. They are observed at every
-start rather than once at install, because a machine surveyed at install time
-is wrong the first time you install anything.
+so it does not propose `apt install` on Windows. They are taken at start
+rather than at install, and taken again once they are more than three hours
+old: an Aworg is started once and then runs for weeks, so a picture of the
+machine from boot describes the first day of a month-long life.
 
 AWORG runs with exactly the privileges of the account that started it. It does
 not confine itself and does not pretend to — if you want it sandboxed, launch
 it that way. Its job is to tell you which it is.
+
+The Living Workspace is where the Resident builds by convention, so that what
+it made stays identifiable when snapshots arrive. It is not a fence. Helping
+run the machine is part of the job, and none of that happens in `workspace/`.
 
 ## A reply belongs to the Resident, not to a browser tab
 

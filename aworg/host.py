@@ -12,9 +12,15 @@ Everything here comes from the standard library. AWORG has four dependencies
 and adding a fifth to answer "how much memory is there" would be a poor
 trade; the two facts the stdlib will not give portably -- total memory, and
 whether we are elevated -- are small enough to reach for directly. Measured
-at about 230ms in total, which is why it is done at every startup rather than
-once at install: a machine surveyed at install time is wrong the first time
-its owner installs anything.
+at about 230ms in total, which is why it is done at startup rather than once
+at install: a machine surveyed at install time is wrong the first time its
+owner installs anything.
+
+Startup is not enough either. An Aworg is started once and then runs for
+weeks -- that is the point of it -- so facts gathered at boot are stale by
+the second day. They are re-gathered whenever they are older than a few
+hours, which costs a quarter of a second somewhere between one owner's
+message and the next.
 
 Nothing here is a boundary. AWORG runs with exactly the privileges of the
 account that started it -- run it as yourself and it is you, run it as root
@@ -25,12 +31,20 @@ module's job is to say which of those is true, not to decide it.
 from __future__ import annotations
 
 import ctypes
+import time
 import os
 import platform
 import shutil
 import socket
 import sys
 from typing import Any
+
+
+#: How long an observation is worth trusting. Machines change under a
+#: long-running Aworg: things get installed, disks fill, an owner grants
+#: sudo. Three hours is short enough that the Resident is rarely working
+#: from a stale picture, and long enough that the cost never shows.
+STALE_AFTER = 3 * 60 * 60
 
 
 #: Programs worth knowing about before planning any work. Presence is not the
@@ -171,7 +185,27 @@ def observe() -> dict[str, Any]:
         "python": platform.python_version(),
         "python_executable": sys.executable,
         "tools": sorted(tools),
+        #: When this was taken, so anything holding on to it can tell how
+        #: old it is -- and so the interface can say so rather than
+        #: presenting a week-old reading as though it were current.
+        "observed_at": time.time(),
+        "observed_monotonic": time.monotonic(),
     }
+
+
+def is_stale(facts: dict[str, Any] | None, max_age: float = STALE_AFTER) -> bool:
+    """Whether an observation is old enough to be worth taking again.
+
+    Measured on the monotonic clock, so that the machine's wall clock being
+    corrected -- or the laptop waking from sleep -- cannot make a fresh
+    reading look ancient or an ancient one look fresh.
+    """
+    if not facts:
+        return True
+    taken = facts.get("observed_monotonic")
+    if taken is None:
+        return True
+    return (time.monotonic() - taken) > max_age
 
 
 def _gb(value: int | None) -> str:
