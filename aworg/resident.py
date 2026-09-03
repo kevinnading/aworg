@@ -76,6 +76,16 @@ class Resident:
     #: across a long conversation, so it is counted rather than ignored.
     TOKENS_PER_MESSAGE = 5
 
+    #: A deliberately generous characters-per-token, used only for the guard
+    #: that stops a message being typed past what could ever be sent.
+    #:
+    #: The measured figure errs high, which is right for reporting -- it
+    #: overstates the cost, so the ring never flatters. For a guard that is
+    #: backwards: overstating would refuse text that would in fact have fit.
+    #: A guard should only ever stop what is definitely too large, so it
+    #: assumes the friendlier ratio.
+    CHARS_PER_TOKEN_GENEROUS = 4.2
+
     #: Room left for the reply. A window is not a budget for history alone --
     #: the model still has to answer inside it, and a reasoning model answers
     #: at length. A fifth of the window, never less than 512 tokens.
@@ -185,6 +195,14 @@ class Resident:
             "dropped": plan["dropped"],
             "overflowing": plan["overflowing"],
             "chars_per_token": self.CHARS_PER_TOKEN,
+            # The largest single message that could ever be sent. Dropping
+            # history does not help past this: one message bigger than the
+            # budget cannot fit however much room is made for it.
+            "max_message_tokens": plan.get("budget"),
+            "max_message_chars": (
+                int(plan["budget"] * self.CHARS_PER_TOKEN_GENEROUS)
+                if plan.get("budget") else None
+            ),
         }
 
     async def respond_to(self, text: str) -> AsyncIterator[dict[str, Any]]:

@@ -150,6 +150,8 @@ function renderContext() {
   el("context-pct").textContent = pct === null ? compact : Math.round(pct) + "%";
   ring.setAttribute("aria-valuenow", pct === null ? 0 : Math.round(pct));
 
+  renderComposerLimit();
+
   const how = exact ? "exact" : "estimated";
   const cut = info.dropped
     ? `\n${info.dropped} older ${info.dropped === 1 ? "message is" : "messages are"} `
@@ -185,6 +187,64 @@ function markTruncation(dropped) {
     + `<span title="Everything above is still saved, and still yours to read.">`
     + `${dropped} earlier ${dropped === 1 ? "message" : "messages"} no longer sent</span>`;
   box.insertBefore(mark, messages[dropped]);
+}
+
+/* Grow the box to the text, but never past the room there is for it.
+ *
+ * The ceiling is not a number someone chose: it is what is actually
+ * available once the conversation still has somewhere to be. A
+ * viewport-relative cap cannot know that -- the chat is one pane among
+ * several and is routinely far shorter than the window -- which is how a
+ * 60vh rule produced a 516px composer inside a 308px chat, squeezing the
+ * messages to 26 pixels and pushing the composer's own warning off the
+ * bottom of the screen. */
+function fitComposer() {
+  const input = el("input");
+  const chat = document.querySelector(".chat");
+  input.style.height = "auto";
+  const ceiling = chat && chat.clientHeight
+    ? Math.max(120, chat.clientHeight * 0.6)
+    : Infinity;
+  input.style.height = `${Math.min(input.scrollHeight, ceiling)}px`;
+}
+
+/* The guard on the composer.
+ *
+ * Truncation means a long message is not dangerous -- it pushes older ones
+ * out of view and the conversation carries on. The one thing that cannot be
+ * rescued is a single message larger than the budget itself: no amount of
+ * dropping history makes room for it, and the provider refuses the turn
+ * outright. That is the only thing worth stopping, and it is worth stopping
+ * before it is typed rather than after it is sent.
+ *
+ * It will not fire for most people. It is here for a small window on a
+ * budget model, where a pasted file is over the line in one keystroke. */
+
+function maxDraftChars() {
+  const info = app.context;
+  if (!info || !info.max_message_chars) return null;   // no window, no edge
+  return info.max_message_chars;
+}
+
+function renderComposerLimit() {
+  const input = el("input");
+  const box = document.querySelector(".composer-box");
+  const limit = maxDraftChars();
+  const note = el("composer-note");
+  if (!limit) {
+    box.classList.remove("at-limit");
+    note.hidden = true;
+    return;
+  }
+  const over = input.value.length >= limit;
+  box.classList.toggle("at-limit", over);
+  note.hidden = !over;
+  if (over) {
+    const model = (app.state && app.state.resident && app.state.resident.model_label) || "this model";
+    note.textContent =
+      `That is as much as ${model} can take in one message. `
+      + `Anything longer cannot be sent, however much of the conversation is dropped.`;
+  }
 }
 
 /* ---------- status ---------- */
@@ -964,6 +1024,8 @@ function bindResizer(handle, { pane, axis, measure, fromEnd = false, unit = "px"
       handle.removeEventListener("pointercancel", onUp);
       handle.classList.remove("dragging");
       document.body.classList.remove("resizing", axis);
+      // A pane resize changes how much room the composer has.
+      fitComposer();
       saveLayout({ ...app.layout.sizes, [pane]: size });
     };
 
@@ -1476,14 +1538,42 @@ function wireEvents() {
   });
 
   const input = el("input");
+
+  // Refuse an insertion that would carry the draft past what could ever be
+  // sent. beforeinput rather than input, so the characters never appear and
+  // then vanish -- and it covers typing, pasting and dropping alike.
+  input.addEventListener("beforeinput", (event) => {
+    const limit = maxDraftChars();
+    if (!limit) return;
+    // Deletions and anything that shortens the text are always allowed --
+    // including when already over, which is how someone gets back under.
+    if (!event.data && event.inputType !== "insertFromPaste"
+        && event.inputType !== "insertFromDrop") return;
+
+    const incoming = event.data
+      || (event.dataTransfer && event.dataTransfer.getData("text")) || "";
+    const selected = input.selectionEnd - input.selectionStart;
+    if (input.value.length - selected + incoming.length <= limit) return;
+
+    event.preventDefault();
+    renderComposerLimit();
+    // Say why, rather than letting the keystroke silently do nothing.
+    const note = el("composer-note");
+    note.hidden = false;
+    const model = (app.state && app.state.resident && app.state.resident.model_label) || "this model";
+    note.textContent = incoming.length > 40
+      ? `That paste is too large for ${model}: ${incoming.length.toLocaleString()} characters `
+        + `against a limit of ${limit.toLocaleString()}. Nothing was inserted, so it is still on your clipboard.`
+      : `That is as much as ${model} can take in one message.`;
+    note.classList.add("flash");
+    setTimeout(() => note.classList.remove("flash"), 600);
+  });
+
   input.addEventListener("input", () => {
     // The draft counts before it is sent -- that is the point of the ring.
     app.contextDraft = estimateTokens(input.value);
     renderContext();
-    input.style.height = "auto";
-    // No ceiling here -- the stylesheet's max-height is the only one, so the
-    // box grows with the text instead of stopping at an arbitrary height.
-    input.style.height = `${input.scrollHeight}px`;
+    fitComposer();
   });
   input.addEventListener("keydown", (event) => {
     if (event.key === "Enter" && !event.shiftKey) {
@@ -1497,9 +1587,10 @@ function wireEvents() {
     const text = input.value.trim();
     if (!text || app.streaming) return;
     input.value = "";
-    input.style.height = "auto";
+    fitComposer();
     app.contextDraft = estimateTokens(text);
     renderContext();
+    renderComposerLimit();
     send(text);
   };
 

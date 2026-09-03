@@ -83,6 +83,11 @@ and a line marks where the Resident's memory now begins. Everything above it is
 still there to scroll back to. A Resident that has quietly forgotten the start
 of a conversation is worse than one that admits it.
 
+A message larger than that budget is the one thing truncation cannot rescue —
+no amount of dropping history makes room for it — so the composer refuses it
+before it is typed, and says why. That guard uses a deliberately generous
+estimate: it should only ever stop what is definitely too large.
+
 ## Connections and roles
 
 A **connection** is one model and how to reach it: provider, model, endpoint,
