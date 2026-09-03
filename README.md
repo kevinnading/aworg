@@ -68,6 +68,21 @@ endpoint and the credential. Set **Thinking → Off** on a connection and it
 answers straight away. On the 9B developed against, the same request went from
 99 seconds to under 1.
 
+## When a conversation outgrows the window
+
+A request past a model's context window is refused outright, not trimmed. And
+because history only grows, the first turn to cross would be followed by every
+turn after it — the conversation permanently broken rather than briefly.
+
+So AWORG sends only what fits: the most recent messages, newest first, with
+room left for the reply. Nothing is deleted. What is stored and what the model
+can see are different things, and only the second is bounded.
+
+When they diverge the interface says so — the conversation takes a red edge,
+and a line marks where the Resident's memory now begins. Everything above it is
+still there to scroll back to. A Resident that has quietly forgotten the start
+of a conversation is worse than one that admits it.
+
 ## Connections and roles
 
 A **connection** is one model and how to reach it: provider, model, endpoint,

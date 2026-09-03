@@ -71,6 +71,69 @@ class Resident:
     #: which errs the safe way.
     CHARS_PER_TOKEN = 3.6
 
+    #: What a message costs beyond its text: the chat template's role markers
+    #: and separators, a handful of tokens each. Small per message, hundreds
+    #: across a long conversation, so it is counted rather than ignored.
+    TOKENS_PER_MESSAGE = 5
+
+    #: Room left for the reply. A window is not a budget for history alone --
+    #: the model still has to answer inside it, and a reasoning model answers
+    #: at length. A fifth of the window, never less than 512 tokens.
+    REPLY_RESERVE_SHARE = 5
+    REPLY_RESERVE_MIN = 512
+
+    def _estimate(self, text: str) -> int:
+        return int(len(text) / self.CHARS_PER_TOKEN)
+
+    def _fit(self, history: list[Message], system: str, window: int | None) -> dict[str, Any]:
+        """Choose the most recent messages that fit, newest first.
+
+        A window is a hard edge, not a suggestion: a prompt past it is
+        refused outright, and because history only grows, the first turn to
+        cross would be followed by every subsequent turn crossing too. The
+        conversation would be permanently broken rather than briefly. So the
+        oldest messages stop being sent.
+
+        Nothing is deleted. The conversation on disk keeps everything, always
+        -- what is stored and what the model can see are different things,
+        and this decides only the second. The interface says when they have
+        diverged, because a Resident that has quietly forgotten the start of
+        a conversation is worse than one that says so.
+
+        Selection is by estimate rather than by asking the model to count
+        each candidate set, which would be a round trip per step. The
+        estimate runs about 9% high, so it keeps slightly less than it could
+        -- the error falls on the safe side of the edge.
+        """
+        if not window:
+            # Nobody has said how big the window is, so there is no edge to
+            # stay inside. Send everything and let the provider object.
+            return {"kept": history, "dropped": 0, "budget": None, "overflowing": False}
+
+        reserve = max(self.REPLY_RESERVE_MIN, window // self.REPLY_RESERVE_SHARE)
+        budget = window - reserve - self._estimate(system) - self.TOKENS_PER_MESSAGE
+
+        kept: list[Message] = []
+        used = 0
+        for message in reversed(history):
+            cost = self._estimate(message.content) + self.TOKENS_PER_MESSAGE
+            if used + cost > budget and kept:
+                break
+            used += cost
+            kept.append(message)
+        kept.reverse()
+
+        # One message larger than the whole budget still gets sent: dropping
+        # it would mean answering nothing at all. The provider will refuse,
+        # and saying which message did it is more use than silence.
+        overflowing = bool(kept) and used > budget
+        return {
+            "kept": kept,
+            "dropped": len(history) - len(kept),
+            "budget": budget,
+            "overflowing": overflowing,
+        }
+
     async def context_usage(self) -> dict[str, Any]:
         """How full the window is, built from exactly what the next turn sends.
 
@@ -90,25 +153,37 @@ class Resident:
 
         connection = self.primary_connection()
         tokens, exact, window = estimate, False, None
+        plan = {"kept": history, "dropped": 0, "overflowing": False}
         if connection is not None:
             window = connection.get("context")
+            plan = self._fit(history, system, window)
             api_key = self.secrets.get(credential_ref(connection["id"]))
             if api_key:
                 try:
                     counted = await build_adapter(connection, api_key).count_tokens(
-                        history, system
+                        plan["kept"], system
                     )
                 except ModelError:
                     counted = None
                 if counted is not None:
                     tokens, exact = counted, True
+                else:
+                    tokens = self._estimate(system) + sum(
+                        self._estimate(m.content) + self.TOKENS_PER_MESSAGE
+                        for m in plan["kept"]
+                    )
 
         return {
             "tokens": tokens,
             "exact": exact,
             "window": window,
             "percent": round(100 * tokens / window, 1) if window else None,
-            "messages": len(history),
+            # How many the model sees, and how many exist. When these differ
+            # the conversation has outgrown the window.
+            "messages": len(plan["kept"]),
+            "stored": len(history),
+            "dropped": plan["dropped"],
+            "overflowing": plan["overflowing"],
             "chars_per_token": self.CHARS_PER_TOKEN,
         }
 
@@ -145,6 +220,16 @@ class Resident:
             Message(role=m["role"], content=m["content"])
             for m in self.store.messages(conversation_id)
         ]
+
+        # Only what fits goes to the model. Everything stays on disk.
+        plan = self._fit(history, resident_config["system_prompt"], connection.get("context"))
+        history = plan["kept"]
+        if plan["dropped"] or plan["overflowing"]:
+            yield {
+                "type": "context",
+                "dropped": plan["dropped"],
+                "overflowing": plan["overflowing"],
+            }
 
         label = _label(connection)
         collected: list[str] = []

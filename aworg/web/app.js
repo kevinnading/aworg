@@ -137,7 +137,12 @@ function renderContext() {
 
   ring.classList.toggle("estimate", !exact);
   ring.classList.toggle("warn", pct !== null && pct >= 75 && pct < 92);
-  ring.classList.toggle("full", pct !== null && pct >= 92);
+  ring.classList.toggle("full", (pct !== null && pct >= 92) || info.dropped > 0);
+
+  // The conversation has outgrown the window: the chat says so as a whole,
+  // and a marker in the list says where the Resident's memory now starts.
+  document.querySelector(".chat").classList.toggle("truncating", info.dropped > 0);
+  markTruncation(info.dropped || 0);
   el("context-fill").setAttribute("stroke-dasharray", pct === null ? "0 100" : pct.toFixed(1) + " 100");
 
   const compact = tokens >= 10000 ? Math.round(tokens / 1000) + "k"
@@ -146,11 +151,40 @@ function renderContext() {
   ring.setAttribute("aria-valuenow", pct === null ? 0 : Math.round(pct));
 
   const how = exact ? "exact" : "estimated";
+  const cut = info.dropped
+    ? `\n${info.dropped} older ${info.dropped === 1 ? "message is" : "messages are"} `
+      + `no longer sent (${info.stored} kept on disk)`
+    : "";
   const fmt = (n) => n.toLocaleString();
   ring.title = limit
     ? fmt(tokens) + " of " + fmt(limit) + " tokens (" + pct.toFixed(1) + "%) - " + how
-      + "\n" + info.messages + " messages in context"
+      + "\n" + info.messages + " messages in context" + cut
     : fmt(tokens) + " tokens - " + how + "\nContext window unknown - set it on the connection";
+}
+
+/* Where the Resident's memory begins.
+ *
+ * A border on the chat says the conversation is being truncated; it does not
+ * say which part. This marks the seam in the list itself, so the owner can
+ * see exactly what is no longer being sent -- and that it is still there to
+ * scroll back to, because nothing was deleted. */
+function markTruncation(dropped) {
+  const existing = document.getElementById("truncation-mark");
+  if (existing) existing.remove();
+  if (!dropped) return;
+
+  const box = el("messages");
+  const messages = [...box.querySelectorAll(".msg")];
+  if (messages.length <= dropped) return;
+
+  const mark = document.createElement("div");
+  mark.className = "truncation";
+  mark.id = "truncation-mark";
+  mark.innerHTML =
+    "<span></span><strong>The Resident's memory starts here</strong>"
+    + `<span title="Everything above is still saved, and still yours to read.">`
+    + `${dropped} earlier ${dropped === 1 ? "message" : "messages"} no longer sent</span>`;
+  box.insertBefore(mark, messages[dropped]);
 }
 
 /* ---------- status ---------- */
@@ -273,7 +307,12 @@ async function send(text) {
         if (!line.trim()) continue;
         const event = JSON.parse(line);
 
-        if (event.type === "thinking") {
+        if (event.type === "context") {
+          // Said before the reply begins, so the owner learns the Resident
+          // has stopped seeing the start of the conversation at the moment
+          // it becomes true, not afterwards.
+          document.querySelector(".chat").classList.add("truncating");
+        } else if (event.type === "thinking") {
           thinking += event.text;
           if (!thoughts.isConnected) {
             replyNode.insertBefore(thoughts, body);

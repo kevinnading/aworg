@@ -1329,3 +1329,39 @@ body.resizing.row * { cursor: row-resize !important; }
 .context.full .context-pct { color: var(--danger); }
 /* An estimate is drawn lighter, so exact and guessed never look the same. */
 .context.estimate .context-fill { opacity: 0.6; }
+
+/* ---- truncation ---- */
+
+/* When the conversation outgrows the window the oldest messages stop being
+   sent. Nothing is deleted -- they are still on disk and still on screen --
+   but the Resident can no longer see them, and that has to be visible.
+   Silently forgetting the start of a conversation is the kind of thing an
+   owner should never have to deduce. */
+
+.chat.truncating { box-shadow: inset 0 0 0 1px var(--danger); }
+
+.truncation {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: 1100px;
+  width: 100%;
+  margin: 0 auto;
+  color: var(--danger);
+  font-size: 11.5px;
+}
+.truncation strong { font-weight: 600; white-space: nowrap; }
+/* The count is the quieter half: the fact matters more than the number. */
+.truncation span:last-child {
+  color: var(--muted);
+  white-space: nowrap;
+  cursor: help;
+}
+/* The rule runs to the left edge, so the seam reads as a line across the
+   conversation rather than a label floating in it. */
+.truncation span:first-child {
+  flex: 1;
+  height: 1px;
+  background: var(--danger);
+  opacity: 0.4;
+}
