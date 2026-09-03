@@ -13,6 +13,8 @@ look true.
 
 from __future__ import annotations
 
+import asyncio
+
 from typing import Any, AsyncIterator
 
 from .models import Message, ModelError, build_adapter
@@ -20,10 +22,49 @@ from .secrets import SecretStore, credential_ref
 from .storage import Store
 
 
+class Busy(Exception):
+    """Raised when a reply is asked for while one is already in progress."""
+
+
+class Turn:
+    """A reply being generated, independent of whoever is watching it.
+
+    A reply used to belong to one HTTP connection: close the tab and the
+    generator was cancelled, the model's work thrown away, and the owner's
+    message left standing with no answer. It also meant "stop" could only
+    ever mean "stop listening" -- the model carried on, occupying the GPU
+    for a reply nobody would see.
+
+    So the turn lives here instead. The connection is a window onto it:
+    several may watch, one may leave and come back, and everything said so
+    far is replayed to whoever arrives late. Stopping it stops the work.
+    """
+
+    def __init__(self, conversation_id: str):
+        self.conversation_id = conversation_id
+        #: Every event so far, so a late or returning watcher misses nothing.
+        self.events: list[dict[str, Any]] = []
+        self.watchers: set[asyncio.Queue] = set()
+        self.done = False
+        self.stopping = False
+
+    def emit(self, event: dict[str, Any]) -> None:
+        self.events.append(event)
+        for queue in list(self.watchers):
+            queue.put_nowait(event)
+
+    def finish(self) -> None:
+        self.done = True
+        for queue in list(self.watchers):
+            queue.put_nowait(None)
+
+
 class Resident:
     def __init__(self, store: Store, secrets: SecretStore):
         self.store = store
         self.secrets = secrets
+        #: At most one, because there is one Resident and one conversation.
+        self.turn: Turn | None = None
 
     # -- state ----------------------------------------------------------
 
@@ -205,7 +246,64 @@ class Resident:
             ),
         }
 
-    async def respond_to(self, text: str) -> AsyncIterator[dict[str, Any]]:
+    def start_turn(self, text: str) -> "Turn":
+        """Begin a reply, and return the turn it happens in.
+
+        The work runs on its own task so that it outlives the request that
+        asked for it. Whoever asked gets a window onto the turn; if they go
+        away, the reply carries on and is waiting when they come back.
+        """
+        if self.turn is not None and not self.turn.done:
+            raise Busy("The Resident is already answering.")
+
+        turn = Turn(self.store.current_conversation_id())
+        self.turn = turn
+
+        async def run() -> None:
+            try:
+                async for event in self.respond_to(text, turn):
+                    turn.emit(event)
+            except Exception as exc:                      # noqa: BLE001
+                # Nothing above is watching this task, so a failure here
+                # would otherwise be silent and the turn would never end.
+                turn.emit({"type": "error", "message": str(exc)})
+            finally:
+                turn.finish()
+
+        turn.task = asyncio.create_task(run())
+        return turn
+
+    async def follow(self, turn: "Turn") -> AsyncIterator[dict[str, Any]]:
+        """Watch a turn, from the beginning, however late you arrive."""
+        queue: asyncio.Queue = asyncio.Queue()
+        # Subscribing and taking the backlog happen together, with no await
+        # between them, so an event cannot slip into both or neither.
+        turn.watchers.add(queue)
+        backlog = list(turn.events)
+        finished = turn.done
+        try:
+            for event in backlog:
+                yield event
+            if finished:
+                return
+            while True:
+                event = await queue.get()
+                if event is None:
+                    break
+                yield event
+        finally:
+            turn.watchers.discard(queue)
+
+    def stop_turn(self) -> bool:
+        """Ask the reply in progress to stop. Whatever it said is kept."""
+        if self.turn is None or self.turn.done:
+            return False
+        self.turn.stopping = True
+        return True
+
+    async def respond_to(
+        self, text: str, turn: "Turn | None" = None
+    ) -> AsyncIterator[dict[str, Any]]:
         """Take the owner's message and stream back the Resident's reply.
 
         Yields events rather than raw text so the owner interface can
@@ -252,12 +350,20 @@ class Resident:
         label = _label(connection)
         collected: list[str] = []
         thought = False
+        stopped = False
 
         try:
             adapter = build_adapter(connection, api_key)
             async for fragment in adapter.stream(
                 history, system=resident_config["system_prompt"]
             ):
+                # Checked between fragments rather than by cancelling the
+                # task: leaving the loop closes the model's stream on the way
+                # out, and whatever was already said is kept below exactly as
+                # it would be after a normal finish.
+                if turn is not None and turn.stopping:
+                    stopped = True
+                    break
                 if fragment.kind == "thinking":
                     # Thinking is not what the Resident said, so it is never
                     # kept. It is still reported, because a model that thinks
@@ -280,7 +386,14 @@ class Resident:
 
         reply = "".join(collected)
         if reply.strip():
+            # A stopped reply is still something the Resident said, and it is
+            # kept for the same reason a partial one after an error is: the
+            # conversation should record what actually happened.
             self.store.add_message(conversation_id, "resident", reply, label)
+            if stopped:
+                yield {"type": "stopped", "partial": True}
+        elif stopped:
+            yield {"type": "stopped", "partial": False}
         elif thought:
             # It reasoned its whole budget away and never answered. Silence
             # here would look identical to a crash, and the owner would have

@@ -73,6 +73,8 @@ async function boot() {
 
   await refresh();
   wireEvents();
+  // If a reply was in flight when the page went away, pick it back up.
+  resumeReply();
   // Home is where the owner lands, and the workspace is part of it.
   startWorkspaceWatch();
 }
@@ -97,6 +99,33 @@ async function refresh() {
   renderResetView();
   refreshContext();
   renderLifecycle();
+}
+
+/* A failed turn leaves the owner's message with no answer under it. Putting
+ * the text back in the composer is the whole of the fix -- retyping it is
+ * the sort of small insult that makes an interface tiring. */
+function offerRetry(text) {
+  const box = el("messages");
+  const old = document.getElementById("retry-offer");
+  if (old) old.remove();
+
+  const wrap = document.createElement("div");
+  wrap.className = "retry";
+  wrap.id = "retry-offer";
+  const button = document.createElement("button");
+  button.type = "button";
+  button.textContent = "Put that back in the box";
+  button.onclick = () => {
+    const input = el("input");
+    input.value = text;
+    wrap.remove();
+    fitComposer();
+    app.contextDraft = estimateTokens(text);
+    renderContext();
+    input.focus();
+  };
+  wrap.appendChild(button);
+  box.appendChild(wrap);
 }
 
 /* ---------- context window ---------- */
@@ -258,6 +287,21 @@ function renderStatus() {
 
 /* ---------- chat ---------- */
 
+/* Follow the newest text, unless the owner has scrolled away to read
+ * something. Being dragged back to the bottom every time a chunk arrives
+ * makes it impossible to re-read anything while a reply is coming in, which
+ * is exactly when someone most wants to. */
+
+const NEAR_BOTTOM = 80;   // px of slack, so a stray pixel does not count
+
+function atBottom(box) {
+  return box.scrollHeight - box.scrollTop - box.clientHeight <= NEAR_BOTTOM;
+}
+
+function keepAtBottom(box, wasAtBottom) {
+  if (wasAtBottom) box.scrollTop = box.scrollHeight;
+}
+
 function renderChat() {
   const box = el("messages");
   box.innerHTML = "";
@@ -319,6 +363,36 @@ async function send(text) {
 
   box.appendChild(messageNode("owner", text, null));
   app.conversation.messages.push({ role: "owner", content: text });
+  return watchTurn(
+    () => fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: text }),
+    }),
+    text
+  );
+}
+
+/* Rejoin a reply that was already running.
+ *
+ * The turn lives on the server, so a refresh in the middle of one is not the
+ * end of it: everything said so far is replayed and then followed live. What
+ * used to happen was that the model kept working, the browser stopped
+ * listening, and the answer was lost -- leaving the owner's message sitting
+ * there with nothing under it. */
+async function resumeReply() {
+  let active = false;
+  try {
+    active = (await api("/api/chat/active")).active;
+  } catch (_) {
+    return;
+  }
+  if (!active) return;
+  await watchTurn(() => fetch("/api/chat/stream"), null);
+}
+
+async function watchTurn(open, text) {
+  const box = el("messages");
 
   const replyNode = messageNode("resident", "", null);
   const body = replyNode.querySelector(".body");
@@ -346,11 +420,10 @@ async function send(text) {
   const elapsed = () => Math.max(1, Math.round((Date.now() - startedAt) / 1000));
 
   try {
-    const response = await fetch("/api/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: text }),
-    });
+    const response = await open();
+    if (!response.ok) {
+      throw new Error(`AWORG replied ${response.status}`);
+    }
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
@@ -366,6 +439,8 @@ async function send(text) {
       for (const line of lines) {
         if (!line.trim()) continue;
         const event = JSON.parse(line);
+
+        const following = atBottom(box);
 
         if (event.type === "context") {
           // Said before the reply begins, so the owner learns the Resident
@@ -388,7 +463,7 @@ async function send(text) {
           }
           stream.textContent = thinking;
           stream.scrollTop = stream.scrollHeight;
-          box.scrollTop = box.scrollHeight;
+          keepAtBottom(box, following);
         } else if (event.type === "delta") {
           collected += event.text;
           app.contextStreamed = estimateTokens(collected);
@@ -403,7 +478,15 @@ async function send(text) {
             body.classList.add("cursor");
           }
           body.innerHTML = MD.render(collected);
-          box.scrollTop = box.scrollHeight;
+          keepAtBottom(box, following);
+        } else if (event.type === "stopped") {
+          const note = document.createElement("div");
+          note.className = "stopped-note";
+          note.textContent = event.partial
+            ? "Stopped. What it had said is kept."
+            : "Stopped before it said anything.";
+          replyNode.appendChild(note);
+          if (!event.partial) collected = " ";   // keep the node, it explains itself
         } else if (event.type === "done") {
           const attrib = document.createElement("div");
           attrib.className = "attrib";
@@ -420,7 +503,8 @@ async function send(text) {
           if (!collected) replyNode.remove();
           thoughts.remove();
           box.appendChild(messageNode("error", event.message, null));
-          box.scrollTop = box.scrollHeight;
+          if (text) offerRetry(text);
+          keepAtBottom(box, following);
         }
       }
     }
@@ -441,8 +525,27 @@ async function send(text) {
   }
 }
 
+/* Stopping is server-side, not a closed connection.
+ *
+ * Aborting the browser's request would only stop the watching: the model
+ * would carry on generating a reply nobody would ever read, holding the GPU
+ * for it. This asks the Resident to stop, and what it had said by then is
+ * kept -- it did say it. */
+async function stopReply() {
+  el("stop").disabled = true;
+  try {
+    await api("/api/chat/stop", { method: "POST" });
+  } catch (_) {
+    // It very likely finished on its own between the click and the call.
+  }
+}
+
 function setStreaming(on) {
   app.streaming = on;
+  // Stop stands where send does, so the control is always in one place.
+  el("send").hidden = on;
+  el("stop").hidden = !on;
+  el("stop").disabled = false;
   el("send").disabled = on;
   el("send").textContent = on ? "…" : "Send";
 }
@@ -1608,6 +1711,8 @@ function wireEvents() {
     saved.textContent = "Saved";
     setTimeout(() => { saved.textContent = ""; }, 2000);
   };
+
+  el("stop").onclick = stopReply;
 
   el("reset-appearance").onclick = resetAppearance;
   el("reset-view").onclick = resetView;

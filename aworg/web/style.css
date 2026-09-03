@@ -1404,3 +1404,51 @@ body.resizing.row * { cursor: row-resize !important; }
   0%, 100% { opacity: 1; }
   25% { opacity: 0.35; }
 }
+
+/* ---- stopping, and retrying ---- */
+
+/* The stop button takes the send button's place while a reply is arriving,
+   because they are the same decision at two moments and should be in the
+   same spot -- reaching for send and finding nothing there is how you end
+   up waiting out a reply you did not want. */
+.composer #stop {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--line);
+}
+.composer #stop:hover { border-color: var(--danger); color: var(--danger); filter: none; }
+.composer #stop svg { display: block; }
+
+/* A reply the owner cut short says so, quietly. It is still what the
+   Resident said, so it is kept -- but it is not what it would have said. */
+.msg.resident .stopped-note {
+  margin-top: 7px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.msg.resident .stopped-note::before { content: "\25A0  "; color: var(--danger); }
+
+/* A turn that failed leaves the owner's message with nothing after it.
+   The button puts it back in the composer rather than making them retype. */
+.retry {
+  max-width: 1100px;
+  width: 100%;
+  margin: -8px auto 0;
+}
+.retry button {
+  background: none;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  border-radius: 7px;
+  padding: 4px 11px;
+  font: inherit;
+  font-size: 12px;
+}
+.retry button:hover { color: var(--text); border-color: var(--accent-dim); filter: none; }

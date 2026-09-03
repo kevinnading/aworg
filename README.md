@@ -68,6 +68,17 @@ endpoint and the credential. Set **Thinking → Off** on a connection and it
 answers straight away. On the 9B developed against, the same request went from
 99 seconds to under 1.
 
+## A reply belongs to the Resident, not to a browser tab
+
+A reply in progress lives on the server. Close the tab, refresh, or open the
+Aworg somewhere else and it is still being written — whoever arrives is caught
+up on everything said so far and then follows it live. The model's work is not
+thrown away because a connection went.
+
+That is also what makes **Stop** honest: it asks the Resident to stop, rather
+than merely closing the connection and leaving the model generating a reply
+nobody will read. Whatever it had said by then is kept, because it did say it.
+
 ## When a conversation outgrows the window
 
 A request past a model's context window is refused outright, not trimmed. And

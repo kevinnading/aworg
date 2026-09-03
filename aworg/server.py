@@ -20,7 +20,7 @@ from pydantic import BaseModel
 
 from .models import CAPABILITY_TAGS, PROVIDER_LABELS, ModelError, build_adapter
 from .paths import Paths
-from .resident import Resident
+from .resident import Busy, Resident
 from .secrets import SecretStore, credential_ref
 from . import layout as layout_settings
 from . import lifecycle, panes
@@ -252,17 +252,45 @@ def create_app(paths: Paths) -> FastAPI:
         """How much of the model's window the next turn will use."""
         return await resident.context_usage()
 
+    def _follow(turn) -> StreamingResponse:
+        async def events():
+            async for event in resident.follow(turn):
+                yield json.dumps(event) + "\n"
+
+        return StreamingResponse(events(), media_type="application/x-ndjson")
+
     @app.post("/api/chat")
     async def chat(body: ChatBody) -> StreamingResponse:
         text = body.message.strip()
         if not text:
             raise HTTPException(400, "Empty message")
+        try:
+            turn = resident.start_turn(text)
+        except Busy as exc:
+            raise HTTPException(409, str(exc)) from exc
+        return _follow(turn)
 
-        async def events():
-            async for event in resident.respond_to(text):
-                yield json.dumps(event) + "\n"
+    @app.get("/api/chat/stream")
+    async def resume_chat() -> StreamingResponse:
+        """Rejoin a reply already in progress.
 
-        return StreamingResponse(events(), media_type="application/x-ndjson")
+        What makes a refresh survivable: the turn is server-side, so this
+        replays everything said so far and then follows it live.
+        """
+        turn = resident.turn
+        if turn is None or turn.done:
+            raise HTTPException(404, "Nothing in progress")
+        return _follow(turn)
+
+    @app.get("/api/chat/active")
+    def chat_active() -> dict[str, Any]:
+        turn = resident.turn
+        return {"active": bool(turn and not turn.done)}
+
+    @app.post("/api/chat/stop")
+    def stop_chat() -> dict[str, Any]:
+        """Stop the reply in progress. Whatever it said is kept."""
+        return {"stopped": resident.stop_turn()}
 
     # -- appearance -----------------------------------------------------
 
