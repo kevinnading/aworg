@@ -94,20 +94,52 @@ PANES: list[dict[str, Any]] = [
     {
         "id": "capabilities",
         "label": "Capabilities",
-        "hint": "The sum of what this Aworg is able to do.",
-        "available": False,
+        "hint": "What this Aworg can actually do, on this machine.",
+        "available": True,
         "empty": ("Nothing installed.", ""),
-        "blocked": ("Conversation only.",
-                    "Capabilities gather the tools, skills, and automations "
-                    "an Aworg has. Yours has none of them yet -- it can talk, "
-                    "and that is all."),
+        "blocked": None,
     },
 ]
 
 PANE_IDS = [pane["id"] for pane in PANES]
 
 
-def describe() -> list[dict[str, Any]]:
+def capabilities(facts: dict[str, Any]) -> list[dict[str, Any]]:
+    """What the Resident can do here, as facts rather than promises.
+
+    An owner about to ask for postgres needs to know whether this Aworg can
+    install anything at all before they ask, not after it fails. Privilege
+    is the first line because it is the one that decides most of the rest.
+    """
+    elevated = facts["elevated"]
+    privilege = (
+        ("Elevated", "Running with root or administrator rights.")
+        if elevated
+        else ("Not elevated", "Anything needing root or administrator will fail.")
+        if elevated is False
+        else ("Privilege unknown", "AWORG could not determine what it is allowed to do.")
+    )
+    items = [
+        {"name": f"{facts['os']} {facts['release']}",
+         "detail": f"{facts['arch']}, {facts['cpus']} CPUs", "state": "fact"},
+        {"name": f"Running as {facts['user']}",
+         "detail": privilege[1], "state": "ok" if elevated else "warn"},
+        {"name": privilege[0], "detail": f"on {facts['hostname']}", "state": "hidden"},
+    ]
+    if facts["package_manager"]:
+        items.append({"name": f"{facts['package_manager']} available",
+                      "detail": "System packages can be installed.", "state": "ok"})
+    else:
+        items.append({"name": "No system package manager",
+                      "detail": "Nothing on PATH to install system packages with.",
+                      "state": "warn"})
+    items.append({"name": "Conversation only",
+                  "detail": "No tools yet -- it cannot act on any of this.",
+                  "state": "warn"})
+    return [item for item in items if item["state"] != "hidden"]
+
+
+def describe(facts: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     """The panes as the owner interface renders them.
 
     The two empty texts collapse into the one that applies here rather than
@@ -120,13 +152,17 @@ def describe() -> list[dict[str, Any]]:
             heading, detail = pane["empty"]
         else:
             heading, detail = pane["blocked"] or pane["empty"]
+        items: list[dict[str, Any]] = []
+        if pane["id"] == "capabilities" and facts:
+            items = capabilities(facts)
+
         described.append(
             {
                 "id": pane["id"],
                 "label": pane["label"],
                 "hint": pane["hint"],
                 "available": pane["available"],
-                "items": [],
+                "items": items,
                 "empty_heading": heading,
                 "empty_detail": detail,
             }

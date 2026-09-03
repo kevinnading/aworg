@@ -919,6 +919,8 @@ function paneNode(pane, { region, last }) {
   const template = document.getElementById(`body-${pane.id}`);
   if (template) {
     body.appendChild(template.content.cloneNode(true));
+  } else if (pane.items && pane.items.length) {
+    body.appendChild(paneItems(pane.items));
   } else {
     body.appendChild(emptyPane(pane));
   }
@@ -968,6 +970,28 @@ function togglePreviewMaximised(force) {
   document.body.classList.toggle("has-maximised-pane", next);
   paintMaximizeButton(el("maximize-preview"), next);
   if (!next) el("maximize-preview").focus();
+}
+
+/* A pane with something to say says it as a list of facts, each with the
+ * plain reading of what it means. "Not elevated" is only useful next to
+ * "anything needing root will fail" -- the fact and its consequence belong
+ * together, because the owner is the one who has to act on it. */
+function paneItems(items) {
+  const list = document.createElement("div");
+  list.className = "pane-items";
+  for (const item of items) {
+    const row = document.createElement("div");
+    row.className = `pane-item ${item.state || ""}`;
+    const name = document.createElement("span");
+    name.className = "pane-item-name";
+    name.textContent = item.name;
+    const detail = document.createElement("span");
+    detail.className = "pane-item-detail";
+    detail.textContent = item.detail || "";
+    row.append(name, detail);
+    list.appendChild(row);
+  }
+  return list;
 }
 
 function emptyPane(pane) {

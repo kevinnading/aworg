@@ -67,7 +67,10 @@ PANES: dict[str, dict[str, Any]] = {
     #: box with a fixed ratio has one dimension worth dragging, and it is the
     #: column's.
     "lifecycle-height": {"default": 132, "min": 96, "max": 300},
-    "capabilities-height": {"default": 180, "min": 90, "max": 600},
+    #: Taller than the panes below it because it is the only one with real
+    #: content: four observed facts about the machine, each with what it
+    #: means. The others are still saying "not yet".
+    "capabilities-height": {"default": 260, "min": 90, "max": 600},
     "skills-height": {"default": 190, "min": 90, "max": 600},
     # -- the activity row above the conversation, and the split within it
     "activity-height": {"default": 186, "min": 96, "max": 600},

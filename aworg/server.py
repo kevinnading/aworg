@@ -117,6 +117,11 @@ def create_app(paths: Paths) -> FastAPI:
             "home": str(paths.home),
         }
 
+    @app.get("/api/host")
+    def host_facts() -> dict[str, Any]:
+        """What AWORG observed about this machine when it started."""
+        return resident.host
+
     @app.get("/api/state")
     def state() -> dict[str, Any]:
         config = store.get_resident()
@@ -405,7 +410,7 @@ def create_app(paths: Paths) -> FastAPI:
         One request rather than seven. These are read together, and they
         stay together until one of them grows enough to want its own.
         """
-        return panes.describe()
+        return panes.describe(resident.host)
 
     # -- the Living Workspace -------------------------------------------
 

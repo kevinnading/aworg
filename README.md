@@ -68,6 +68,22 @@ endpoint and the credential. Set **Thinking → Off** on a connection and it
 answers straight away. On the 9B developed against, the same request went from
 99 seconds to under 1.
 
+## What the Resident knows about your machine
+
+At every start AWORG looks at the host: operating system, architecture, CPUs,
+memory, free disk, which package manager exists, whether it is running
+elevated, and what is on PATH. About 230ms, no extra dependencies.
+
+Those facts go two places — the **Capabilities** pane, so you can see before
+asking whether this Aworg could install postgres, and the Resident's context,
+so it does not propose `apt install` on Windows. They are observed at every
+start rather than once at install, because a machine surveyed at install time
+is wrong the first time you install anything.
+
+AWORG runs with exactly the privileges of the account that started it. It does
+not confine itself and does not pretend to — if you want it sandboxed, launch
+it that way. Its job is to tell you which it is.
+
 ## A reply belongs to the Resident, not to a browser tab
 
 A reply in progress lives on the server. Close the tab, refresh, or open the

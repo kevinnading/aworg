@@ -114,6 +114,51 @@ failed is the exact failure the owner cannot catch for themselves, and it
 is not fixed by choosing a better model. It is fixed by the result being
 evidence rather than testimony.
 
+## Authority Is The Account's, Not AWORG's
+
+Earlier drafts of this project described a boundary around the Living
+Workspace, structurally enforced, with the Resident held inside it. That is
+not what AWORG is.
+
+A Resident that builds an application also installs what the application
+needs: runtimes, services, system packages, sometimes daemons. Most of that
+lives outside any workspace by definition. A boundary drawn around the
+workspace would either be a lie the moment the Resident installed anything,
+or a cage that stopped it doing the job.
+
+So there is no boundary here. **AWORG runs with exactly the privileges of
+the account that started it.** Run it as yourself and it is you; run it as
+root and it is root; run it inside bubblewrap, a container, or a VM and it
+is whatever that allows. Confinement is the owner's decision, made when they
+launch it, with tools far better at it than anything this project would
+write.
+
+What AWORG owes the owner instead is **honesty about what it has**. The host
+is observed at every start -- operating system, package manager, whether the
+process is elevated, what is on PATH -- and those facts are shown in the
+Capabilities pane and sent to the Resident with every message. An owner about
+to ask for postgres can see beforehand whether this Aworg could install it.
+A Resident that knows it is on Windows does not propose `apt install`.
+
+The facts are gathered at every start rather than once at install, because a
+machine surveyed at install time is wrong the first time its owner installs
+anything. They are kept beside the owner's standing instructions rather than
+written into them: the instructions are the owner's to write, the facts are
+AWORG's to observe, and mixing the two would leave the owner maintaining a
+description of their own machine.
+
+### The consequence for snapshots
+
+The white paper separates `workspace/` -- what may be published -- from
+everything that never leaves the machine. If the Resident installs services
+system-wide, a workspace snapshot will not reproduce the application:
+whoever loads it gets the code and none of its dependencies.
+
+That is not a reason to confine anything. It means the snapshot story will
+eventually need the Resident to record what it installed outside the
+workspace, as a manifest rather than a restriction. Cheap to record as it
+happens, expensive to reconstruct afterwards.
+
 ## Verification Is A Property Of The System
 
 Anything AWORG shows the owner about progress is derived from what it

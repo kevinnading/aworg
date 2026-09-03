@@ -17,6 +17,7 @@ import asyncio
 
 from typing import Any, AsyncIterator
 
+from . import host
 from .models import Message, ModelError, build_adapter
 from .secrets import SecretStore, credential_ref
 from .storage import Store
@@ -63,6 +64,10 @@ class Resident:
     def __init__(self, store: Store, secrets: SecretStore):
         self.store = store
         self.secrets = secrets
+        #: Observed once at startup rather than at install, because a machine
+        #: surveyed at install time is wrong the first time its owner
+        #: installs anything. About 230ms, so it costs nothing to be right.
+        self.host = host.observe()
         #: At most one, because there is one Resident and one conversation.
         self.turn: Turn | None = None
 
@@ -133,6 +138,18 @@ class Resident:
     REPLY_RESERVE_SHARE = 5
     REPLY_RESERVE_MIN = 512
 
+    def system_prompt(self) -> str:
+        """What the model is told about itself, and about where it is.
+
+        Two things, kept apart everywhere but here. The standing
+        instructions are the owner's -- theirs to write and theirs to edit.
+        The host block is observed fact, refreshed each start. Writing the
+        facts into the owner's text would make them the owner's to maintain,
+        and they would be wrong by the next time anything was installed.
+        """
+        instructions = self.store.get_resident()["system_prompt"]
+        return f"{instructions}\n\n---\n\n{host.summary(self.host)}".strip()
+
     def _estimate(self, text: str) -> int:
         return int(len(text) / self.CHARS_PER_TOKEN)
 
@@ -198,7 +215,7 @@ class Resident:
             Message(role=m["role"], content=m["content"])
             for m in self.store.messages(conversation_id)
         ]
-        system = config["system_prompt"]
+        system = self.system_prompt()
         chars = len(system) + sum(len(m.content) for m in history)
         estimate = int(chars / self.CHARS_PER_TOKEN)
 
@@ -338,7 +355,8 @@ class Resident:
         ]
 
         # Only what fits goes to the model. Everything stays on disk.
-        plan = self._fit(history, resident_config["system_prompt"], connection.get("context"))
+        system = self.system_prompt()
+        plan = self._fit(history, system, connection.get("context"))
         history = plan["kept"]
         if plan["dropped"] or plan["overflowing"]:
             yield {
@@ -354,9 +372,7 @@ class Resident:
 
         try:
             adapter = build_adapter(connection, api_key)
-            async for fragment in adapter.stream(
-                history, system=resident_config["system_prompt"]
-            ):
+            async for fragment in adapter.stream(history, system=system):
                 # Checked between fragments rather than by cancelling the
                 # task: leaving the loop closes the model's stream on the way
                 # out, and whatever was already said is kept below exactly as
