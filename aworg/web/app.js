@@ -418,6 +418,7 @@ function connectionNode(connection) {
   meta.textContent =
     `${app.meta.providers[connection.provider] || connection.provider} · ${connection.model}` +
     (connection.base_url ? ` · ${connection.base_url}` : "") +
+    (connection.context ? ` · ${connection.context.toLocaleString()} tokens` : " · context unknown") +
     (connection.reasoning === "off" ? " · no thinking" : "") +
     (connection.has_credential ? "" : " · no credential");
   left.append(name, meta);
@@ -524,6 +525,7 @@ function openForm(connection) {
   el("conn-model").value = connection ? connection.model : "";
   el("conn-base-url").value = connection && connection.base_url ? connection.base_url : "";
   el("conn-reasoning").value = (connection && connection.reasoning) || "auto";
+  el("conn-context").value = connection && connection.context ? connection.context : "";
   el("conn-credential").value = "";
   el("conn-credential").placeholder = connection && connection.has_credential
     ? "Stored — leave blank to keep it"
@@ -1424,6 +1426,10 @@ function wireEvents() {
       model: el("conn-model").value.trim(),
       base_url: el("conn-base-url").value.trim() || null,
       reasoning: el("conn-reasoning").value,
+      // Blank means unknown. It is sent as 0 so that clearing a value that
+      // was set before actually clears it, rather than being read as "not
+      // supplied" and left alone.
+      context: parseInt(el("conn-context").value, 10) || 0,
       tags: [...app.editingTags],
       credential: el("conn-credential").value || null,
     };

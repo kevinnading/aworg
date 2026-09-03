@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS connections (
     base_url   TEXT,
     tags       TEXT NOT NULL DEFAULT '[]',
     reasoning  TEXT NOT NULL DEFAULT 'auto',
+    context    INTEGER,
     enabled    INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -112,6 +113,7 @@ class Store:
     MIGRATIONS = [
         ("resident", "worker_connection_id", "TEXT"),
         ("connections", "reasoning", "TEXT NOT NULL DEFAULT 'auto'"),
+        ("connections", "context", "INTEGER"),
     ]
 
     def _init(self) -> None:
@@ -167,13 +169,14 @@ class Store:
         base_url: str | None = None,
         tags: list[str] | None = None,
         reasoning: str = "auto",
+        context: int | None = None,
         enabled: bool = True,
     ) -> dict[str, Any]:
         connection_id = uuid.uuid4().hex[:12]
         with self._connect() as conn:
             conn.execute(
                 "INSERT INTO connections (id, name, provider, model, base_url, "
-                "tags, reasoning, enabled) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "tags, reasoning, context, enabled) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     connection_id,
                     name,
@@ -182,16 +185,28 @@ class Store:
                     base_url or None,
                     json.dumps(tags or []),
                     reasoning,
+                    context,
                     1 if enabled else 0,
                 ),
             )
         return self.get_connection(connection_id)  # type: ignore[return-value]
 
     def update_connection(self, connection_id: str, **fields: Any) -> dict[str, Any] | None:
-        allowed = {"name", "provider", "model", "base_url", "tags", "reasoning", "enabled"}
+        allowed = {
+            "name", "provider", "model", "base_url", "tags", "reasoning", "context", "enabled",
+        }
         sets, values = [], []
         for key, value in fields.items():
-            if key not in allowed or value is None:
+            if key not in allowed:
+                continue
+            # None means "not supplied" for every field except the context
+            # ceiling, where it is a real value: unknown. Callers clear it
+            # by passing 0, which is not a size any model has.
+            if key == "context":
+                if value is None:
+                    continue
+                value = None if value == 0 else value
+            elif value is None:
                 continue
             if key == "tags":
                 value = json.dumps(value)
@@ -233,6 +248,7 @@ class Store:
             "base_url": row["base_url"],
             "tags": json.loads(row["tags"]),
             "reasoning": row["reasoning"],
+            "context": row["context"],
             "enabled": bool(row["enabled"]),
             "created_at": row["created_at"],
         }

@@ -68,6 +68,7 @@ class ModelAdapter:
         api_key: str,
         base_url: str | None = None,
         reasoning: str = "auto",
+        context: int | None = None,
     ):
         self.model = model
         self.api_key = api_key
@@ -78,6 +79,18 @@ class ModelAdapter:
         #: depends on the model and the job, so it is the owner's choice and
         #: belongs to the connection rather than being decided here.
         self.reasoning = reasoning
+        #: How many tokens a single request may carry, or None if nobody has
+        #: said. Local servers announce it; hosted ones mostly do not, and a
+        #: request past it is refused outright rather than trimmed -- so this
+        #: is the number everything above here has to fit inside.
+        self.context = context
+
+    async def detect_context(self) -> int | None:
+        """Ask the server how big its window is, if it will say.
+
+        Most will not. Returning None is the ordinary case, not a failure.
+        """
+        return None
 
     @property
     def default_base_url(self) -> str:

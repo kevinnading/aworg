@@ -33,6 +33,7 @@ def build_adapter(connection: dict, api_key: str) -> ModelAdapter:
         api_key=api_key,
         base_url=connection.get("base_url"),
         reasoning=connection.get("reasoning") or "auto",
+        context=connection.get("context"),
     )
 
 

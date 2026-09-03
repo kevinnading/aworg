@@ -205,6 +205,11 @@
           </label>
 
           <label class="field">
+            <span>Context window <em>tokens - leave blank if unknown; Test fills it in for local servers</em></span>
+            <input id="conn-context" type="number" min="0" step="1024" placeholder="e.g. 8192" autocomplete="off">
+          </label>
+
+          <label class="field">
             <span>Thinking <em>reasoning models only</em></span>
             <select id="conn-reasoning">
               <option value="auto">Leave it to the model</option>

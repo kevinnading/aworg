@@ -170,6 +170,24 @@ class OpenAICompatibleAdapter(ModelAdapter):
     def default_base_url(self) -> str:
         return "https://api.openai.com/v1"
 
+    async def detect_context(self) -> int | None:
+        """llama.cpp publishes its window at /props, beside the /v1 API.
+
+        Gateways and OpenAI itself have no such endpoint and answer with a
+        404 or an HTML page, both of which mean "unknown" here, not "broken".
+        """
+        root = self.base_url[:-3] if self.base_url.endswith("/v1") else self.base_url
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.get(f"{root}/props")
+                if response.status_code != 200:
+                    return None
+                settings = response.json().get("default_generation_settings") or {}
+                n_ctx = settings.get("n_ctx")
+                return int(n_ctx) if isinstance(n_ctx, int) and n_ctx > 0 else None
+        except (httpx.RequestError, ValueError):
+            return None
+
     async def stream(
         self, messages: list[Message], system: str
     ) -> AsyncIterator[Fragment]:

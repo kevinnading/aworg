@@ -45,6 +45,7 @@ class ConnectionBody(BaseModel):
     base_url: str | None = None
     tags: list[str] = []
     reasoning: str = "auto"
+    context: int | None = None
     enabled: bool = True
     credential: str | None = None
 
@@ -56,6 +57,8 @@ class ConnectionPatch(BaseModel):
     base_url: str | None = None
     tags: list[str] | None = None
     reasoning: str | None = None
+    #: The window in tokens. 0 clears it back to unknown.
+    context: int | None = None
     enabled: bool | None = None
     credential: str | None = None
 
@@ -139,6 +142,7 @@ def create_app(paths: Paths) -> FastAPI:
             base_url=(body.base_url or "").strip() or None,
             tags=body.tags,
             reasoning=body.reasoning,
+            context=body.context or None,
             enabled=body.enabled,
         )
         if body.credential:
@@ -163,6 +167,7 @@ def create_app(paths: Paths) -> FastAPI:
             base_url=body.base_url,
             tags=body.tags,
             reasoning=body.reasoning,
+            context=body.context,
             enabled=body.enabled,
         )
         # An empty string means "leave the stored credential alone", so that
@@ -187,11 +192,32 @@ def create_app(paths: Paths) -> FastAPI:
         api_key = secrets.get(credential_ref(connection_id))
         if not api_key:
             return {"ok": False, "detail": "No credential stored for this connection."}
+        adapter = build_adapter(connection, api_key)
         try:
-            await build_adapter(connection, api_key).probe()
+            await adapter.probe()
         except ModelError as exc:
             return {"ok": False, "detail": str(exc)}
-        return {"ok": True, "detail": "Reached the model successfully."}
+
+        # While we have the server's attention, ask how big its window is.
+        # A local server will say; that answer is recorded if the owner has
+        # not set one themselves, so the ceiling fills itself in for the
+        # models that can announce it and stays the owner's to type for the
+        # ones that cannot.
+        detected = await adapter.detect_context()
+        chosen = connection.get("context")
+        if detected and not chosen:
+            store.update_connection(connection_id, context=detected)
+            note = f" Context window: {detected:,} tokens (reported by the server)."
+        elif detected and chosen and detected != chosen:
+            # The owner's number wins -- they may know something the server
+            # does not -- but a disagreement is worth a sentence, not silence.
+            note = (f" Context window set to {chosen:,} tokens;"
+                    f" the server reports {detected:,}.")
+        elif chosen:
+            note = f" Context window: {chosen:,} tokens."
+        else:
+            note = " Context window unknown - set it in the connection if you know it."
+        return {"ok": True, "detail": "Reached the model successfully." + note}
 
     # -- the Resident ---------------------------------------------------
 

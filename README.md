@@ -71,7 +71,13 @@ answers straight away. On the 9B developed against, the same request went from
 ## Connections and roles
 
 A **connection** is one model and how to reach it: provider, model, endpoint,
-credential, tags. It never carries a system prompt.
+credential, tags, whether it thinks, and how large its context window is. It
+never carries a system prompt.
+
+The context window matters because a request past it is refused outright, not
+trimmed. Local servers announce theirs — pressing **Test** on a connection fills
+it in — but most hosted endpoints do not, so it is a field you can set yourself.
+A value you type wins over what the server reports; Test says so if they differ.
 
 A **role** is who is using a model and why, and it does carry the prompt. The
 Resident is a role; workers will be roles too, each with its own prompt and its
