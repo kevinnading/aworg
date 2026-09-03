@@ -62,11 +62,12 @@ A worker is three things, not two:
 
 The third is the one that is easy to miss and does the most work. A
 test-runner that cannot write files cannot damage the workspace however
-badly it misreads a job. This is the same rule the Living Workspace
-boundary follows: enforced structurally rather than trusted to good
-behaviour. It is also what makes small models usable as specialists —
-three tools and a narrow prompt are far more reliable than twelve tools
-and a general one.
+badly it misreads a job — it is not trusted to avoid writing, it is simply
+not handed the means. Note that this is a limit the Resident places on a
+worker it spawned, not a limit AWORG places on the Resident; see *Authority
+Is The Account's* below. It is also what makes small models usable as
+specialists — three tools and a narrow prompt are far more reliable than
+twelve tools and a general one.
 
 ### Delegation is one tool, not one per worker
 
