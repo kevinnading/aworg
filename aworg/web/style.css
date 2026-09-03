@@ -1214,19 +1214,28 @@ body.resizing.row * { cursor: row-resize !important; }
 
 /* ---- thinking ---- */
 
-/* Some models reason at length before their first word. That is not the
-   reply and is never kept, but hiding it entirely means the interface shows
-   an empty bubble and a blinking cursor for as long as the model takes --
-   which is indistinguishable from a hang. So it is shown, quietly, and
-   folded away the moment a real answer starts. */
+/* Some models reason at length before their first word. That reasoning is
+   never kept and never sent back, but while it is happening it is the only
+   honest thing to show: a blinking cursor over an empty bubble says words
+   are coming, and they are not -- it is indistinguishable from a hang.
+
+   So while the model thinks the panel is open and live: the thoughts flow
+   through it, a pulse in the accent colour says something is happening, and
+   the seconds tick so a long think reads as long rather than stuck. The
+   moment the first real word arrives it folds to one line -- "Thought for
+   12s" -- and the cursor comes back for the reply. */
 
 .thinking {
-  margin: 0 0 10px;
+  margin: 0 0 12px;
   border-left: 2px solid var(--line);
   padding-left: 12px;
 }
+.thinking.live { border-left-color: var(--accent); }
 
 .thinking summary {
+  display: flex;
+  align-items: center;
+  gap: 9px;
   color: var(--muted);
   font-size: 12.5px;
   cursor: pointer;
@@ -1234,12 +1243,33 @@ body.resizing.row * { cursor: row-resize !important; }
   user-select: none;
 }
 .thinking summary::-webkit-details-marker { display: none; }
-.thinking summary::before { content: "▸ "; }
-.thinking[open] summary::before { content: "▾ "; }
 .thinking summary:hover { color: var(--text); }
 
+/* The marker: a folded chevron at rest, a breathing dot while live. */
+.thinking summary::before {
+  content: "";
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted);
+  opacity: 0.55;
+}
+.thinking.live summary { color: var(--text); font-weight: 500; }
+.thinking.live summary::before {
+  background: var(--accent);
+  opacity: 1;
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 55%, transparent);
+  animation: think-pulse 1.4s ease-out infinite;
+}
+@keyframes think-pulse {
+  0%   { box-shadow: 0 0 0 0   color-mix(in srgb, var(--accent) 55%, transparent); }
+  70%  { box-shadow: 0 0 0 8px color-mix(in srgb, var(--accent) 0%,  transparent); }
+  100% { box-shadow: 0 0 0 0   color-mix(in srgb, var(--accent) 0%,  transparent); }
+}
+
 .thinking-stream {
-  margin-top: 7px;
+  margin-top: 8px;
   /* Reasoning runs to thousands of characters. All of it is kept; this only
      decides how much is on screen before it scrolls. */
   max-height: 60vh;
@@ -1248,5 +1278,11 @@ body.resizing.row * { cursor: row-resize !important; }
   color: var(--muted);
   font-size: 12px;
   line-height: 1.5;
-  opacity: 0.85;
+}
+/* Live, the newest thought is at the bottom edge and the eye should be
+   drawn there; a soft fade at the top keeps the stream from reading as a
+   wall of finished text. */
+.thinking.live .thinking-stream {
+  max-height: 180px;
+  mask-image: linear-gradient(to bottom, transparent, black 28px);
 }

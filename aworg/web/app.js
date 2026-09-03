@@ -176,16 +176,19 @@ async function send(text) {
   let thinking = "";
   let failed = false;
 
-  // Shown only while the model is thinking and nothing has been said yet.
-  // It is removed the moment a real word arrives, so the reply is never
-  // preceded by leftover scaffolding.
+  // While the model thinks, the thinking is the thing to show -- open, live,
+  // with the seconds ticking -- because a blinking cursor over an empty
+  // bubble reads as a hang. The moment a real word arrives it folds down to
+  // a one-line record of how long that took.
   const thoughts = document.createElement("details");
   thoughts.className = "thinking";
   const summary = document.createElement("summary");
-  summary.textContent = "Thinking…";
   const stream = document.createElement("div");
   stream.className = "thinking-stream";
   thoughts.append(summary, stream);
+  const startedAt = Date.now();
+  let ticker = null;
+  const elapsed = () => Math.max(1, Math.round((Date.now() - startedAt) / 1000));
 
   try {
     const response = await fetch("/api/chat", {
@@ -210,21 +213,32 @@ async function send(text) {
         const event = JSON.parse(line);
 
         if (event.type === "thinking") {
-          // Reasoning models send this long before their first word. Without
-          // it the interface shows an empty bubble and a blinking cursor for
-          // as long as the model takes, which reads as a hang.
           thinking += event.text;
-          if (!thoughts.isConnected) replyNode.insertBefore(thoughts, body);
+          if (!thoughts.isConnected) {
+            replyNode.insertBefore(thoughts, body);
+            thoughts.open = true;
+            thoughts.classList.add("live");
+            // The cursor promises words are coming; while thinking they are
+            // not, so it steps aside for the indicator that tells the truth.
+            body.classList.remove("cursor");
+            summary.textContent = "Thinking";
+            ticker = setInterval(() => {
+              summary.textContent = `Thinking · ${elapsed()}s`;
+            }, 1000);
+          }
           stream.textContent = thinking;
-          summary.textContent = `Thinking… (${thinking.length} characters)`;
+          stream.scrollTop = stream.scrollHeight;
           box.scrollTop = box.scrollHeight;
         } else if (event.type === "delta") {
           collected += event.text;
-          if (thoughts.isConnected) {
-            // It has started answering. Keep the reasoning available but get
-            // it out of the way.
-            summary.textContent = "Thought before answering";
+          if (thoughts.classList.contains("live")) {
+            // It has started answering. Fold the reasoning down to a record
+            // of how long it took, and give the cursor back to the reply.
+            clearInterval(ticker);
+            thoughts.classList.remove("live");
             thoughts.open = false;
+            summary.textContent = `Thought for ${elapsed()}s`;
+            body.classList.add("cursor");
           }
           body.innerHTML = MD.render(collected);
           box.scrollTop = box.scrollHeight;
@@ -240,6 +254,7 @@ async function send(text) {
           });
         } else if (event.type === "error") {
           failed = true;
+          clearInterval(ticker);
           if (!collected) replyNode.remove();
           thoughts.remove();
           box.appendChild(messageNode("error", event.message, null));
@@ -252,6 +267,7 @@ async function send(text) {
     if (!collected) replyNode.remove();
     box.appendChild(messageNode("error", `Lost contact with AWORG: ${error.message}`, null));
   } finally {
+    clearInterval(ticker);
     body.classList.remove("cursor");
     setStreaming(false);
     if (failed) {
