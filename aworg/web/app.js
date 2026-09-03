@@ -22,6 +22,12 @@ const app = {
   layout: null,
   panes: [],
   lifecycle: null,
+  // The last answer from /api/context, plus what has been added since: the
+  // draft in the composer and the reply as it streams in. The ring is exact
+  // right after a fetch and drifts to an estimate in between, and says so.
+  context: null,
+  contextDraft: 0,
+  contextStreamed: 0,
 };
 
 /* ---------- api ---------- */
@@ -89,7 +95,62 @@ async function refresh() {
   renderSettings();
   renderAppearance();
   renderResetView();
+  refreshContext();
   renderLifecycle();
+}
+
+/* ---------- context window ---------- */
+
+/* The ring is refreshed from the server whenever the conversation actually
+ * changes, because only the model's server can count exactly. Between
+ * refreshes it moves on an estimate -- the draft as it is typed, the reply
+ * as it streams -- so it is never frozen at a number that is already wrong,
+ * and it is drawn lighter while it is guessing. */
+
+async function refreshContext() {
+  try {
+    app.context = await api("/api/context");
+  } catch (_) {
+    app.context = null;
+  }
+  app.contextDraft = 0;
+  app.contextStreamed = 0;
+  renderContext();
+}
+
+function estimateTokens(text) {
+  const per = (app.context && app.context.chars_per_token) || 3.6;
+  return Math.round(text.length / per);
+}
+
+function renderContext() {
+  const ring = el("context");
+  const info = app.context;
+  if (!info) { ring.hidden = true; return; }
+  ring.hidden = false;
+
+  const added = app.contextDraft + app.contextStreamed;
+  const tokens = info.tokens + added;
+  const exact = info.exact && added === 0;
+  const limit = info.window;
+  const pct = limit ? Math.min(100, (100 * tokens) / limit) : null;
+
+  ring.classList.toggle("estimate", !exact);
+  ring.classList.toggle("warn", pct !== null && pct >= 75 && pct < 92);
+  ring.classList.toggle("full", pct !== null && pct >= 92);
+  el("context-fill").setAttribute("stroke-dasharray", pct === null ? "0 100" : pct.toFixed(1) + " 100");
+
+  const compact = tokens >= 10000 ? Math.round(tokens / 1000) + "k"
+    : tokens >= 1000 ? (tokens / 1000).toFixed(1) + "k" : String(tokens);
+  el("context-pct").textContent = pct === null ? compact : Math.round(pct) + "%";
+  ring.setAttribute("aria-valuenow", pct === null ? 0 : Math.round(pct));
+
+  const how = exact ? "exact" : "estimated";
+  const fmt = (n) => n.toLocaleString();
+  ring.title = limit
+    ? fmt(tokens) + " of " + fmt(limit) + " tokens (" + pct.toFixed(1) + "%) - " + how
+      + "\n" + info.messages + " messages in context"
+    : fmt(tokens) + " tokens - " + how + "\nContext window unknown - set it on the connection";
 }
 
 /* ---------- status ---------- */
@@ -231,6 +292,8 @@ async function send(text) {
           box.scrollTop = box.scrollHeight;
         } else if (event.type === "delta") {
           collected += event.text;
+          app.contextStreamed = estimateTokens(collected);
+          renderContext();
           if (thoughts.classList.contains("live")) {
             // It has started answering. Fold the reasoning down to a record
             // of how long it took, and give the cursor back to the reply.
@@ -270,6 +333,8 @@ async function send(text) {
     clearInterval(ticker);
     body.classList.remove("cursor");
     setStreaming(false);
+    // The conversation changed; ask for the exact count.
+    refreshContext();
     if (failed) {
       // The conversation on disk is authoritative; resync rather than guess.
       app.conversation = await api("/api/conversation");
@@ -1373,6 +1438,9 @@ function wireEvents() {
 
   const input = el("input");
   input.addEventListener("input", () => {
+    // The draft counts before it is sent -- that is the point of the ring.
+    app.contextDraft = estimateTokens(input.value);
+    renderContext();
     input.style.height = "auto";
     // No ceiling here -- the stylesheet's max-height is the only one, so the
     // box grows with the text instead of stopping at an arbitrary height.
@@ -1391,6 +1459,8 @@ function wireEvents() {
     if (!text || app.streaming) return;
     input.value = "";
     input.style.height = "auto";
+    app.contextDraft = estimateTokens(text);
+    renderContext();
     send(text);
   };
 

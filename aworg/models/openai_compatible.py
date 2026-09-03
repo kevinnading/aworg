@@ -170,6 +170,43 @@ class OpenAICompatibleAdapter(ModelAdapter):
     def default_base_url(self) -> str:
         return "https://api.openai.com/v1"
 
+    def _wire(self, messages: list[Message], system: str) -> list[dict[str, str]]:
+        wire: list[dict[str, str]] = []
+        if system:
+            wire.append({"role": "system", "content": system})
+        wire.extend(
+            {"role": "user" if m.role == "owner" else "assistant", "content": m.content}
+            for m in messages
+        )
+        return wire
+
+    async def count_tokens(self, messages: list[Message], system: str) -> int | None:
+        """Exact, on llama.cpp: render the chat template, then tokenize it.
+
+        Two calls rather than one because tokenizing the raw text misses the
+        template's own tokens -- a few per message, which is a few hundred
+        over a long conversation. Anything that is not llama.cpp answers
+        neither endpoint and gets None.
+        """
+        root = self.base_url[:-3] if self.base_url.endswith("/v1") else self.base_url
+        try:
+            async with httpx.AsyncClient(timeout=20.0) as client:
+                rendered = await client.post(
+                    f"{root}/apply-template", json={"messages": self._wire(messages, system)}
+                )
+                if rendered.status_code != 200:
+                    return None
+                prompt = rendered.json().get("prompt")
+                if not isinstance(prompt, str):
+                    return None
+                counted = await client.post(f"{root}/tokenize", json={"content": prompt})
+                if counted.status_code != 200:
+                    return None
+                tokens = counted.json().get("tokens")
+                return len(tokens) if isinstance(tokens, list) else None
+        except (httpx.RequestError, ValueError):
+            return None
+
     async def detect_context(self) -> int | None:
         """llama.cpp publishes its window at /props, beside the /v1 API.
 
@@ -191,16 +228,7 @@ class OpenAICompatibleAdapter(ModelAdapter):
     async def stream(
         self, messages: list[Message], system: str
     ) -> AsyncIterator[Fragment]:
-        wire: list[dict[str, str]] = []
-        if system:
-            wire.append({"role": "system", "content": system})
-        wire.extend(
-            {
-                "role": "user" if m.role == "owner" else "assistant",
-                "content": m.content,
-            }
-            for m in messages
-        )
+        wire = self._wire(messages, system)
 
         payload = {"model": self.model, "messages": wire, "stream": True}
         if self.reasoning == "off":

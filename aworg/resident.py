@@ -66,6 +66,52 @@ class Resident:
 
     # -- conversing -----------------------------------------------------
 
+    #: Characters per token, for when the model cannot be asked. Measured
+    #: against llama.cpp's own count on a real conversation: about 9% high,
+    #: which errs the safe way.
+    CHARS_PER_TOKEN = 3.6
+
+    async def context_usage(self) -> dict[str, Any]:
+        """How full the window is, built from exactly what the next turn sends.
+
+        Exact when the model's server will count; estimated otherwise, and
+        the answer says which. The window comes from the connection -- None
+        if nobody has set it, in which case there is a count but no percent.
+        """
+        conversation_id = self.store.current_conversation_id()
+        config = self.store.get_resident()
+        history = [
+            Message(role=m["role"], content=m["content"])
+            for m in self.store.messages(conversation_id)
+        ]
+        system = config["system_prompt"]
+        chars = len(system) + sum(len(m.content) for m in history)
+        estimate = int(chars / self.CHARS_PER_TOKEN)
+
+        connection = self.primary_connection()
+        tokens, exact, window = estimate, False, None
+        if connection is not None:
+            window = connection.get("context")
+            api_key = self.secrets.get(credential_ref(connection["id"]))
+            if api_key:
+                try:
+                    counted = await build_adapter(connection, api_key).count_tokens(
+                        history, system
+                    )
+                except ModelError:
+                    counted = None
+                if counted is not None:
+                    tokens, exact = counted, True
+
+        return {
+            "tokens": tokens,
+            "exact": exact,
+            "window": window,
+            "percent": round(100 * tokens / window, 1) if window else None,
+            "messages": len(history),
+            "chars_per_token": self.CHARS_PER_TOKEN,
+        }
+
     async def respond_to(self, text: str) -> AsyncIterator[dict[str, Any]]:
         """Take the owner's message and stream back the Resident's reply.
 

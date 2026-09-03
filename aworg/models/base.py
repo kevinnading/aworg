@@ -85,6 +85,16 @@ class ModelAdapter:
         #: is the number everything above here has to fit inside.
         self.context = context
 
+    async def count_tokens(self, messages: list[Message], system: str) -> int | None:
+        """How many tokens this conversation costs, by the model's own count.
+
+        Only the model's tokenizer knows. A server that exposes it answers
+        exactly; everything else returns None and the caller estimates,
+        which is roughly a tenth out -- close enough to be useful, far enough
+        that the interface says which it is showing.
+        """
+        return None
+
     async def detect_context(self) -> int | None:
         """Ask the server how big its window is, if it will say.
 

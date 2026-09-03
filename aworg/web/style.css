@@ -1286,3 +1286,46 @@ body.resizing.row * { cursor: row-resize !important; }
   max-height: 180px;
   mask-image: linear-gradient(to bottom, transparent, black 28px);
 }
+
+/* ---- context window ---- */
+
+/* A ring in the composer: how much of the model's window the next turn
+   will carry. It sits where the cost is paid, and it is read in a glance --
+   green, amber near the top, red when the next message may not fit. The
+   exact figure, and whether it is exact or estimated, are in the title. */
+
+.context {
+  position: relative;
+  flex: none;
+  width: 34px;
+  height: 34px;
+  align-self: flex-end;
+  margin-bottom: 1px;
+  cursor: default;
+  --context-color: var(--ok);
+}
+.context svg { display: block; transform: rotate(-90deg); }
+.context-track { fill: none; stroke: var(--line); stroke-width: 3; }
+.context-fill {
+  fill: none;
+  stroke: var(--context-color);
+  stroke-width: 3;
+  stroke-linecap: round;
+  transition: stroke-dasharray 300ms ease, stroke 300ms ease;
+}
+.context-pct {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.context.warn { --context-color: var(--warn); }
+.context.full { --context-color: var(--danger); }
+.context.full .context-pct { color: var(--danger); }
+/* An estimate is drawn lighter, so exact and guessed never look the same. */
+.context.estimate .context-fill { opacity: 0.6; }

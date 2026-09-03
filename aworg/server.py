@@ -247,6 +247,11 @@ def create_app(paths: Paths) -> FastAPI:
     def conversation() -> dict[str, Any]:
         return resident.conversation()
 
+    @app.get("/api/context")
+    async def context_usage() -> dict[str, Any]:
+        """How much of the model's window the next turn will use."""
+        return await resident.context_usage()
+
     @app.post("/api/chat")
     async def chat(body: ChatBody) -> StreamingResponse:
         text = body.message.strip()
