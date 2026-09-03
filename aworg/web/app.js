@@ -1356,7 +1356,9 @@ function wireEvents() {
   const input = el("input");
   input.addEventListener("input", () => {
     input.style.height = "auto";
-    input.style.height = `${Math.min(input.scrollHeight, 200)}px`;
+    // No ceiling here -- the stylesheet's max-height is the only one, so the
+    // box grows with the text instead of stopping at an arbitrary height.
+    input.style.height = `${input.scrollHeight}px`;
   });
   input.addEventListener("keydown", (event) => {
     if (event.key === "Enter" && !event.shiftKey) {

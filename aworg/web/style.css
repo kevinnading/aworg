@@ -133,7 +133,10 @@ main { flex: 1; min-height: 0; display: flex; }
   gap: 20px;
 }
 
-.msg { max-width: 760px; width: 100%; margin: 0 auto; }
+/* Wide enough to use the room, capped only where lines get hard to track
+   across. The owner sized this pane on purpose; filling a fraction of it
+   would be ignoring that. */
+.msg { max-width: 1100px; width: 100%; margin: 0 auto; }
 
 .msg .body { white-space: pre-wrap; word-wrap: break-word; }
 
@@ -186,7 +189,7 @@ main { flex: 1; min-height: 0; display: flex; }
   flex: none;
   padding: 12px 16px 16px;
 }
-.composer > * { max-width: 760px; margin: 0 auto; }
+.composer > * { max-width: 1100px; margin: 0 auto; }
 
 .composer-box {
   position: relative;
@@ -210,7 +213,10 @@ main { flex: 1; min-height: 0; display: flex; }
   display: block;
   flex: 1;
   min-width: 0;
-  max-height: 200px;
+  /* Grows with what is being written. The only ceiling is the window itself,
+     so that a long paste does not push the conversation off the screen -- and
+     nothing is ever cut, it scrolls. */
+  max-height: 60vh;
   resize: none;
   background: none;
   border: none;
@@ -619,10 +625,7 @@ button.tiny { padding: 5px 11px; font-size: 13px; }
   display: flex;
   min-height: 0;
   background: var(--panel);
-  border-bottom: 1px solid var(--line);
 }
-.activity .pane + .pane,
-.activity .resizer + .pane { border-left: 1px solid var(--line); }
 /* Tasks takes a share of the row for the same reason, so Workers is not the
    only one of the pair that grows when the window does. */
 .activity > .pane:first-child { flex: 0 1 auto; flex-basis: var(--tasks-width); min-width: 0; }
@@ -983,11 +986,9 @@ body.has-maximised-pane .resizer { pointer-events: none; }
      left is now on top and the conversation still comes before the log. */
   .workbench { flex-direction: column; overflow-y: auto; }
 
-  .column, .activity {
+  .column, .activity, .console {
     width: 100%;
     flex: none;
-    border-right: none;
-    border-left: none;
     border-bottom: 1px solid var(--line);
     overflow-y: visible;
   }
@@ -1000,8 +1001,7 @@ body.has-maximised-pane .resizer { pointer-events: none; }
   /* Side by side stops meaning anything in a single column. */
   .activity { flex-direction: column; height: auto; }
   .activity .pane { width: 100% !important; }
-  .activity .pane + .pane,
-  .activity .resizer + .pane { border-left: none; border-top: 1px solid var(--line); }
+  .activity .pane + .pane { border-top: 1px solid var(--line); }
 
   /* Nothing has a vertical edge left to drag. The heights still mean
      something, so those handles stay. */
@@ -1173,16 +1173,27 @@ body.has-maximised-pane .resizer { pointer-events: none; }
 .resizer.vertical { width: 9px; margin: 0 -5px; cursor: col-resize; }
 .resizer.horizontal { height: 9px; margin: -5px 0; cursor: row-resize; }
 
+/* The divider draws the line, rather than the panes either side drawing
+   their own borders.
+   
+   They cannot: the negative margin above makes the grab target overlap its
+   neighbour by five pixels, and a neighbour with an opaque background then
+   paints over the border. That is exactly what removed the line between the
+   Application column and Tasks -- the activity row covered it, while the
+   conversation below, having no background of its own, left it showing.
+   
+   One element owning the seam cannot have that problem, and it sits above
+   everything, so the line is always visible and always in the same place. */
 .resizer::after {
   content: "";
   position: absolute;
-  inset: 0;
-  background: none;
-  transition: background 120ms ease;
+  background: var(--line);
+  transition: background 120ms ease, inset 120ms ease;
 }
-.resizer.vertical::after { left: 4px; right: 4px; }
-.resizer.horizontal::after { top: 4px; bottom: 4px; }
+.resizer.vertical::after { top: 0; bottom: 0; left: 4px; right: 4px; }
+.resizer.horizontal::after { left: 0; right: 0; top: 4px; bottom: 4px; }
 
+/* Reached for: the same line, lit. */
 .resizer:hover::after,
 .resizer:focus-visible::after,
 .resizer.dragging::after { background: var(--accent); }
@@ -1229,7 +1240,9 @@ body.resizing.row * { cursor: row-resize !important; }
 
 .thinking-stream {
   margin-top: 7px;
-  max-height: 260px;
+  /* Reasoning runs to thousands of characters. All of it is kept; this only
+     decides how much is on screen before it scrolls. */
+  max-height: 60vh;
   overflow-y: auto;
   white-space: pre-wrap;
   color: var(--muted);

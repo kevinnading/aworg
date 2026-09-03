@@ -12,12 +12,17 @@ from .base import Fragment, Message, ModelAdapter, ModelError
 
 ANTHROPIC_VERSION = "2023-06-01"
 
+#: Effectively no ceiling; see the payload below.
+MAX_TOKENS = 64000
+
 #: A thinking model can be silent for a long time before its first word, so a
 #: single overall deadline is wrong: it cuts off work that is going fine. What
 #: should fail fast is a connection that is not there, and what should fail
-#: eventually is a stream that has genuinely stalled -- hence a short connect
-#: and a generous gap between chunks.
-STREAM_TIMEOUT = httpx.Timeout(connect=10.0, read=300.0, write=30.0, pool=10.0)
+#: A reply is never cut off for taking too long: there is no read deadline
+#: at all, because a model that thinks for ten minutes is still working and
+#: the owner can stop it themselves. Only the connection is timed, so a
+#: server that is not there fails immediately instead of hanging.
+STREAM_TIMEOUT = httpx.Timeout(connect=10.0, read=None, write=30.0, pool=10.0)
 
 
 class AnthropicAdapter(ModelAdapter):
@@ -32,7 +37,11 @@ class AnthropicAdapter(ModelAdapter):
     ) -> AsyncIterator[Fragment]:
         payload = {
             "model": self.model,
-            "max_tokens": 4096,
+            # The API requires a ceiling, so this is set past what any current
+            # model will produce rather than to a number that would cut a
+            # reply short. A provider that rejects it says so plainly, which
+            # is a better failure than a reply that stops mid-sentence.
+            "max_tokens": MAX_TOKENS,
             "stream": True,
             "messages": [
                 {
@@ -91,7 +100,9 @@ def _describe(status: int, body: str) -> str:
         detail = (json.loads(body).get("error") or {}).get("message")
     except (json.JSONDecodeError, AttributeError):
         detail = None
-    detail = detail or body[:300].strip() or "no detail provided"
+    # Shown in full: a provider error cut in half is a provider error the
+    # owner cannot act on.
+    detail = detail or body.strip() or "no detail provided"
 
     if status == 401:
         return f"Authentication failed - check the credential. ({detail})"
