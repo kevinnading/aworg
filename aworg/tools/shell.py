@@ -27,64 +27,10 @@ import asyncio
 import os
 import shutil
 import sys
-import time
 from pathlib import Path
 from typing import Any
 
 from .base import Tool, ToolResult
-
-
-#: Byte-order marks, and what is wrong with a file that starts with one.
-#: UTF-16 is the serious case: the file is unreadable to anything that is not
-#: expecting it, which on a developer's machine is nearly everything.
-MARKS = [
-    (b"\xff\xfe", "UTF-16"),
-    (b"\xfe\xff", "UTF-16"),
-    (b"\xef\xbb\xbf", "a UTF-8 byte-order mark"),
-]
-
-#: How many files to look at after a command. A bound rather than a
-#: judgement: a command that rewrote four hundred files is a build, and
-#: checking all of them would cost more than the check is worth.
-MAX_CHECKED = 25
-
-
-def _mangled(directory: Path, since: float) -> list[tuple[str, str]]:
-    """Files the command just wrote that other programs will not read.
-
-    This exists because of a failure the Resident cannot see. Under Windows
-    PowerShell 5.1, `>` and `Out-File` write UTF-16, so a model creating a
-    source file the ordinary way produces something git and every compiler
-    will refuse -- and then verifies its work with `Get-Content`, which
-    decodes UTF-16 without complaint and shows exactly what was expected.
-    The check passes, the file is broken, and nothing in the conversation
-    says otherwise. Telling the model not to do it does not work: a 9B was
-    told, in the same prompt, and reached for Out-File anyway.
-
-    So AWORG looks instead. This is the observed half of a result doing the
-    job it is for -- reporting what happened rather than what was claimed.
-    Only the directory the command ran in, only files it touched, and only
-    their first three bytes.
-    """
-    findings: list[tuple[str, str]] = []
-    try:
-        entries = sorted(directory.iterdir())[:MAX_CHECKED]
-    except OSError:
-        return findings
-
-    for entry in entries:
-        try:
-            if not entry.is_file() or entry.stat().st_mtime < since:
-                continue
-            with entry.open("rb") as handle:
-                head = handle.read(3)
-        except OSError:
-            continue
-        for mark, what in MARKS:
-            if head.startswith(mark):
-                findings.append((entry.name, what))
-                break
-    return findings
 
 
 class RunCommand(Tool):
@@ -150,11 +96,6 @@ class RunCommand(Tool):
             )
 
         argv = [*self._shell(), command]
-        # Noted before the command starts, so that a file it writes counts as
-        # touched. A whole second early, because file timestamps are coarser
-        # than this clock on some filesystems and missing a real finding is
-        # worse than glancing at one extra file.
-        since = time.time() - 1
         try:
             process = await asyncio.create_subprocess_exec(
                 *argv,
@@ -187,33 +128,16 @@ class RunCommand(Tool):
         output = stdout.decode("utf-8", "replace") if stdout else ""
         code = process.returncode
 
-        observed: dict[str, Any] = {
-            "command": command,
-            "directory": str(where),
-            "exit_code": code,
-            "bytes": len(stdout or b""),
-        }
-
-        # Said in the output, not only recorded, because a fact the model is
-        # not told is a fact it cannot act on -- and this one it can: it can
-        # rewrite the file before going on to build against it.
-        mangled = _mangled(where, since) if code == 0 else []
-        if mangled:
-            observed["mangled"] = [
-                {"file": name, "encoding": what} for name, what in mangled
-            ]
-            listed = ", ".join(
-                f"{name} ({what})" for name, what in mangled
-            )
-            output += (
-                f"\n\n[AWORG observed: {listed} was written with an encoding "
-                "most tools cannot read. Reading it back in this shell will "
-                "look correct anyway. Rewrite it with Set-Content, or with "
-                "[IO.File]::WriteAllText($path, $text), before anything else "
-                "depends on it.]"
-            )
-
-        return ToolResult(output=output, observed=observed, failed=code != 0)
+        return ToolResult(
+            output=output,
+            observed={
+                "command": command,
+                "directory": str(where),
+                "exit_code": code,
+                "bytes": len(stdout or b""),
+            },
+            failed=code != 0,
+        )
 
     def stop_all(self) -> int:
         """Kill anything still running. Used when a turn is stopped."""

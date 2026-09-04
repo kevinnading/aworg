@@ -183,40 +183,6 @@ verifies is good; a system in which "verified" cannot be claimed without
 evidence is better, and it is what the autonomous repair loop will have to
 stand on.
 
-### A Model Cannot Verify Through The Tool That Wrote
-
-A concrete case, because it is the sharpest one found so far.
-
-On Windows PowerShell 5.1, `>` and `Out-File` write UTF-16. A Resident
-asked for a config file produces one that git, node, python and every
-compiler will refuse. It then checks its work with `Get-Content`, which
-decodes UTF-16 without complaint and prints exactly what was expected. The
-command exits 0. The verification passes. The file is unusable, and
-nothing in the conversation says so.
-
-No amount of care by the model closes this. It did everything right by its
-own lights — it wrote the file, it read it back, it confirmed before
-claiming. The blind spot is structural: reading a file through the same
-shell that wrote it tests the shell's own round-trip, not whether anything
-else on the machine can read the result.
-
-Two things follow, and they generalise past this one bug:
-
-- **Advice in the prompt is not a control.** The host block was given the
-  fact plainly. The 9B read it and reached for `Out-File` anyway, twice,
-  and ignored the warning when it came back in a tool result. Anything
-  that must hold has to hold whether or not the model cooperates.
-- **The check belongs to AWORG, at the point of observation.** The shell
-  tool inspects the files a command touched and records what it finds in
-  `observed`, beside an exit code of 0 that would otherwise read as
-  success. That is the `output` / `observed` split earning its keep: not
-  bookkeeping, but the only place a claim can be contradicted by a fact.
-
-The general form: wherever the Resident can check its own work, ask what
-that check would still report if the work were wrong. Where the answer is
-"the same thing", the check is decoration and AWORG owes the owner a real
-one.
-
 ## Developed Against The Worst Case
 
 The models this is built against are deliberately modest — a 9B for the
