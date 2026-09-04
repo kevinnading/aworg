@@ -35,6 +35,7 @@ import time
 import os
 import platform
 import shutil
+import subprocess
 import socket
 import sys
 from typing import Any
@@ -142,10 +143,36 @@ def _elevated() -> bool | None:
         return None
 
 
+def _shell_version(shell: str) -> str | None:
+    """Which version of that shell, when knowing makes a difference.
+
+    Only asked of PowerShell, and only because the answer changes what a
+    Resident should write: 5.1 and 7 differ on chaining and on what encoding
+    a redirect produces. Nothing else here is worth a subprocess.
+    """
+    if shell not in ("powershell", "pwsh"):
+        return None
+    try:
+        found = subprocess.run(
+            [shell, "-NoProfile", "-NonInteractive", "-Command",
+             "$PSVersionTable.PSVersion.ToString()"],
+            capture_output=True, text=True, timeout=15,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    version = (found.stdout or "").strip()
+    return version or None
+
+
 def _default_shell(tools: dict[str, str]) -> str:
     """The shell a command should be run through on this machine."""
     if sys.platform == "win32":
-        return "powershell" if tools.get("powershell") or tools.get("pwsh") else "cmd"
+        # Matches what tools/shell.py actually reaches for: the newer one
+        # when it is there. A fact block that named a different shell from
+        # the one running the commands would be worse than none.
+        if tools.get("pwsh"):
+            return "pwsh"
+        return "powershell" if tools.get("powershell") else "cmd"
     return os.environ.get("SHELL") or ("bash" if tools.get("bash") else "sh")
 
 
@@ -165,6 +192,8 @@ def observe() -> dict[str, Any]:
     except OSError:
         disk_free = disk_total = None
 
+    shell = _default_shell(tools)
+
     return {
         "os": platform.system(),
         "release": platform.release(),
@@ -181,7 +210,8 @@ def observe() -> dict[str, Any]:
         "package_manager": next(
             (label for exe, label in PACKAGE_MANAGERS if exe in tools), None
         ),
-        "shell": _default_shell(tools),
+        "shell": shell,
+        "shell_version": _shell_version(shell),
         "python": platform.python_version(),
         "python_executable": sys.executable,
         "tools": sorted(tools),
@@ -210,6 +240,54 @@ def is_stale(facts: dict[str, Any] | None, max_age: float = STALE_AFTER) -> bool
 
 def _gb(value: int | None) -> str:
     return f"{value / 1_000_000_000:.0f} GB" if value else "unknown"
+
+
+def _shell_notes(shell: str, version: str | None) -> list[str]:
+    """The handful of things about this shell that cost a wasted step.
+
+    Not a tutorial. Every line was earned by watching a Resident get it
+    wrong, and each is measured on the machine rather than recalled: the
+    defaults below differ between an interactive shell and the one AWORG
+    runs, which is how the first draft of this advice came out wrong.
+
+    The encoding line is the one that matters most, and it is the least
+    obvious. Under Windows PowerShell 5.1, `>` and `Out-File` write UTF-16 --
+    so a Resident that creates a source file the way it has seen a thousand
+    times produces something git, node, python and every compiler will refuse.
+    Worse, `Set-Content -Encoding utf8` is not the fix: it adds a byte-order
+    mark, where plain `Set-Content` does not.
+
+    And the failure is invisible from inside. `Get-Content` decodes UTF-16
+    happily, so a Resident that writes a file and reads it back to check its
+    work sees exactly what it expected. Verifying through the tool that wrote
+    something is not verification, and it is worth saying so where the
+    Resident will read it before it trusts its own confirmation.
+    """
+    if shell not in ("powershell", "pwsh"):
+        return []
+    # PowerShell 7 writes UTF-8 without a BOM everywhere and has `&&`. None
+    # of this applies to it, and claiming otherwise would send a Resident
+    # around an obstacle that is not there.
+    if not (version or "").startswith("5."):
+        return []
+
+    return [
+        "PowerShell note: this is Windows PowerShell 5.1. `&&` and `||` are "
+        "parse errors here -- chain with `;`, or test $? between commands "
+        "when the second should only run if the first worked.",
+
+        "PowerShell note: `>` and `Out-File` write UTF-16 here, which git, "
+        "compilers and most parsers cannot read. `Set-Content -Encoding utf8` "
+        "adds a byte-order mark and is not the fix. To write a text file use "
+        "plain `Set-Content`, or [IO.File]::WriteAllText($path, $text) when "
+        "the exact bytes matter. Note that `Get-Content` reads UTF-16 back "
+        "without complaint, so reading a file you just wrote does not tell "
+        "you whether anything else on this machine can read it.",
+
+        "PowerShell note: running .ps1 files may be blocked by execution "
+        "policy. Prefer passing the command directly; if you must use a "
+        "script file, invoke it with -ExecutionPolicy Bypass.",
+    ]
 
 
 def summary(facts: dict[str, Any]) -> str:
@@ -241,7 +319,14 @@ def summary(facts: dict[str, Any]) -> str:
         lines.append(f"System package manager: {facts['package_manager']}.")
     else:
         lines.append("No system package manager was found on PATH.")
-    lines.append(f"Default shell: {facts['shell']}. Python {facts['python']}.")
+    shell = facts["shell"]
+    version = facts.get("shell_version")
+    lines.append(
+        f"Commands run through {shell}"
+        + (f" {version}" if version else "")
+        + f". Python {facts['python']}."
+    )
+    lines.extend(_shell_notes(shell, version))
     if facts["tools"]:
         lines.append(f"On PATH: {', '.join(facts['tools'])}.")
     lines.append(
