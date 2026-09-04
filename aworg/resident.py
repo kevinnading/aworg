@@ -185,7 +185,7 @@ class Resident:
                     tool_call_id=payload.get("id"),
                 ))
             else:
-                messages.append(Message(role=role, content=content))
+                messages.append(Message(role=role, content=_unenveloped(content)))
         return messages
 
     async def refresh_host(self) -> None:
@@ -440,10 +440,7 @@ class Resident:
             return
 
         resident_config = self.store.get_resident()
-        history = [
-            Message(role=m["role"], content=m["content"])
-            for m in self.store.messages(conversation_id)
-        ]
+        history = self._to_messages(self.store.messages(conversation_id))
 
         # Only what fits goes to the model. Everything stays on disk.
         system = self.system_prompt()
@@ -617,6 +614,31 @@ class Resident:
             ),
         }
         yield {"type": "done", "model_label": label}
+
+
+def _unenveloped(content: str) -> str:
+    """Strip an internal tool envelope that got stored as plain speech.
+
+    A model shown its own past in AWORG's storage format will copy that
+    format instead of calling anything -- it writes the JSON out as prose and
+    no tool ever runs. The fix is upstream, but a conversation that already
+    caught it keeps the bad example on disk forever, so the envelope is
+    removed on the way out rather than left to teach the same lesson twice.
+
+    Only what the Resident actually said survives. The calls named inside
+    never ran -- there are no results paired with them -- so presenting them
+    as real calls would put a claim in the record that nothing backs.
+    """
+    text = content.lstrip()
+    if not text.startswith("{") or '"calls"' not in text:
+        return content
+    try:
+        payload = json.loads(text)
+    except (ValueError, TypeError):
+        return content
+    if not isinstance(payload, dict) or "calls" not in payload or "said" not in payload:
+        return content
+    return str(payload.get("said") or "")
 
 
 def _label(connection: dict[str, Any]) -> str:
