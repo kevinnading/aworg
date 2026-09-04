@@ -93,7 +93,7 @@ def create_app(paths: Paths) -> FastAPI:
     paths.ensure()
     store = Store(paths.state_db)
     secrets = SecretStore(paths.secrets_db)
-    resident = Resident(store, secrets)
+    resident = Resident(store, secrets, paths)
 
     app = FastAPI(title="AWORG", version="0.1.0")
 
@@ -410,7 +410,10 @@ def create_app(paths: Paths) -> FastAPI:
         One request rather than seven. These are read together, and they
         stay together until one of them grows enough to want its own.
         """
-        return panes.describe(resident.host)
+        return panes.describe(
+            resident.host,
+            resident.tools.definitions() if resident.tools else None,
+        )
 
     # -- the Living Workspace -------------------------------------------
 

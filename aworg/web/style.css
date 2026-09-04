@@ -1495,3 +1495,84 @@ body.resizing.row * { cursor: row-resize !important; }
 
 .pane-item-name { font-size: 12.5px; color: var(--text); }
 .pane-item-detail { font-size: 11.5px; line-height: 1.4; color: var(--muted); }
+
+/* ---- tool work ---- */
+
+/* What the Resident did, shown as work rather than as speech. One line for
+   what ran, the output folded underneath. A failure opens itself, because
+   the one thing an owner must not miss is a step that did not work -- and
+   the exit status is on the outside for the same reason. */
+
+.tool {
+  max-width: 1100px;
+  width: 100%;
+  margin: 0 auto;
+  border-left: 2px solid var(--line);
+  padding-left: 12px;
+}
+.tool.failed { border-left-color: var(--danger); }
+.tool.running { border-left-color: var(--accent); }
+
+.tool summary {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.tool summary::-webkit-details-marker { display: none; }
+.tool summary:hover { color: var(--text); }
+
+.tool-icon {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  background: var(--muted);
+}
+.tool.failed .tool-icon { background: var(--danger); }
+.tool.running .tool-icon {
+  background: var(--accent);
+  animation: think-pulse 1.4s ease-out infinite;
+}
+
+/* The command itself, in the font commands are written in. */
+.tool-label {
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 12px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tool.failed .tool-label { color: var(--danger); }
+
+.tool-status {
+  margin-left: auto;
+  flex: none;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+.tool.failed .tool-status { color: var(--danger); }
+.tool.running .tool-status { color: var(--accent); }
+
+.tool-output {
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  background: var(--code-bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-x: auto;
+  max-height: 40vh;
+  overflow-y: auto;
+  color: var(--muted);
+}
+.tool[open] .tool-output { display: block; }

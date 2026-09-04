@@ -324,9 +324,78 @@ function renderChat() {
   }
 
   for (const message of app.conversation.messages) {
+    if (message.role === "tool_call" || message.role === "tool_result") {
+      const node = storedToolNode(message);
+      if (node) box.appendChild(node);
+      continue;
+    }
     box.appendChild(messageNode(message.role, message.content, message.model_label));
   }
   box.scrollTop = box.scrollHeight;
+}
+
+/* What the Resident did, rather than what it said.
+ *
+ * Tool work is part of the conversation -- it is what happened -- but it is
+ * not speech, and rendering it as another chat bubble would bury the reply
+ * under a wall of command output. So it gets its own shape: one line saying
+ * what ran and how it went, and the output folded underneath for whoever
+ * wants it. The exit code is on the outside, because that is the part the
+ * owner cannot afford to miss. */
+function toolNode({ name, summary, output, failed, running }) {
+  const wrap = document.createElement("details");
+  wrap.className = "tool" + (failed ? " failed" : "") + (running ? " running" : "");
+
+  const head = document.createElement("summary");
+  const icon = document.createElement("span");
+  icon.className = "tool-icon";
+  const label = document.createElement("span");
+  label.className = "tool-label";
+  label.textContent = summary;
+  const status = document.createElement("span");
+  status.className = "tool-status";
+  status.textContent = running ? "running" : failed ? "failed" : "";
+  head.append(icon, label, status);
+
+  const body = document.createElement("pre");
+  body.className = "tool-output";
+  body.textContent = output || "";
+
+  wrap.append(head, body);
+  wrap.dataset.tool = name;
+  return wrap;
+}
+
+function storedToolNode(message) {
+  let payload;
+  try {
+    payload = JSON.parse(message.content);
+  } catch (_) {
+    return null;
+  }
+  if (message.role === "tool_call") {
+    // The asking is only interesting alongside its answer, which arrives as
+    // the next message. Showing it separately would double every step.
+    return null;
+  }
+  const observed = payload.observed || {};
+  return toolNode({
+    name: payload.name,
+    summary: describeCall(payload.name, observed),
+    output: payload.output,
+    failed: payload.failed,
+  });
+}
+
+/* One line describing what actually ran. Built from what AWORG observed
+ * rather than from what the model said it would do, so a command that was
+ * changed on its way to the shell would show as it really was. */
+function describeCall(name, observed) {
+  if (observed.command) {
+    const where = observed.directory ? ` in ${observed.directory}` : "";
+    return `${observed.command}${where}`;
+  }
+  return name;
 }
 
 function messageNode(role, content, label) {
@@ -465,6 +534,7 @@ async function watchTurn(open, text) {
           stream.scrollTop = stream.scrollHeight;
           keepAtBottom(box, following);
         } else if (event.type === "delta") {
+          if (!replyNode.isConnected) box.appendChild(replyNode);
           collected += event.text;
           app.contextStreamed = estimateTokens(collected);
           renderContext();
@@ -478,6 +548,32 @@ async function watchTurn(open, text) {
             body.classList.add("cursor");
           }
           body.innerHTML = MD.render(collected);
+          keepAtBottom(box, following);
+        } else if (event.type === "tool_call") {
+          // Shown the moment it is asked for, so a long command is visibly
+          // running rather than looking like a stall.
+          const node = toolNode({
+            name: event.name,
+            summary: describeCall(event.name, event.arguments || {}) === event.name
+              ? (event.arguments && event.arguments.command) || event.name
+              : describeCall(event.name, event.arguments || {}),
+            output: "",
+            running: true,
+          });
+          node.id = `tool-${event.id}`;
+          box.appendChild(node);
+          keepAtBottom(box, following);
+        } else if (event.type === "tool_result") {
+          const node = document.getElementById(`tool-${event.id}`);
+          const replacement = toolNode({
+            name: event.name,
+            summary: describeCall(event.name, event.observed || {}),
+            output: event.output,
+            failed: event.failed,
+          });
+          if (node) node.replaceWith(replacement); else box.appendChild(replacement);
+          // A failure is worth opening unasked; a success is not.
+          replacement.open = !!event.failed;
           keepAtBottom(box, following);
         } else if (event.type === "stopped") {
           const note = document.createElement("div");

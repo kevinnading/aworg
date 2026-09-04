@@ -74,11 +74,9 @@ PANES: list[dict[str, Any]] = [
         "id": "tools",
         "label": "Tools",
         "hint": "What the Resident can directly do.",
-        "available": False,
-        "empty": ("No tools.", ""),
-        "blocked": ("No tools yet.",
-                    "Reading and writing files, running commands, and the rest "
-                    "of the Resident's hands arrive in Milestone 3."),
+        "available": True,
+        "empty": ("No tools.", "This Aworg has been built without any."),
+        "blocked": None,
     },
     {
         "id": "skills",
@@ -104,7 +102,7 @@ PANES: list[dict[str, Any]] = [
 PANE_IDS = [pane["id"] for pane in PANES]
 
 
-def capabilities(facts: dict[str, Any]) -> list[dict[str, Any]]:
+def capabilities(facts: dict[str, Any], tools: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
     """What the Resident can do here, as facts rather than promises.
 
     An owner about to ask for postgres needs to know whether this Aworg can
@@ -133,13 +131,37 @@ def capabilities(facts: dict[str, Any]) -> list[dict[str, Any]]:
         items.append({"name": "No system package manager",
                       "detail": "Nothing on PATH to install system packages with.",
                       "state": "warn"})
-    items.append({"name": "Conversation only",
-                  "detail": "No tools yet -- it cannot act on any of this.",
-                  "state": "warn"})
+    if tools:
+        items.append({"name": f"Can run commands",
+                      "detail": "It can act on this machine, not only describe it.",
+                      "state": "ok"})
+    else:
+        items.append({"name": "Conversation only",
+                      "detail": "No tools -- it cannot act on any of this.",
+                      "state": "warn"})
     return [item for item in items if item["state"] != "hidden"]
 
 
-def describe(facts: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+def tool_items(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The tools as they actually are, read from the registry.
+
+    Not a list written here and hoped to match: a pane describing tools the
+    Resident does not have, or missing ones it does, is worse than no pane.
+    The description is the one the model routes on, shown to the owner for
+    the same reason -- if it reads vaguely here it will route vaguely there.
+    """
+    return [
+        {"name": tool["name"],
+         "detail": tool["description"].split(". ")[0].rstrip(".") + ".",
+         "state": "ok"}
+        for tool in tools
+    ]
+
+
+def describe(
+    facts: dict[str, Any] | None = None,
+    tools: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
     """The panes as the owner interface renders them.
 
     The two empty texts collapse into the one that applies here rather than
@@ -154,7 +176,9 @@ def describe(facts: dict[str, Any] | None = None) -> list[dict[str, Any]]:
             heading, detail = pane["blocked"] or pane["empty"]
         items: list[dict[str, Any]] = []
         if pane["id"] == "capabilities" and facts:
-            items = capabilities(facts)
+            items = capabilities(facts, tools)
+        elif pane["id"] == "tools" and tools:
+            items = tool_items(tools)
 
         described.append(
             {

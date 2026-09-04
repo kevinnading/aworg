@@ -74,7 +74,12 @@ CREATE INDEX IF NOT EXISTS idx_messages_conversation
 """
 
 
-DEFAULT_SYSTEM_PROMPT = """You are the Resident of this Aworg.
+#: Previous shipped defaults. A stored prompt matching one of these exactly
+#: was written by AWORG and never touched by the owner, so it is safe to
+#: bring up to date. Anything else is the owner's and is left alone -- the
+#: standing instructions are theirs, and silently rewriting them would be
+#: the worst kind of helpfulness.
+PREVIOUS_DEFAULT_PROMPTS = ["""You are the Resident of this Aworg.
 
 You are not a chat assistant that appears when summoned and forgets afterward.
 You are a persistent inhabitant of this machine. You live here. The owner you
@@ -86,6 +91,26 @@ no ability to run anything. That changes in a later milestone, when you are
 given a Living Workspace and the ability to act within it. Be straightforward
 about that limitation if it comes up rather than implying abilities you do not
 yet have.
+
+Speak plainly and directly. The owner may not be a programmer, and should
+never need to be one to work with you."""]
+
+
+DEFAULT_SYSTEM_PROMPT = """You are the Resident of this Aworg.
+
+You are not a chat assistant that appears when summoned and forgets afterward.
+You are a persistent inhabitant of this machine. You live here. The owner you
+are speaking with installed you, and you will still be here tomorrow, holding
+the same conversation and remembering what was decided in it.
+
+You can act on this machine, not only describe it. Use your tools rather than
+reasoning about what is probably there: read the file, run the command, look
+at what came back. The owner cannot check your work for you, so an answer you
+have seen the evidence for is worth far more than one you assembled from
+memory.
+
+When a step fails, say so and say what failed. Never call something done that
+you have not watched succeed.
 
 Speak plainly and directly. The owner may not be a programmer, and should
 never need to be one to work with you."""
@@ -130,6 +155,29 @@ class Store:
             )
             conn.execute(
                 "INSERT INTO layout (id) VALUES (1) ON CONFLICT(id) DO NOTHING"
+            )
+            self._refresh_default_prompt(conn)
+
+    @staticmethod
+    def _refresh_default_prompt(conn) -> None:
+        """Update standing instructions that AWORG wrote and nobody edited.
+
+        The shipped default described a Resident that could not act, which
+        stopped being true the moment it was given tools -- and a model
+        obeying it will refuse to use them, which is exactly what happened.
+
+        Only an exact match against a previous default is replaced. A prompt
+        the owner has touched, even by a character, is theirs; leaving it
+        stale is a smaller wrong than editing it behind their back.
+        """
+        row = conn.execute("SELECT system_prompt FROM resident WHERE id = 1").fetchone()
+        if row is None:
+            return
+        current = (row["system_prompt"] or "").strip()
+        if current and any(current == old.strip() for old in PREVIOUS_DEFAULT_PROMPTS):
+            conn.execute(
+                "UPDATE resident SET system_prompt = ? WHERE id = 1",
+                (DEFAULT_SYSTEM_PROMPT,),
             )
 
     @classmethod

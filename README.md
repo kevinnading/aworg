@@ -68,6 +68,26 @@ endpoint and the credential. Set **Thinking → Off** on a connection and it
 answers straight away. On the 9B developed against, the same request went from
 99 seconds to under 1.
 
+## The Resident can act
+
+It has one tool: `run_command`. A shell on this machine, running with AWORG's
+own privileges, in the Living Workspace unless told otherwise. One tool rather
+than four narrow ones because tool-selection accuracy is the scarce resource —
+a shell can read files, write them, install things and check results, and every
+tool added is accuracy spent.
+
+There is no timeout. A build that takes an hour takes an hour, and a number
+chosen here would break exactly the long installs this exists for. Stopping a
+reply kills whatever it left running.
+
+What a tool returns is two things, deliberately: **what the model is told**, and
+**what AWORG observed** — the exit code, the duration, the directory. The second
+is recorded by AWORG and never written by a model, so a Resident claiming a
+command worked can be checked against the record of it exiting 1. The exit
+status is put in front of the output rather than left to be inferred, because a
+command that printed nothing and failed looks, from its output alone, exactly
+like one that worked.
+
 ## What the Resident knows about your machine
 
 At every start AWORG looks at the host: operating system, architecture, CPUs,

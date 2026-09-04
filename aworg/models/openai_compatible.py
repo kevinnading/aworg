@@ -15,7 +15,7 @@ from typing import AsyncIterator
 
 import httpx
 
-from .base import Fragment, Message, ModelAdapter, ModelError
+from .base import Fragment, Message, ModelAdapter, ModelError, ToolCall
 
 
 #: A thinking model can be silent for a long time before its first word, so a
@@ -170,15 +170,65 @@ class OpenAICompatibleAdapter(ModelAdapter):
     def default_base_url(self) -> str:
         return "https://api.openai.com/v1"
 
-    def _wire(self, messages: list[Message], system: str) -> list[dict[str, str]]:
-        wire: list[dict[str, str]] = []
+    def _wire(self, messages: list[Message], system: str) -> list[dict[str, Any]]:
+        """AWORG's conversation, in the shape this API expects.
+
+        Four kinds of message rather than two: the owner speaking, the
+        Resident speaking, the Resident asking for tools, and a tool
+        answering. The last two have to keep their ids paired or the model
+        cannot tell which answer belongs to which request when it asked for
+        several at once.
+        """
+        wire: list[dict[str, Any]] = []
         if system:
             wire.append({"role": "system", "content": system})
-        wire.extend(
-            {"role": "user" if m.role == "owner" else "assistant", "content": m.content}
-            for m in messages
-        )
+
+        for message in messages:
+            if message.tool_calls:
+                wire.append({
+                    "role": "assistant",
+                    "content": message.content or None,
+                    "tool_calls": [
+                        {
+                            "id": call.id,
+                            "type": "function",
+                            "function": {
+                                "name": call.name,
+                                "arguments": json.dumps(call.arguments),
+                            },
+                        }
+                        for call in message.tool_calls
+                    ],
+                })
+            elif message.tool_call_id:
+                wire.append({
+                    "role": "tool",
+                    "tool_call_id": message.tool_call_id,
+                    "content": message.content,
+                })
+            else:
+                wire.append({
+                    "role": "user" if message.role == "owner" else "assistant",
+                    "content": message.content,
+                })
         return wire
+
+    @staticmethod
+    def _tools(tools: list[dict[str, Any]] | None) -> list[dict[str, Any]] | None:
+        """AWORG's tool descriptions, in this API's shape."""
+        if not tools:
+            return None
+        return [
+            {
+                "type": "function",
+                "function": {
+                    "name": tool["name"],
+                    "description": tool["description"],
+                    "parameters": tool["parameters"],
+                },
+            }
+            for tool in tools
+        ]
 
     async def count_tokens(self, messages: list[Message], system: str) -> int | None:
         """Exact, on llama.cpp: render the chat template, then tokenize it.
@@ -226,11 +276,18 @@ class OpenAICompatibleAdapter(ModelAdapter):
             return None
 
     async def stream(
-        self, messages: list[Message], system: str
+        self,
+        messages: list[Message],
+        system: str,
+        tools: list[dict[str, Any]] | None = None,
     ) -> AsyncIterator[Fragment]:
         wire = self._wire(messages, system)
 
-        payload = {"model": self.model, "messages": wire, "stream": True}
+        payload: dict[str, Any] = {"model": self.model, "messages": wire, "stream": True}
+        described = self._tools(tools)
+        if described:
+            payload["tools"] = described
+            payload["tool_choice"] = "auto"
         if self.reasoning == "off":
             # The convention llama.cpp and most gateways accept. A server that
             # does not understand it ignores it, which is the right failure:
@@ -242,6 +299,11 @@ class OpenAICompatibleAdapter(ModelAdapter):
         }
 
         splitter = _ThinkSplitter()
+        # Tool calls arrive shredded: an id in one chunk, the name in
+        # another, the arguments as a dozen fragments of half-written JSON.
+        # They are accumulated by their index in the array and only become
+        # ToolCalls once the stream says it has finished asking.
+        pending: dict[int, dict[str, str]] = {}
 
         try:
             async with httpx.AsyncClient(timeout=STREAM_TIMEOUT) as client:
@@ -281,10 +343,53 @@ class OpenAICompatibleAdapter(ModelAdapter):
                         if text:
                             for kind, part in splitter.feed(text):
                                 yield Fragment(kind, part)
+
+                        for piece in delta.get("tool_calls") or []:
+                            slot = pending.setdefault(
+                                piece.get("index", 0), {"id": "", "name": "", "arguments": ""}
+                            )
+                            if piece.get("id"):
+                                slot["id"] = piece["id"]
+                            function = piece.get("function") or {}
+                            if function.get("name"):
+                                slot["name"] += function["name"]
+                            if function.get("arguments"):
+                                slot["arguments"] += function["arguments"]
+
+                        # Some servers signal the end of the asking; others
+                        # simply stop. Either way the calls are emitted once,
+                        # below, when the stream is done.
                     for kind, part in splitter.drain():
                         yield Fragment(kind, part)
+
+                    for _, slot in sorted(pending.items()):
+                        if not slot["name"]:
+                            continue
+                        yield Fragment("tool_call", call=_assemble(slot))
         except httpx.RequestError as exc:
             raise ModelError(f"Could not reach {self.base_url}: {exc}") from exc
+
+
+def _assemble(slot: dict[str, str]) -> ToolCall:
+    """Turn accumulated fragments into a call.
+
+    Arguments are a JSON string built up across many chunks, and a model can
+    finish one badly. That is not a reason to end the turn: an empty argument
+    set reaches the tool, the tool says what was wrong with it, and the model
+    gets to try again -- which is a far better outcome than an exception
+    surfacing to the owner as a broken Resident.
+    """
+    try:
+        arguments = json.loads(slot["arguments"] or "{}")
+        if not isinstance(arguments, dict):
+            arguments = {"value": arguments}
+    except json.JSONDecodeError:
+        arguments = {}
+    return ToolCall(
+        id=slot["id"] or f"call_{slot['name']}",
+        name=slot["name"],
+        arguments=arguments,
+    )
 
 
 def _describe(status: int, body: str) -> str:
