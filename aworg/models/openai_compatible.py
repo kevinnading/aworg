@@ -280,10 +280,13 @@ class OpenAICompatibleAdapter(ModelAdapter):
         messages: list[Message],
         system: str,
         tools: list[dict[str, Any]] | None = None,
+        max_tokens: int | None = None,
     ) -> AsyncIterator[Fragment]:
         wire = self._wire(messages, system)
 
         payload: dict[str, Any] = {"model": self.model, "messages": wire, "stream": True}
+        if max_tokens:
+            payload["max_tokens"] = max_tokens
         described = self._tools(tools)
         if described:
             payload["tools"] = described

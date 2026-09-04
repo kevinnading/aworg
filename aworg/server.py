@@ -13,7 +13,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response
 from fastapi.responses import Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -264,6 +264,25 @@ def create_app(paths: Paths) -> FastAPI:
 
         return StreamingResponse(events(), media_type="application/x-ndjson")
 
+    @app.get("/api/recollection")
+    def recollection() -> dict[str, Any]:
+        """The note the Resident is working from, when there is one.
+
+        Its own endpoint rather than part of /api/context because it is read
+        only when the owner asks to see it, and the context readout is polled
+        constantly. Shipping a paragraph of prose on every poll to support one
+        click would be a poor trade.
+        """
+        found = resident.store.recollection(resident.store.current_conversation_id())
+        if not found:
+            return {"summary": None}
+        return {
+            "summary": found["summary"],
+            "covers": found["covers"],
+            "written_by": found["model_label"],
+            "at": found["updated_at"],
+        }
+
     @app.post("/api/chat")
     async def chat(body: ChatBody) -> StreamingResponse:
         text = body.message.strip()
@@ -501,6 +520,36 @@ def create_app(paths: Paths) -> FastAPI:
         }
 
     # Mounted last so the API routes above take precedence.
+    @app.get("/", include_in_schema=False)
+    def index() -> Response:
+        """The page, with its assets stamped by their own modification time.
+
+        Browsers hold on to a script they have already fetched, and AWORG is
+        a long-running program that gets updated underneath a tab someone
+        left open. Without this, an owner who updates and reloads gets the
+        new server and the old interface, which fails in ways that look like
+        bugs in neither.
+
+        Stamped by mtime rather than by AWORG's version, because the version
+        does not change between the edit and the reload -- and this has to be
+        right for whoever is working on the interface as much as for whoever
+        is running it.
+        """
+        html = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+        for asset in ("app.js", "style.css", "markdown.js", "highlight.js"):
+            path = WEB_DIR / asset
+            if not path.exists():
+                continue
+            stamp = int(path.stat().st_mtime)
+            html = html.replace(f'"/{asset}"', f'"/{asset}?v={stamp}"')
+        return Response(
+            html,
+            media_type="text/html",
+            # The page itself is never cached; everything it names is, and
+            # is re-fetched precisely when it changes.
+            headers={"Cache-Control": "no-store"},
+        )
+
     app.mount("/", StaticFiles(directory=WEB_DIR, html=True), name="web")
 
     return app

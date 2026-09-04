@@ -173,7 +173,7 @@ function renderContext() {
   // The conversation has outgrown the window: the chat says so as a whole,
   // and a marker in the list says where the Resident's memory now starts.
   document.querySelector(".chat").classList.toggle("truncating", info.dropped > 0);
-  markTruncation(info.dropped || 0);
+  markTruncation(info);
   el("context-fill").setAttribute("stroke-dasharray", pct === null ? "0 100" : pct.toFixed(1) + " 100");
 
   const compact = tokens >= 10000 ? Math.round(tokens / 1000) + "k"
@@ -187,6 +187,13 @@ function renderContext() {
   const cut = info.dropped
     ? `\n${info.dropped} older ${info.dropped === 1 ? "message is" : "messages are"} `
       + `no longer sent (${info.stored} kept on disk)`
+      + (info.remembered
+          ? `\n${info.remembered.covers} of them condensed into a note by `
+            + `${info.remembered.written_by}`
+          : "")
+      + (info.forgotten
+          ? `\n${info.forgotten} not in that note`
+          : "")
     : "";
   const fmt = (n) => n.toLocaleString();
   ring.title = limit
@@ -201,23 +208,85 @@ function renderContext() {
  * say which part. This marks the seam in the list itself, so the owner can
  * see exactly what is no longer being sent -- and that it is still there to
  * scroll back to, because nothing was deleted. */
-function markTruncation(dropped) {
+function markTruncation(info) {
   const existing = document.getElementById("truncation-mark");
   if (existing) existing.remove();
+  const dropped = (info && info.dropped) || 0;
   if (!dropped) return;
 
   const box = el("messages");
-  const messages = [...box.querySelectorAll(".msg")];
-  if (messages.length <= dropped) return;
+  // The boundary is a message, not a position. Counting dropped rows into a
+  // list of rendered nodes puts the seam in the wrong place, because a tool
+  // exchange is two stored rows and one thing on screen.
+  const first = info.visible_from != null
+    ? box.querySelector(`[data-mid="${info.visible_from}"]`)
+    : null;
+  if (!first) return;
+
+  // Two different things happen to a message that falls out of the window,
+  // and the owner is owed the difference. One is described in a note the
+  // Resident can still read. The other is simply gone from its view -- still
+  // on disk, still theirs, but not something it knows any more.
+  const note = info.remembered;
+  const forgotten = info.forgotten || 0;
+  const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+  let detail;
+  if (note && !forgotten) {
+    detail = `${plural(dropped, "earlier message")}, condensed into a note it can still read`;
+  } else if (note) {
+    detail = `${plural(dropped, "earlier message")} - ${note.covers} in a note, `
+      + `${forgotten} not yet`;
+  } else {
+    detail = `${plural(dropped, "earlier message")} no longer sent`;
+  }
 
   const mark = document.createElement("div");
-  mark.className = "truncation";
+  mark.className = "truncation" + (note ? " noted" : "");
   mark.id = "truncation-mark";
   mark.innerHTML =
     "<span></span><strong>The Resident's memory starts here</strong>"
-    + `<span title="Everything above is still saved, and still yours to read.">`
-    + `${dropped} earlier ${dropped === 1 ? "message" : "messages"} no longer sent</span>`;
-  box.insertBefore(mark, messages[dropped]);
+    + `<span title="Everything above is still saved, and still yours to read.`
+    + (note ? `\n\nThe note was written by ${note.written_by}. It is a summary, `
+              + `not a transcript.` : "")
+    + `">${detail}</span>`;
+  box.insertBefore(mark, first);
+  if (note) mark.appendChild(noteButton(note));
+}
+
+/* The note itself, on request.
+ *
+ * Not shown inline. It is not part of the conversation -- nobody said it --
+ * and rendering it among the messages would put words in the transcript that
+ * were never spoken. But the owner should be able to read what their
+ * Resident is working from, so it is one click away. */
+function noteButton(note) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "note-open";
+  button.textContent = "Read the note";
+  button.onclick = async () => {
+    let text = "";
+    try {
+      text = (await api("/api/recollection")).summary || "";
+    } catch (_) {
+      text = "";
+    }
+    const panel = document.getElementById("note-panel");
+    if (panel) { panel.remove(); return; }
+    const shown = document.createElement("div");
+    shown.className = "note-panel";
+    shown.id = "note-panel";
+    const head = document.createElement("div");
+    head.className = "note-head";
+    head.textContent = `Written by ${note.written_by}, covering ${note.covers} messages`;
+    const body = document.createElement("div");
+    body.className = "note-body";
+    body.textContent = text || "The note could not be read.";
+    shown.append(head, body);
+    button.parentElement.appendChild(shown);
+  };
+  return button;
 }
 
 /* Grow the box to the text, but never past the room there is for it.
@@ -326,12 +395,17 @@ function renderChat() {
   }
 
   for (const message of app.conversation.messages) {
+    // Every node remembers which stored row it came from, so the truncation
+    // seam can be placed at the actual boundary rather than counted to.
+    let node;
     if (message.role === "tool_call" || message.role === "tool_result") {
-      const node = storedToolNode(message);
-      if (node) box.appendChild(node);
-      continue;
+      node = storedToolNode(message);
+    } else {
+      node = messageNode(message.role, message.content, message.model_label);
     }
-    box.appendChild(messageNode(message.role, message.content, message.model_label));
+    if (!node) continue;
+    if (message.id !== undefined) node.dataset.mid = message.id;
+    box.appendChild(node);
   }
   box.scrollTop = box.scrollHeight;
 }
