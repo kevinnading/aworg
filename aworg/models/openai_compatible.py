@@ -180,6 +180,74 @@ class OpenAICompatibleAdapter(ModelAdapter):
         )
         return wire
 
+    async def list_models(self) -> list[str]:
+        """`GET /models`, which nearly everything speaking this API offers."""
+        try:
+            async with httpx.AsyncClient(timeout=20.0) as client:
+                response = await client.get(
+                    f"{self.base_url}/models",
+                    headers={**self._auth_headers(), **self.extra_headers},
+                )
+                if response.status_code >= 400:
+                    raise ModelError(_describe(response.status_code, response.text))
+                data = response.json().get("data")
+                if not isinstance(data, list):
+                    return []
+                names = [
+                    item.get("id") for item in data
+                    if isinstance(item, dict) and isinstance(item.get("id"), str)
+                ]
+                return sorted(names)
+        except httpx.RequestError as exc:
+            raise ModelError(f"Could not reach {self.base_url}: {exc}") from exc
+        except ValueError as exc:
+            raise ModelError(f"{self.base_url} did not answer with a model list.") from exc
+
+    async def count_tokens(self, messages: list[Message], system: str) -> int | None:
+        """Exact, on llama.cpp: render the chat template, then tokenize it.
+
+        Two calls rather than one because tokenizing the raw text misses the
+        template's own tokens -- a few per message, which is a few hundred
+        over a long conversation. Anything that is not llama.cpp answers
+        neither endpoint and gets None.
+        """
+        root = self.base_url[:-3] if self.base_url.endswith("/v1") else self.base_url
+        try:
+            async with httpx.AsyncClient(timeout=20.0) as client:
+                rendered = await client.post(
+                    f"{root}/apply-template", json={"messages": self._wire(messages, system)}
+                )
+                if rendered.status_code != 200:
+                    return None
+                prompt = rendered.json().get("prompt")
+                if not isinstance(prompt, str):
+                    return None
+                counted = await client.post(f"{root}/tokenize", json={"content": prompt})
+                if counted.status_code != 200:
+                    return None
+                tokens = counted.json().get("tokens")
+                return len(tokens) if isinstance(tokens, list) else None
+        except (httpx.RequestError, ValueError):
+            return None
+
+    async def detect_context(self) -> int | None:
+        """llama.cpp publishes its window at /props, beside the /v1 API.
+
+        Gateways and OpenAI itself have no such endpoint and answer with a
+        404 or an HTML page, both of which mean "unknown" here, not "broken".
+        """
+        root = self.base_url[:-3] if self.base_url.endswith("/v1") else self.base_url
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.get(f"{root}/props")
+                if response.status_code != 200:
+                    return None
+                settings = response.json().get("default_generation_settings") or {}
+                n_ctx = settings.get("n_ctx")
+                return int(n_ctx) if isinstance(n_ctx, int) and n_ctx > 0 else None
+        except (httpx.RequestError, ValueError):
+            return None
+
     async def stream(
         self, messages: list[Message], system: str
     ) -> AsyncIterator[Fragment]:
@@ -192,7 +260,8 @@ class OpenAICompatibleAdapter(ModelAdapter):
             # the reply is slower than asked for, not absent.
             payload["chat_template_kwargs"] = {"enable_thinking": False}
         headers = {
-            "Authorization": f"Bearer {self.api_key}",
+            **self._auth_headers(),
+            **self.extra_headers,
             "Content-Type": "application/json",
         }
 

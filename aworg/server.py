@@ -23,7 +23,7 @@ from .paths import Paths
 from .resident import Busy, Resident
 from .secrets import SecretStore, credential_ref
 from . import layout as layout_settings
-from . import lifecycle, panes
+from . import lifecycle, panes, providers
 from .storage import Store
 from .theme import (
     PRESETS,
@@ -48,6 +48,15 @@ class ConnectionBody(BaseModel):
     context: int | None = None
     enabled: bool = True
     credential: str | None = None
+
+
+class ModelsBody(BaseModel):
+    provider: str
+    base_url: str | None = None
+    #: Typed into the form and used once; never stored by this endpoint.
+    credential: str | None = None
+    #: For refreshing the list on a connection that already has a key.
+    connection_id: str | None = None
 
 
 class ConnectionPatch(BaseModel):
@@ -113,6 +122,11 @@ def create_app(paths: Paths) -> FastAPI:
     def meta() -> dict[str, Any]:
         return {
             "providers": PROVIDER_LABELS,
+            # The full profiles, so the form can pre-fill a base URL, know
+            # whether to ask for a credential, and say what is known about
+            # tool support -- without the browser holding its own copy of a
+            # table that lives in providers.py.
+            "provider_profiles": providers.for_interface(),
             "capability_tags": CAPABILITY_TAGS,
             "home": str(paths.home),
         }
@@ -223,6 +237,48 @@ def create_app(paths: Paths) -> FastAPI:
         else:
             note = " Context window unknown - set it in the connection if you know it."
         return {"ok": True, "detail": "Reached the model successfully." + note}
+
+    @app.post("/api/models")
+    async def list_models(body: ModelsBody) -> dict[str, Any]:
+        """What a provider will serve, asked before anything is saved.
+
+        Takes the form's current values rather than a connection id, because
+        the owner is choosing a model in order to create the connection --
+        requiring it to exist first would mean saving something broken to
+        find out what to put in it.
+
+        A credential typed into the form is used and not stored. When the
+        field is left blank on an existing connection -- which is what an
+        owner does when they are not changing the key -- the stored one is
+        used instead, so refreshing the list does not mean retyping a secret.
+        """
+        profile = providers.profile(body.provider)
+        api_key = body.credential or ""
+        if not api_key and body.connection_id:
+            api_key = secrets.get(credential_ref(body.connection_id)) or ""
+        if not api_key and profile["auth"] != "none":
+            return {"ok": False, "detail": "A credential is needed to ask for the list.",
+                    "models": []}
+
+        adapter = build_adapter(
+            {
+                "provider": body.provider,
+                "model": "",
+                "base_url": (body.base_url or "").strip() or None,
+            },
+            api_key,
+        )
+        try:
+            found = await adapter.list_models()
+        except ModelError as exc:
+            return {"ok": False, "detail": str(exc), "models": []}
+        if not found:
+            return {
+                "ok": False,
+                "detail": "That provider did not publish a model list. Type the name instead.",
+                "models": [],
+            }
+        return {"ok": True, "detail": f"{len(found)} models.", "models": found}
 
     # -- the Resident ---------------------------------------------------
 

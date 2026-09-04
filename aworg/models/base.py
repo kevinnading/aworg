@@ -69,10 +69,18 @@ class ModelAdapter:
         base_url: str | None = None,
         reasoning: str = "auto",
         context: int | None = None,
+        auth: str = "bearer",
+        headers: dict[str, str] | None = None,
     ):
         self.model = model
         self.api_key = api_key
         self.base_url = (base_url or self.default_base_url).rstrip("/")
+        #: How this provider wants the credential presented, and anything
+        #: else it insists on. Both come from the provider profile rather
+        #: than being decided here, so that adding a provider stays a data
+        #: entry: see aworg/providers.py.
+        self.auth = auth
+        self.extra_headers = dict(headers or {})
         #: "auto" leaves the model as configured; "off" asks it not to think
         #: before answering. Thinking costs real time -- a 9B spent 99 seconds
         #: on an eighty-word paragraph -- and whether that is worth paying
@@ -105,6 +113,30 @@ class ModelAdapter:
     @property
     def default_base_url(self) -> str:
         raise NotImplementedError
+
+    def _auth_headers(self) -> dict[str, str]:
+        """The credential, presented the way this provider asks for it.
+
+        A local server that checks nothing still gets whatever the owner
+        stored, because a connection with no credential at all is a
+        different state -- one the interface reports -- and quietly
+        inventing one here would hide it.
+        """
+        if self.auth == "x-api-key":
+            return {"x-api-key": self.api_key}
+        if self.auth == "none":
+            return {}
+        return {"Authorization": f"Bearer {self.api_key}"}
+
+    async def list_models(self) -> list[str]:
+        """What this provider will serve, if it will say.
+
+        An empty list means it would not say, which is not the same as
+        having no models -- the interface distinguishes them, because one is
+        a provider that does not publish a list and the other is a
+        misconfigured connection.
+        """
+        return []
 
     async def stream(
         self, messages: list[Message], system: str

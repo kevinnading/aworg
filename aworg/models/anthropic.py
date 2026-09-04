@@ -32,6 +32,43 @@ class AnthropicAdapter(ModelAdapter):
     def default_base_url(self) -> str:
         return "https://api.anthropic.com"
 
+    def _headers(self) -> dict[str, str]:
+        """The credential, the API version, and anything the profile adds."""
+        return {
+            **self._auth_headers(),
+            **self.extra_headers,
+            "anthropic-version": ANTHROPIC_VERSION,
+            "content-type": "application/json",
+        }
+
+    async def list_models(self) -> list[str]:
+        """Anthropic publishes its models, and pages them."""
+        names: list[str] = []
+        url = f"{self.base_url}/v1/models?limit=100"
+        try:
+            async with httpx.AsyncClient(timeout=20.0) as client:
+                while url:
+                    response = await client.get(url, headers=self._headers())
+                    if response.status_code >= 400:
+                        raise ModelError(
+                            _describe(response.status_code, response.text)
+                        )
+                    body = response.json()
+                    names.extend(
+                        item["id"] for item in body.get("data") or []
+                        if isinstance(item, dict) and isinstance(item.get("id"), str)
+                    )
+                    after = body.get("last_id") if body.get("has_more") else None
+                    url = (
+                        f"{self.base_url}/v1/models?limit=100&after_id={after}"
+                        if after else ""
+                    )
+        except httpx.RequestError as exc:
+            raise ModelError(f"Could not reach {self.base_url}: {exc}") from exc
+        except ValueError as exc:
+            raise ModelError(f"{self.base_url} did not answer with a model list.") from exc
+        return sorted(names)
+
     async def stream(
         self, messages: list[Message], system: str
     ) -> AsyncIterator[Fragment]:
@@ -54,11 +91,7 @@ class AnthropicAdapter(ModelAdapter):
         if system:
             payload["system"] = system
 
-        headers = {
-            "x-api-key": self.api_key,
-            "anthropic-version": ANTHROPIC_VERSION,
-            "content-type": "application/json",
-        }
+        headers = self._headers()
 
         try:
             async with httpx.AsyncClient(timeout=STREAM_TIMEOUT) as client:

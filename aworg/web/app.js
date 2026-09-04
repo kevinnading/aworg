@@ -603,15 +603,173 @@ function showSettingsSection(id) {
   el("settings-scroll").scrollTop = 0;
 }
 
+/* The providers, by name rather than by wire format.
+ *
+ * An owner knows they are connecting to Groq. That Groq happens to implement
+ * OpenAI's API is true and not their problem, so it is not what the list
+ * offers. Grouped because the three kinds are reached for in different
+ * moods: a hosted service, something already running on this machine, or an
+ * endpoint the owner has and this list does not know about. */
+function providerProfile(id) {
+  return (app.meta.provider_profiles || []).find((p) => p.id === id) || null;
+}
+
 function buildProviderOptions() {
   const select = el("conn-provider");
   select.innerHTML = "";
-  for (const [value, label] of Object.entries(app.meta.providers)) {
-    const option = document.createElement("option");
-    option.value = value;
-    option.textContent = label;
-    select.appendChild(option);
+  const profiles = app.meta.provider_profiles || [];
+
+  const groups = [
+    ["Hosted", profiles.filter((p) => !p.generic && !isLocal(p))],
+    ["On this machine", profiles.filter((p) => !p.generic && isLocal(p))],
+    ["Anything else", profiles.filter((p) => p.generic)],
+  ];
+  for (const [label, members] of groups) {
+    if (!members.length) continue;
+    const group = document.createElement("optgroup");
+    group.label = label;
+    for (const profile of members) {
+      const option = document.createElement("option");
+      option.value = profile.id;
+      option.textContent = profile.label;
+      group.appendChild(option);
+    }
+    select.appendChild(group);
   }
+}
+
+function isLocal(profile) {
+  return /\/\/(127\.|localhost)/.test(profile.base_url || "");
+}
+
+/* What changes when the provider changes.
+ *
+ * The endpoint is filled in rather than fixed. Locking it would stop the
+ * mistake of pointing Anthropic at an OpenAI URL, but it would also stop
+ * every owner behind a proxy or a company gateway, and they are the ones
+ * who cannot work around it. The mistake is caught instead: the wire format
+ * comes from the provider, so a wrong URL fails at the first request and
+ * says so, and the field warns before it gets that far. */
+function applyProviderProfile({ keepValues } = {}) {
+  const profile = providerProfile(el("conn-provider").value);
+  if (!profile) return;
+
+  const url = el("conn-base-url");
+  if (!keepValues || !url.value.trim()) url.value = profile.base_url || "";
+  url.placeholder = profile.base_url || "https://...";
+
+  // A local server that checks nothing should not be demanding a key.
+  const needsKey = profile.auth !== "none";
+  el("conn-credential-field").classList.toggle("optional", !needsKey);
+  const credNote = el("conn-credential-note");
+  credNote.hidden = needsKey;
+  credNote.textContent = needsKey ? "" : "This provider does not check one. Anything will do.";
+
+  // The provider's own note is more specific than the generic line about
+  // tool support, so where there is one it stands in for it rather than
+  // being followed by a vaguer version of the same sentence.
+  const note = el("conn-model-note");
+  const parts = [];
+  if (profile.note) parts.push(profile.note);
+  else if (profile.tools === "yes") parts.push("Every model here can use tools.");
+  else if (profile.tools === "per-model") parts.push("Tool support varies by model.");
+  else if (profile.tools === "unknown") parts.push("Tool support unknown until tried.");
+  note.textContent = parts.join(" ");
+  note.hidden = !parts.length;
+  note.classList.remove("warn");
+
+  warnAboutUrl();
+}
+
+function warnAboutUrl() {
+  const profile = providerProfile(el("conn-provider").value);
+  const warn = el("conn-url-warn");
+  const url = el("conn-base-url").value.trim().toLowerCase();
+  warn.hidden = true;
+  if (!profile || !url) return;
+
+  for (const other of app.meta.provider_profiles || []) {
+    if (other.id === profile.id || !other.base_url) continue;
+    const host = other.base_url.split("//")[1].split("/")[0];
+    if (/^(127\.|localhost)/.test(host)) continue;
+    if (url.includes(host)) {
+      warn.textContent = `That looks like ${other.label}, but this connection is `
+        + `set to ${profile.label} and will be spoken to as ${profile.label}.`;
+      warn.hidden = false;
+      return;
+    }
+  }
+}
+
+/* Ask the provider what it serves.
+ *
+ * A list beats typing an identifier from memory -- "claude-opus-4-5" is
+ * exactly the kind of string that is wrong by one character and fails as an
+ * unhelpful 404. But it is a fetch that can fail, against a provider that
+ * may not publish one, so the text field never goes away: it is what the
+ * list writes into, and what the owner uses when there is no list. */
+async function fetchModels() {
+  const button = el("conn-model-fetch");
+  const note = el("conn-model-note");
+  const list = el("conn-model-list");
+  const typed = el("conn-model");
+
+  button.disabled = true;
+  button.textContent = "Asking…";
+  note.hidden = false;
+  note.classList.remove("warn");
+  note.textContent = "Asking the provider what it serves…";
+
+  let data;
+  try {
+    data = await api("/api/models", {
+      method: "POST",
+      body: JSON.stringify({
+        provider: el("conn-provider").value,
+        base_url: el("conn-base-url").value.trim() || null,
+        credential: el("conn-credential").value || null,
+        connection_id: el("conn-id").value || null,
+      }),
+    });
+  } catch (err) {
+    data = { ok: false, detail: err.message, models: [] };
+  }
+
+  button.disabled = false;
+  button.textContent = "Refresh";
+
+  if (!data.ok || !data.models.length) {
+    // Not an error worth stopping for: the field beside it still works.
+    list.hidden = true;
+    typed.hidden = false;
+    note.classList.add("warn");
+    note.textContent = data.detail || "No models came back. Type the name instead.";
+    return;
+  }
+
+  const current = typed.value.trim();
+  list.innerHTML = "";
+  for (const name of data.models) {
+    const option = document.createElement("option");
+    option.value = name;
+    option.textContent = name;
+    list.appendChild(option);
+  }
+  // A model already chosen stays chosen, even if this provider no longer
+  // lists it -- it may still work, and silently swapping it would change a
+  // connection the owner did not ask to change.
+  if (current && !data.models.includes(current)) {
+    const kept = document.createElement("option");
+    kept.value = current;
+    kept.textContent = `${current} (not in the list)`;
+    list.insertBefore(kept, list.firstChild);
+  }
+  list.value = current || data.models[0];
+  typed.value = list.value;
+  list.hidden = false;
+  typed.hidden = true;
+  const many = data.models.length === 1 ? "1 model" : `${data.models.length} models`;
+  note.textContent = `${many}. Refresh to ask again.`;
 }
 
 function buildTagChips() {
@@ -807,9 +965,19 @@ function openForm(connection) {
   el("conn-error").textContent = "";
   el("conn-id").value = connection ? connection.id : "";
   el("conn-name").value = connection ? connection.name : "";
-  el("conn-provider").value = connection ? connection.provider : Object.keys(app.meta.providers)[0];
+  el("conn-provider").value = connection ? connection.provider : "openai";
   el("conn-model").value = connection ? connection.model : "";
   el("conn-base-url").value = connection && connection.base_url ? connection.base_url : "";
+
+  // The list belongs to a provider, so it starts closed on every open. It
+  // is one click to fill, and a stale list of someone else's models would
+  // be worse than none.
+  el("conn-model-list").hidden = true;
+  el("conn-model-list").innerHTML = "";
+  el("conn-model").hidden = false;
+  el("conn-model-fetch").textContent = "Fetch";
+  el("conn-model-fetch").disabled = false;
+  applyProviderProfile({ keepValues: true });
   el("conn-reasoning").value = (connection && connection.reasoning) || "auto";
   el("conn-context").value = connection && connection.context ? connection.context : "";
   el("conn-credential").value = "";
@@ -1762,6 +1930,14 @@ function wireEvents() {
 
   el("add-connection").onclick = () => openForm(null);
   el("conn-cancel").onclick = closeForm;
+  el("conn-provider").onchange = () => applyProviderProfile();
+  el("conn-base-url").oninput = warnAboutUrl;
+  el("conn-model-fetch").onclick = fetchModels;
+  // Choosing from the list is what fills the field the form actually reads,
+  // so there is one answer to "which model is this" rather than two.
+  el("conn-model-list").onchange = () => {
+    el("conn-model").value = el("conn-model-list").value;
+  };
 
   el("conn-form").onsubmit = async (event) => {
     event.preventDefault();

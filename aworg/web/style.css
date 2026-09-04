@@ -1495,3 +1495,45 @@ body.resizing.row * { cursor: row-resize !important; }
 
 .pane-item-name { font-size: 12.5px; color: var(--text); }
 .pane-item-detail { font-size: 11.5px; line-height: 1.4; color: var(--muted); }
+
+/* ---- connection form: provider and model ---- */
+
+/* The model row is one control made of three parts: a list when the
+   provider publishes one, a text field when it does not, and the button
+   that decides which. They share a line because they are one answer. */
+.model-pick { display: flex; gap: 6px; align-items: center; }
+.model-pick select,
+.model-pick input { flex: 1 1 auto; min-width: 0; }
+
+button.ghost.small {
+  flex: 0 0 auto;
+  padding: 5px 10px;
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+/* Said under the field it is about, quietly. These are notes, not errors --
+   the one that is an error says so by turning the colour of one. */
+/* `display: block` outranks the browser's own `[hidden] { display: none }`,
+   so hiding one of these has to say so at the same specificity. Without
+   this the element keeps its last message on screen forever -- which read
+   as a warning about a provider the owner had already moved off. */
+.field-note[hidden] { display: none; }
+
+.field-note {
+  display: block;
+  margin-top: 5px;
+  font-size: 11px;
+  font-style: normal;
+  line-height: 1.45;
+  color: var(--muted);
+}
+.field-note.warn { color: var(--warn); }
+
+.field.optional > span::after {
+  content: " optional";
+  font-size: 10.5px;
+  letter-spacing: .03em;
+  color: var(--muted);
+  text-transform: uppercase;
+}

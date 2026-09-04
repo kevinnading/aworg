@@ -208,19 +208,33 @@
               <span>Provider</span>
               <select id="conn-provider"></select>
             </label>
-            <label class="field">
+            <!-- The model is chosen from what the provider says it serves.
+                 Most will answer; the ones that will not fall back to the
+                 text field beside this, because a provider that keeps its
+                 list private is not a provider an owner should be locked
+                 out of. -->
+            <div class="field">
               <span>Model</span>
-              <input id="conn-model" placeholder="claude-opus-4-5" autocomplete="off">
-            </label>
+              <div class="model-pick">
+                <select id="conn-model-list" hidden></select>
+                <input id="conn-model" placeholder="Fetch the list, or type the name"
+                       autocomplete="off">
+                <button type="button" class="ghost small" id="conn-model-fetch"
+                        title="Ask this provider what it serves">Fetch</button>
+              </div>
+              <em class="field-note" id="conn-model-note" hidden></em>
+            </div>
             <label class="field">
-              <span>Endpoint <em>optional</em></span>
-              <input id="conn-base-url" placeholder="http://localhost:11434/v1" autocomplete="off">
+              <span>Endpoint</span>
+              <input id="conn-base-url" placeholder="https://..." autocomplete="off">
+              <em class="field-note warn" id="conn-url-warn" hidden></em>
             </label>
           </div>
 
-          <label class="field">
+          <label class="field" id="conn-credential-field">
             <span>Credential</span>
             <input id="conn-credential" type="password" placeholder="Stored privately, never shown again" autocomplete="off">
+            <em class="field-note" id="conn-credential-note" hidden></em>
           </label>
 
           <label class="field">
