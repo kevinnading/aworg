@@ -118,7 +118,6 @@ class AnthropicAdapter(ModelAdapter):
         messages: list[Message],
         system: str,
         tools: list[dict[str, Any]] | None = None,
-        max_tokens: int | None = None,
     ) -> AsyncIterator[Fragment]:
         payload: dict[str, Any] = {
             "model": self.model,
@@ -126,7 +125,7 @@ class AnthropicAdapter(ModelAdapter):
             # model will produce rather than to a number that would cut a
             # reply short. A provider that rejects it says so plainly, which
             # is a better failure than a reply that stops mid-sentence.
-            "max_tokens": max_tokens or MAX_TOKENS,
+            "max_tokens": MAX_TOKENS,
             "stream": True,
             "messages": self._wire(messages),
         }

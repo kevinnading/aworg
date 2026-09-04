@@ -72,23 +72,6 @@ CREATE TABLE IF NOT EXISTS messages (
 CREATE INDEX IF NOT EXISTS idx_messages_conversation
     ON messages (conversation_id, id);
 
--- What the Resident has been told about the part of the conversation it can
--- no longer see. One row per conversation, rewritten as the window moves on.
---
--- Deliberately not a row in `messages`. The transcript is the record of what
--- happened and everything in it was actually said; this is a model's account
--- of some of it, which is a different kind of thing and must never be read
--- back as though the Resident had said it. `through_id` is how far the
--- account reaches, so the messages after it are never described twice.
-CREATE TABLE IF NOT EXISTS recollections (
-    conversation_id TEXT PRIMARY KEY,
-    summary         TEXT NOT NULL,
-    through_id      INTEGER NOT NULL,
-    covers          INTEGER NOT NULL DEFAULT 0,
-    model_label     TEXT,
-    updated_at      TEXT NOT NULL DEFAULT (datetime('now')),
-    FOREIGN KEY (conversation_id) REFERENCES conversations(id)
-);
 """
 
 
@@ -210,50 +193,6 @@ class Store:
             existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
             if column not in existing:
                 conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
-
-    # -- recollection ---------------------------------------------------
-
-    def recollection(self, conversation_id: str) -> dict[str, Any] | None:
-        """What the Resident has been told about what it can no longer see."""
-        with self._connect() as conn:
-            row = conn.execute(
-                "SELECT * FROM recollections WHERE conversation_id = ?",
-                (conversation_id,),
-            ).fetchone()
-        return dict(row) if row else None
-
-    def remember(
-        self,
-        conversation_id: str,
-        summary: str,
-        through_id: int,
-        covers: int,
-        model_label: str | None = None,
-    ) -> None:
-        """Replace the account of the conversation's earlier part.
-
-        Replaced rather than appended: a rolling summary that grows without
-        bound is a second conversation, and would push out the real one.
-        """
-        with self._connect() as conn:
-            conn.execute(
-                "INSERT INTO recollections "
-                "(conversation_id, summary, through_id, covers, model_label, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, datetime('now')) "
-                "ON CONFLICT(conversation_id) DO UPDATE SET "
-                "summary = excluded.summary, through_id = excluded.through_id, "
-                "covers = excluded.covers, model_label = excluded.model_label, "
-                "updated_at = excluded.updated_at",
-                (conversation_id, summary, through_id, covers, model_label),
-            )
-
-    def forget(self, conversation_id: str) -> None:
-        """Drop the note, when there is no longer anything for it to cover."""
-        with self._connect() as conn:
-            conn.execute(
-                "DELETE FROM recollections WHERE conversation_id = ?",
-                (conversation_id,),
-            )
 
     # -- connections ----------------------------------------------------
 

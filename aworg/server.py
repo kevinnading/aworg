@@ -264,25 +264,6 @@ def create_app(paths: Paths) -> FastAPI:
 
         return StreamingResponse(events(), media_type="application/x-ndjson")
 
-    @app.get("/api/recollection")
-    def recollection() -> dict[str, Any]:
-        """The note the Resident is working from, when there is one.
-
-        Its own endpoint rather than part of /api/context because it is read
-        only when the owner asks to see it, and the context readout is polled
-        constantly. Shipping a paragraph of prose on every poll to support one
-        click would be a poor trade.
-        """
-        found = resident.store.recollection(resident.store.current_conversation_id())
-        if not found:
-            return {"summary": None}
-        return {
-            "summary": found["summary"],
-            "covers": found["covers"],
-            "written_by": found["model_label"],
-            "at": found["updated_at"],
-        }
-
     @app.post("/api/chat")
     async def chat(body: ChatBody) -> StreamingResponse:
         text = body.message.strip()

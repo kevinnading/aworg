@@ -187,13 +187,6 @@ function renderContext() {
   const cut = info.dropped
     ? `\n${info.dropped} older ${info.dropped === 1 ? "message is" : "messages are"} `
       + `no longer sent (${info.stored} kept on disk)`
-      + (info.remembered
-          ? `\n${info.remembered.covers} of them condensed into a note by `
-            + `${info.remembered.written_by}`
-          : "")
-      + (info.forgotten
-          ? `\n${info.forgotten} not in that note`
-          : "")
     : "";
   const fmt = (n) => n.toLocaleString();
   ring.title = limit
@@ -223,70 +216,14 @@ function markTruncation(info) {
     : null;
   if (!first) return;
 
-  // Two different things happen to a message that falls out of the window,
-  // and the owner is owed the difference. One is described in a note the
-  // Resident can still read. The other is simply gone from its view -- still
-  // on disk, still theirs, but not something it knows any more.
-  const note = info.remembered;
-  const forgotten = info.forgotten || 0;
-  const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
-
-  let detail;
-  if (note && !forgotten) {
-    detail = `${plural(dropped, "earlier message")}, condensed into a note it can still read`;
-  } else if (note) {
-    detail = `${plural(dropped, "earlier message")} - ${note.covers} in a note, `
-      + `${forgotten} not yet`;
-  } else {
-    detail = `${plural(dropped, "earlier message")} no longer sent`;
-  }
-
   const mark = document.createElement("div");
-  mark.className = "truncation" + (note ? " noted" : "");
+  mark.className = "truncation";
   mark.id = "truncation-mark";
   mark.innerHTML =
     "<span></span><strong>The Resident's memory starts here</strong>"
-    + `<span title="Everything above is still saved, and still yours to read.`
-    + (note ? `\n\nThe note was written by ${note.written_by}. It is a summary, `
-              + `not a transcript.` : "")
-    + `">${detail}</span>`;
+    + `<span title="Everything above is still saved, and still yours to read.">`
+    + `${dropped} earlier ${dropped === 1 ? "message" : "messages"} no longer sent</span>`;
   box.insertBefore(mark, first);
-  if (note) mark.appendChild(noteButton(note));
-}
-
-/* The note itself, on request.
- *
- * Not shown inline. It is not part of the conversation -- nobody said it --
- * and rendering it among the messages would put words in the transcript that
- * were never spoken. But the owner should be able to read what their
- * Resident is working from, so it is one click away. */
-function noteButton(note) {
-  const button = document.createElement("button");
-  button.type = "button";
-  button.className = "note-open";
-  button.textContent = "Read the note";
-  button.onclick = async () => {
-    let text = "";
-    try {
-      text = (await api("/api/recollection")).summary || "";
-    } catch (_) {
-      text = "";
-    }
-    const panel = document.getElementById("note-panel");
-    if (panel) { panel.remove(); return; }
-    const shown = document.createElement("div");
-    shown.className = "note-panel";
-    shown.id = "note-panel";
-    const head = document.createElement("div");
-    head.className = "note-head";
-    head.textContent = `Written by ${note.written_by}, covering ${note.covers} messages`;
-    const body = document.createElement("div");
-    body.className = "note-body";
-    body.textContent = text || "The note could not be read.";
-    shown.append(head, body);
-    button.parentElement.appendChild(shown);
-  };
-  return button;
 }
 
 /* Grow the box to the text, but never past the room there is for it.

@@ -136,7 +136,6 @@ class ModelAdapter:
         messages: list[Message],
         system: str,
         tools: list[dict[str, Any]] | None = None,
-        max_tokens: int | None = None,
     ) -> AsyncIterator[Fragment]:
         """Yield the reply as it arrives, one fragment at a time.
 
@@ -146,14 +145,6 @@ class ModelAdapter:
         exists: above it, nothing knows that one provider wants
         `function.parameters` and another `input_schema`.
 
-        `max_tokens` is a hard ceiling on the answer, and is left unset for
-        anything the owner is reading: a reply to them that stops mid-sentence
-        is worse than a long one. It exists for work AWORG asks for on its own
-        behalf, where the size of the answer is part of the job. A 2B asked
-        for a brief note, unbounded, produced 6,882 tokens, filled its window,
-        was truncated by its own server and returned nothing usable after
-        seven minutes. A limit the model cannot talk its way past is the only
-        thing that prevents that.
         """
         raise NotImplementedError
         yield Fragment("reply", "")  # pragma: no cover - marks this a generator

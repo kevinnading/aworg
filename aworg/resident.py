@@ -211,7 +211,7 @@ class Resident:
             return
         self.host = await asyncio.to_thread(host.observe)
 
-    def system_prompt(self, remembering: bool = True) -> str:
+    def system_prompt(self) -> str:
         """What the model is told about itself, and about where it is.
 
         Two things, kept apart everywhere but here. The standing
@@ -239,50 +239,7 @@ class Resident:
                 "that was true then and is not true now. Use them."
             )
 
-        recalled = (
-            self.store.recollection(self.store.current_conversation_id())
-            if remembering else None
-        )
-        if recalled and not self._still_overflowing(block):
-            # The window grew, or the connection changed to a roomier model,
-            # and the whole conversation fits again. The note would then be
-            # describing messages the Resident can see for itself, while
-            # telling it they are out of reach -- so it is left out, and the
-            # next condense clears it away.
-            recalled = None
-        if recalled and recalled["summary"].strip():
-            # Marked as an account rather than presented as transcript. The
-            # Resident should be able to tell the difference between what it
-            # was told about the conversation and what it can actually see,
-            # because only one of those it can quote.
-            block += (
-                f"\n\nEarlier in this conversation, now beyond what you can "
-                f"see, condensed from {recalled['covers']} messages:\n"
-                f"{recalled['summary'].strip()}\n"
-                "That is a summary, not a transcript. If a detail in it "
-                "matters, say that you are working from a summary rather "
-                "than quoting it as something that was said."
-            )
-
         return f"{instructions}\n\n---\n\n{block}".strip()
-
-    def _still_overflowing(self, block: str) -> bool:
-        """Would this conversation overflow even with no note in the prompt?
-
-        Asked with the note left out on purpose. Including it would make the
-        answer partly about itself: a note big enough to cause the overflow
-        it is justified by would keep itself alive forever.
-        """
-        connection = self.primary_connection()
-        window = connection.get("context") if connection else None
-        if not window:
-            return False
-        instructions = self.store.get_resident()["system_prompt"]
-        bare = f"{instructions}\n\n---\n\n{block}".strip()
-        history = self._to_messages(
-            self.store.messages(self.store.current_conversation_id())
-        )
-        return self._fit(history, bare, window)["dropped"] > 0
 
     def _estimate(self, text: str) -> int:
         return int(len(text) / self.CHARS_PER_TOKEN)
@@ -373,20 +330,6 @@ class Resident:
                         for m in plan["kept"]
                     )
 
-        # What the Resident has been told about the part it can no longer
-        # see. Reported next to `dropped` because the two answer one
-        # question between them: the conversation has outgrown the window,
-        # and here is how much of it survived that in some form.
-        recalled = self.store.recollection(conversation_id)
-        remembered = None
-        if recalled:
-            remembered = {
-                "covers": recalled["covers"],
-                "written_by": recalled["model_label"],
-                "at": recalled["updated_at"],
-                "tokens": self._estimate(recalled["summary"]),
-            }
-
         # Which stored message the Resident's memory actually begins at.
         # A count of dropped messages is not enough to place the seam: tool
         # exchanges are two rows and one thing on screen, so counting nodes
@@ -403,15 +346,6 @@ class Resident:
             "exact": exact,
             "window": window,
             "visible_from": visible_from,
-            "remembered": remembered,
-            # Dropped messages no note has reached yet. Non-zero for a turn
-            # or two after the window first overflows, and after that only
-            # if summarising failed -- either way it is real forgetting and
-            # is counted separately from the part that was written down.
-            "forgotten": max(
-                0,
-                plan["dropped"] - (recalled["covers"] if recalled else 0),
-            ),
             "percent": round(100 * tokens / window, 1) if window else None,
             # How many the model sees, and how many exist. When these differ
             # the conversation has outgrown the window.
@@ -429,217 +363,6 @@ class Resident:
                 if plan.get("budget") else None
             ),
         }
-
-    #: What the condensing model is asked to do. Short on purpose: measured
-    #: on these models, longer instructions scored worse, and this one runs
-    #: unattended where a bad result is not obvious until much later.
-    CONDENSE_SYSTEM = (
-        "Condense the earlier part of a conversation so it is not lost when "
-        "it falls outside the window. Write a brief note in plain prose "
-        "covering what the owner asked for, what was decided, what was built "
-        "or changed, and anything still outstanding. Keep names, paths, "
-        "commands and numbers exactly as written. Do not add anything that "
-        "is not in the text. Write only the note."
-    )
-
-    #: The most of the conversation's room the note may take. Measured
-    #: against what is left after the reply reserve and the rest of the
-    #: system prompt -- not against the whole window, which is the mistake
-    #: that made this necessary.
-    #:
-    #: A share of the window looks equivalent and is not. On a small window
-    #: the reserve and the host block take most of it before any
-    #: conversation is loaded, so a note sized at a sixth of the window came
-    #: to a third of what was actually left, and squeezed the visible
-    #: conversation down to a single message. Measured, on an 1400-token
-    #: window: 232 tokens of note, one message visible. The Resident was
-    #: answering from a summary and almost nothing else.
-    #:
-    #: So the past gets at most a third of the room the present has.
-    RECOLLECTION_SHARE = 3
-
-    #: What a note may cost when the Resident's own window is unknown. Only
-    #: reached when no context has been set on the connection, in which case
-    #: there is no edge to measure a share of.
-    RECOLLECTION_FALLBACK = 512
-
-    #: Slack between what is sent to the condenser and what it may write.
-    #: Templates, role markers and the tokenizer's own disagreement with the
-    #: estimate all land in here; without it the two halves add up to exactly
-    #: the window and the server truncates the answer.
-    CONDENSE_MARGIN = 256
-
-    def recollection_ceiling(self, window: int | None) -> int | None:
-        """How many tokens of note this window can afford.
-
-        None when nobody has said how big the window is, in which case there
-        is no edge and nothing needs bounding.
-        """
-        if not window:
-            return None
-        reserve = max(self.REPLY_RESERVE_MIN, window // self.REPLY_RESERVE_SHARE)
-        # The prompt as it would be with no note at all: standing
-        # instructions and observed facts, both of which have to be there.
-        base = self._estimate(self.system_prompt(remembering=False))
-        room = window - reserve - base
-        return max(0, room // self.RECOLLECTION_SHARE)
-
-    def condense_connection(self) -> dict[str, Any] | None:
-        """Which model writes the summary.
-
-        The worker, when the owner has set one. Summarising is bounded,
-        disposable work with a clear brief -- the definition of what a worker
-        is for -- and doing it on the Resident's own model would tie up the
-        mind the owner is talking to.
-        """
-        config = self.store.get_resident()
-        worker_id = config.get("worker_connection_id")
-        if worker_id:
-            for connection in self.store.list_connections():
-                if connection["id"] == worker_id and connection["enabled"]:
-                    return connection
-        return self.primary_connection()
-
-    @staticmethod
-    def _as_text(message: Message) -> str:
-        """One conversation turn, as something a model can read as prose.
-
-        Tool exchanges are flattened rather than shown in AWORG's storage
-        format. A model reading its own past in that format copies it instead
-        of calling anything; that lesson was expensive enough once.
-        """
-        if message.tool_calls:
-            asked = "; ".join(
-                f"{call.name} {call.arguments}" for call in message.tool_calls
-            )
-            said = f"{message.content.strip()} " if message.content.strip() else ""
-            return f"Resident: {said}[ran: {asked}]"
-        if message.tool_call_id:
-            first = message.content.strip().splitlines()[:4]
-            return "Result: " + " / ".join(first)
-        who = "Owner" if message.role == "owner" else "Resident"
-        return f"{who}: {message.content.strip()}"
-
-    async def condense(self, conversation_id: str) -> dict[str, Any] | None:
-        """Write down what has just fallen out of the window.
-
-        Runs after a turn rather than before one. Summarising costs a whole
-        model call -- a minute, on the machine this is developed against --
-        and paying that in the middle of answering would make every turn that
-        crosses the edge feel broken. What falls out has already fallen out;
-        the note is ready for the turn after next, and until it is, the
-        interface says so rather than pretending otherwise.
-
-        Returns the stored recollection, or None when there was nothing new
-        to say, which is the ordinary case for most turns.
-        """
-        connection = self.primary_connection()
-        if connection is None or not connection.get("context"):
-            # No window means no edge, so nothing is falling off.
-            return None
-
-        pairs = self._converted(self.store.messages(conversation_id))
-        system = self.system_prompt()
-        plan = self._fit([m for _, m in pairs], system, connection["context"])
-        if not plan["dropped"]:
-            # Nothing is falling out any more. If a note is still on record
-            # from when something was, it has outlived its purpose.
-            if self.store.recollection(conversation_id):
-                self.store.forget(conversation_id)
-            return None
-
-        existing = self.store.recollection(conversation_id)
-        through = existing["through_id"] if existing else 0
-        falling = pairs[: plan["dropped"]]
-        fresh = [(row_id, m) for row_id, m in falling if row_id > through]
-        if not fresh:
-            # Already described. The window moved but not past anything new.
-            return None
-
-        writer = self.condense_connection()
-        if writer is None:
-            return None
-        api_key = self.secrets.get(credential_ref(writer["id"]))
-        if not api_key:
-            return None
-
-        # How long the note may be. Settled before anything is sent, because
-        # it decides both how much can be asked and how much may be answered.
-        allowance = self.recollection_ceiling(connection["context"])
-        if allowance is not None and allowance <= 0:
-            # This window cannot afford a note at all. Keeping none is better
-            # than keeping one at the conversation's expense.
-            return None
-        allowance = allowance or self.RECOLLECTION_FALLBACK
-
-        parts = []
-        if existing and existing["summary"].strip():
-            parts.append(
-                "The note so far:\n" + existing["summary"].strip() + "\n\n"
-                "What follows happened after it. Fold both into one note."
-            )
-        parts.append("\n".join(self._as_text(m) for _, m in fresh))
-        asked = "\n\n".join(parts)
-
-        # The condenser has a window of its own, and it is not the
-        # Resident's. What is sent has to leave room for what comes back --
-        # sized against the note's own allowance rather than a general
-        # reserve, because that is what will actually be generated.
-        room = writer.get("context")
-        if room:
-            allowed = int(
-                (room - allowance - self._estimate(self.CONDENSE_SYSTEM)
-                 - self.CONDENSE_MARGIN)
-                * self.CHARS_PER_TOKEN
-            )
-            if allowed <= 0:
-                return None
-            if len(asked) > allowed:
-                # Keeps the end: the most recent of what is being forgotten
-                # is the part still most likely to matter.
-                asked = "[earlier text omitted]\n" + asked[-allowed:]
-
-        written: list[str] = []
-        try:
-            # Thinking is turned off for this regardless of how the
-            # connection is set. Condensing is mechanical -- there is no
-            # judgement in it worth deliberating over -- and reasoning is
-            # spent out of the same ceiling as the answer. Left on `auto`,
-            # the 2B used all 844 tokens of its allowance thinking and
-            # emitted no note at all.
-            condenser = {**writer, "reasoning": "off"}
-            async for fragment in build_adapter(condenser, api_key).stream(
-                [Message(role="owner", content=asked)],
-                system=self.CONDENSE_SYSTEM,
-                # A ceiling the model cannot argue with. Asked politely for
-                # something brief, a 2B wrote until its window ran out.
-                max_tokens=allowance,
-            ):
-                if fragment.kind == "reply":
-                    written.append(fragment.text)
-        except ModelError:
-            # A summary that could not be written is not an error the owner
-            # needs to act on: the conversation still works, it just forgets.
-            # The interface reports what is covered, so this shows up there
-            # as ground not made up rather than as a failure notice.
-            return None
-
-        summary = "".join(written).strip()
-        if not summary:
-            return None
-
-        # Held to the allowance a second time, in characters. max_tokens is
-        # a request to a server that may ignore it; this is the part AWORG
-        # controls, and the note is spent out of every future turn.
-        ceiling = int(allowance * self.CHARS_PER_TOKEN)
-        if len(summary) > ceiling:
-            summary = summary[:ceiling].rsplit(" ", 1)[0] + " ..."
-
-        covers = (existing["covers"] if existing else 0) + len(fresh)
-        self.store.remember(
-            conversation_id, summary, fresh[-1][0], covers, _label(writer)
-        )
-        return self.store.recollection(conversation_id)
 
     def start_turn(self, text: str) -> "Turn":
         """Begin a reply, and return the turn it happens in.
@@ -664,26 +387,9 @@ class Resident:
                 turn.emit({"type": "error", "message": str(exc)})
             finally:
                 turn.finish()
-                # After the turn is closed, not inside it. The owner has
-                # their answer; catching up on what fell off the back of the
-                # window is not something they should be made to wait for.
-                self._condensing = asyncio.create_task(self._condense_quietly())
 
         turn.task = asyncio.create_task(run())
         return turn
-
-    async def _condense_quietly(self) -> None:
-        """Summarise after a turn, without anyone waiting on the result."""
-        try:
-            await self.condense(self.store.current_conversation_id())
-        except Exception:                                 # noqa: BLE001
-            # Nothing is awaiting this task, so an exception here would be
-            # swallowed by the event loop and never seen. Forgetting the
-            # oldest part of a conversation is survivable; the turn itself
-            # already succeeded.
-            pass
-
-
 
     async def follow(self, turn: "Turn") -> AsyncIterator[dict[str, Any]]:
         """Watch a turn, from the beginning, however late you arrive."""
