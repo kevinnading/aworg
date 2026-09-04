@@ -23,7 +23,7 @@ from .paths import Paths
 from .resident import Busy, Resident
 from .secrets import SecretStore, credential_ref
 from . import layout as layout_settings
-from . import activity, lifecycle, panes
+from . import lifecycle, panes
 from .storage import Store
 from .theme import (
     PRESETS,
@@ -410,28 +410,7 @@ def create_app(paths: Paths) -> FastAPI:
         One request rather than seven. These are read together, and they
         stay together until one of them grows enough to want its own.
         """
-        return panes.describe(
-            resident.host,
-            resident.tools.definitions() if resident.tools else None,
-        )
-
-    @app.get("/api/tasks")
-    def tasks() -> dict[str, Any]:
-        """What the Resident has been doing, newest first.
-
-        Its own endpoint rather than part of /api/panes because it changes on
-        a completely different clock: the panes are read once when the room
-        is built, and this is read every time a tool starts or finishes.
-        """
-        running = bool(resident.turn and not resident.turn.done)
-        return {
-            "active": running,
-            "items": activity.recent(
-                resident.store.messages(
-                    resident.store.current_conversation_id()
-                ), running
-            ),
-        }
+        return panes.describe(resident.host)
 
     # -- the Living Workspace -------------------------------------------
 

@@ -21,7 +21,6 @@ const app = {
   appearanceTimer: null,
   layout: null,
   panes: [],
-  tasks: { active: false, items: [] },
   lifecycle: null,
   // The last answer from /api/context, plus what has been added since: the
   // draft in the composer and the reply as it streams in. The ring is exact
@@ -78,7 +77,6 @@ async function boot() {
   resumeReply();
   // Home is where the owner lands, and the workspace is part of it.
   startWorkspaceWatch();
-  refreshTasks();
 }
 
 async function refresh() {
@@ -334,13 +332,7 @@ function renderChat() {
   for (const message of app.conversation.messages) {
     // Every node remembers which stored row it came from, so the truncation
     // seam can be placed at the actual boundary rather than counted to.
-    let node;
-    if (message.role === "tool_call" || message.role === "tool_result") {
-      node = storedToolNode(message);
-    } else {
-      node = messageNode(message.role, message.content, message.model_label);
-    }
-    if (!node) continue;
+    const node = messageNode(message.role, message.content, message.model_label);
     if (message.id !== undefined) node.dataset.mid = message.id;
     box.appendChild(node);
   }
@@ -355,62 +347,6 @@ function renderChat() {
  * what ran and how it went, and the output folded underneath for whoever
  * wants it. The exit code is on the outside, because that is the part the
  * owner cannot afford to miss. */
-function toolNode({ name, summary, output, failed, running }) {
-  const wrap = document.createElement("details");
-  wrap.className = "tool" + (failed ? " failed" : "") + (running ? " running" : "");
-
-  const head = document.createElement("summary");
-  const icon = document.createElement("span");
-  icon.className = "tool-icon";
-  const label = document.createElement("span");
-  label.className = "tool-label";
-  label.textContent = summary;
-  const status = document.createElement("span");
-  status.className = "tool-status";
-  status.textContent = running ? "running" : failed ? "failed" : "";
-  head.append(icon, label, status);
-
-  const body = document.createElement("pre");
-  body.className = "tool-output";
-  body.textContent = output || "";
-
-  wrap.append(head, body);
-  wrap.dataset.tool = name;
-  return wrap;
-}
-
-function storedToolNode(message) {
-  let payload;
-  try {
-    payload = JSON.parse(message.content);
-  } catch (_) {
-    return null;
-  }
-  if (message.role === "tool_call") {
-    // The asking is only interesting alongside its answer, which arrives as
-    // the next message. Showing it separately would double every step.
-    return null;
-  }
-  const observed = payload.observed || {};
-  return toolNode({
-    name: payload.name,
-    summary: describeCall(payload.name, observed),
-    output: payload.output,
-    failed: payload.failed,
-  });
-}
-
-/* One line describing what actually ran. Built from what AWORG observed
- * rather than from what the model said it would do, so a command that was
- * changed on its way to the shell would show as it really was. */
-function describeCall(name, observed) {
-  if (observed.command) {
-    const where = observed.directory ? ` in ${observed.directory}` : "";
-    return `${observed.command}${where}`;
-  }
-  return name;
-}
-
 function messageNode(role, content, label) {
   const wrapper = document.createElement("div");
   wrapper.className = `msg ${role}`;
@@ -562,34 +498,6 @@ async function watchTurn(open, text) {
           }
           body.innerHTML = MD.render(collected);
           keepAtBottom(box, following);
-        } else if (event.type === "tool_call") {
-          // Shown the moment it is asked for, so a long command is visibly
-          // running rather than looking like a stall.
-          const node = toolNode({
-            name: event.name,
-            summary: describeCall(event.name, event.arguments || {}) === event.name
-              ? (event.arguments && event.arguments.command) || event.name
-              : describeCall(event.name, event.arguments || {}),
-            output: "",
-            running: true,
-          });
-          node.id = `tool-${event.id}`;
-          box.appendChild(node);
-          keepAtBottom(box, following);
-          refreshTasks();
-        } else if (event.type === "tool_result") {
-          const node = document.getElementById(`tool-${event.id}`);
-          const replacement = toolNode({
-            name: event.name,
-            summary: describeCall(event.name, event.observed || {}),
-            output: event.output,
-            failed: event.failed,
-          });
-          if (node) node.replaceWith(replacement); else box.appendChild(replacement);
-          // A failure is worth opening unasked; a success is not.
-          replacement.open = !!event.failed;
-          keepAtBottom(box, following);
-          refreshTasks();
         } else if (event.type === "stopped") {
           const note = document.createElement("div");
           note.className = "stopped-note";
@@ -608,10 +516,8 @@ async function watchTurn(open, text) {
             content: collected,
             model_label: event.model_label,
           });
-          refreshTasks();
         } else if (event.type === "error") {
           failed = true;
-          refreshTasks();
           clearInterval(ticker);
           if (!collected) replyNode.remove();
           thoughts.remove();
@@ -1101,74 +1007,6 @@ function paneItems(items) {
     const detail = document.createElement("span");
     detail.className = "pane-item-detail";
     detail.textContent = item.detail || "";
-    row.append(name, detail);
-    list.appendChild(row);
-  }
-  return list;
-}
-
-/* ---------- tasks ---------- */
-
-/* What the Resident is doing, shown where the owner is already looking.
- *
- * The chat scrolls: a command run twenty messages ago is gone from view, and
- * a command running right now is only visible if you happen to be at the
- * bottom. This pane is the standing answer to "what has it actually done to
- * my machine", and it stays put.
- *
- * It is refreshed from the server rather than assembled from the stream it
- * sits beside. The events would be quicker, but then the pane would be a
- * second opinion -- correct until a reload, or a stopped turn, or a call
- * that never came back -- and the whole point of it is to be the reliable
- * one. The stream is used only as a signal that something has changed. */
-async function refreshTasks() {
-  const pane = el("pane-tasks");
-  if (!pane) return;
-  let data;
-  try {
-    data = await api("/api/tasks");
-  } catch (_) {
-    return;                       // the pane keeps what it had; it was true
-  }
-  app.tasks = data;
-
-  const body = pane.querySelector(".pane-body");
-  body.innerHTML = "";
-  body.appendChild(data.items.length ? taskItems(data.items) : emptyPane(TASKS_EMPTY));
-
-  // The heading says live only while something is actually in flight.
-  let live = pane.querySelector(".live");
-  if (!live) {
-    live = document.createElement("span");
-    live.className = "live";
-    pane.querySelector(".pane-head").appendChild(live);
-  }
-  live.textContent = "running";
-  live.hidden = !data.active;
-}
-
-const TASKS_EMPTY = {
-  empty_heading: "Nothing in progress.",
-  empty_detail: "Every command the Resident runs appears here, with what came of it.",
-};
-
-function taskItems(items) {
-  const list = document.createElement("div");
-  list.className = "pane-items tasks";
-  for (const item of items) {
-    const row = document.createElement("div");
-    row.className = `pane-item task ${item.state}`;
-
-    const name = document.createElement("span");
-    name.className = "pane-item-name";
-    name.textContent = item.summary;
-    // The full command, for the one that was too long to show.
-    name.title = item.summary;
-
-    const detail = document.createElement("span");
-    detail.className = "pane-item-detail";
-    detail.textContent = item.detail || "";
-
     row.append(name, detail);
     list.appendChild(row);
   }

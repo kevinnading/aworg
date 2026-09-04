@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from .anthropic import AnthropicAdapter
-from .base import Fragment, Message, ModelAdapter, ModelError, ToolCall
+from .base import Fragment, Message, ModelAdapter, ModelError
 from .openai_compatible import OpenAICompatibleAdapter
 
 
@@ -39,7 +39,6 @@ def build_adapter(connection: dict, api_key: str) -> ModelAdapter:
 
 __all__ = [
     "Fragment",
-    "ToolCall",
     "Message",
     "ModelAdapter",
     "ModelError",

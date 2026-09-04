@@ -27,29 +27,6 @@ class Message:
     role: str
     content: str
 
-    #: Set on a message that is the Resident asking for tools rather than
-    #: speaking. Its content is usually empty: the request is the message.
-    tool_calls: "list[ToolCall] | None" = None
-
-    #: Set on a message that is a tool's answer, naming the call it answers.
-    tool_call_id: str | None = None
-
-
-@dataclass
-class ToolCall:
-    """A model asking for a tool to be run.
-
-    Lives here rather than in tools/ because wanting a tool is a thing models
-    do; what the tool then is, and what running it means, is not this layer's
-    business. The id comes from the provider and has to travel back with the
-    result, which is how the model knows which answer belongs to which
-    question when it asked several at once.
-    """
-
-    id: str
-    name: str
-    arguments: dict[str, Any]
-
 
 @dataclass
 class Fragment:
@@ -65,11 +42,9 @@ class Fragment:
     what to do about it.
     """
 
-    #: "reply" -- part of the answer. "thinking" -- reasoning on the way to
-    #: it. "tool_call" -- a request to run something, complete, in `call`.
+    #: "reply" -- part of the answer. "thinking" -- reasoning on the way to it.
     kind: str
     text: str = ""
-    call: "ToolCall | None" = None
 
 
 class ModelError(Exception):
@@ -132,20 +107,9 @@ class ModelAdapter:
         raise NotImplementedError
 
     async def stream(
-        self,
-        messages: list[Message],
-        system: str,
-        tools: list[dict[str, Any]] | None = None,
+        self, messages: list[Message], system: str
     ) -> AsyncIterator[Fragment]:
-        """Yield the reply as it arrives, one fragment at a time.
-
-        `tools` are described in AWORG's vocabulary -- name, description,
-        parameters -- and each adapter translates them into whatever its
-        provider expects. That translation is the whole reason this layer
-        exists: above it, nothing knows that one provider wants
-        `function.parameters` and another `input_schema`.
-
-        """
+        """Yield the reply as it arrives, one fragment at a time."""
         raise NotImplementedError
         yield Fragment("reply", "")  # pragma: no cover - marks this a generator
 

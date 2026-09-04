@@ -14,13 +14,11 @@ look true.
 from __future__ import annotations
 
 import asyncio
-import json
 
 from typing import Any, AsyncIterator
 
 from . import host
-from .tools import build_registry
-from .models import Message, ModelError, ToolCall, build_adapter
+from .models import Message, ModelError, build_adapter
 from .secrets import SecretStore, credential_ref
 from .storage import Store
 
@@ -74,8 +72,6 @@ class Resident:
         self.host = host.observe()
         #: At most one, because there is one Resident and one conversation.
         self.turn: Turn | None = None
-        #: What it can do. Small on purpose; see aworg/tools/__init__.py.
-        self.tools = build_registry(paths.workspace) if paths else None
 
     # -- state ----------------------------------------------------------
 
@@ -144,61 +140,23 @@ class Resident:
     REPLY_RESERVE_SHARE = 5
     REPLY_RESERVE_MIN = 512
 
-    #: How many times round the loop before stopping and saying so. High
-    #: enough for real work -- installing something, building it, checking it
-    #: -- and low enough that a model stuck in a cycle costs minutes rather
-    #: than a night. Reaching it is reported, never silent.
-    MAX_STEPS = 16
+    @staticmethod
+    def _converted(rows: list[dict[str, Any]]) -> list[tuple[int, Message]]:
+        """Stored conversation rows as messages, each with the row it came from.
+
+        The row id travels alongside because the interface has to be able to
+        say which message the Resident's memory begins at, and counting
+        positions in a rendered list is not the same question.
+        """
+        return [
+            (row["id"], Message(role=row["role"], content=row["content"]))
+            for row in rows
+        ]
 
     @classmethod
     def _to_messages(cls, rows: list[dict[str, Any]]) -> list[Message]:
         """Stored conversation rows as the model layer's messages."""
         return [message for _, message in cls._converted(rows)]
-
-    @staticmethod
-    def _converted(rows: list[dict[str, Any]]) -> list[tuple[int, Message]]:
-        """Stored conversation rows as messages, each with the row it came from.
-
-        Tool exchanges are kept in the conversation like anything else --
-        they are what happened -- so they come back out of storage as the
-        calls and results they were, with their ids paired.
-
-        The row id travels alongside because summarising has to say how far
-        it has read, and a row that fails to parse is skipped here -- so
-        counting positions in the output and hoping they line up with the
-        input is the kind of assumption that is right until it is not.
-        """
-        messages: list[tuple[int, Message]] = []
-        for row in rows:
-            role, content = row["role"], row["content"]
-            if role == "tool_call":
-                try:
-                    payload = json.loads(content)
-                except (ValueError, TypeError):
-                    continue
-                messages.append((row["id"], Message(
-                    role="resident",
-                    content=payload.get("said", ""),
-                    tool_calls=[
-                        ToolCall(id=c["id"], name=c["name"], arguments=c["arguments"])
-                        for c in payload.get("calls", [])
-                    ],
-                )))
-            elif role == "tool_result":
-                try:
-                    payload = json.loads(content)
-                except (ValueError, TypeError):
-                    continue
-                messages.append((row["id"], Message(
-                    role="tool_result",
-                    content=payload.get("output", ""),
-                    tool_call_id=payload.get("id"),
-                )))
-            else:
-                messages.append(
-                    (row["id"], Message(role=role, content=_unenveloped(content)))
-                )
-        return messages
 
     async def refresh_host(self) -> None:
         """Look at the machine again if what we know has gone stale.
@@ -222,22 +180,6 @@ class Resident:
         """
         instructions = self.store.get_resident()["system_prompt"]
         block = host.summary(self.host)
-
-        if self.tools and len(self.tools):
-            # Stated as present fact, because the conversation may contradict
-            # it. A Resident that spent weeks correctly saying it had no
-            # tools will go on saying so after it is given some: the model is
-            # being consistent with its own past, which is usually a virtue.
-            # Observed in exactly that form -- six past denials inside a
-            # 76-message history were enough to make it refuse a shell it had
-            # been handed, with the tool definitions on the wire in front of
-            # it. The remedy is to say plainly which of the two is true now.
-            block += (
-                f"\n\nYou have these tools available right now: "
-                f"{', '.join(self.tools.names())}. If earlier in this "
-                "conversation you said you had no tools and could not act, "
-                "that was true then and is not true now. Use them."
-            )
 
         return f"{instructions}\n\n---\n\n{block}".strip()
 
@@ -412,17 +354,6 @@ class Resident:
         finally:
             turn.watchers.discard(queue)
 
-    def _stop_tools(self) -> None:
-        """Kill anything a stopped turn left running.
-
-        A build that nobody is waiting for is a build that should not still
-        be holding the machine.
-        """
-        for tool in getattr(self.tools, "_tools", {}).values():
-            stopper = getattr(tool, "stop_all", None)
-            if stopper:
-                stopper()
-
     def stop_turn(self) -> bool:
         """Ask the reply in progress to stop. Whatever it said is kept."""
         if self.turn is None or self.turn.done:
@@ -479,191 +410,57 @@ class Resident:
             }
 
         label = _label(connection)
-        adapter = build_adapter(connection, api_key)
-        definitions = self.tools.definitions() if self.tools else None
+        collected: list[str] = []
+        thought = False
 
-        stopped = False
-        said_anything = False
-
-        # Round the loop: the model speaks, and either it is finished or it
-        # has asked for something. If it asked, the tools run, the answers go
-        # back, and it speaks again with them in hand. A turn is over when the
-        # model stops asking -- not when it stops talking.
-        for step in range(self.MAX_STEPS):
-            collected: list[str] = []
-            calls: list[ToolCall] = []
-            thought = False
-
-            try:
-                async for fragment in adapter.stream(
-                    history, system=system, tools=definitions
-                ):
-                    # Checked between fragments rather than by cancelling the
-                    # task: leaving the loop closes the model's stream on the
-                    # way out, and whatever was already said is kept below
-                    # exactly as it would be after a normal finish.
-                    if turn is not None and turn.stopping:
-                        stopped = True
-                        break
-                    if fragment.kind == "thinking":
-                        # Thinking is not what the Resident said, so it is
-                        # never kept. It is still reported, because a model
-                        # silent for thirty seconds is indistinguishable from
-                        # one that has hung.
-                        thought = True
-                        yield {"type": "thinking", "text": fragment.text}
-                    elif fragment.kind == "tool_call":
-                        calls.append(fragment.call)
-                    else:
-                        collected.append(fragment.text)
-                        yield {"type": "delta", "text": fragment.text}
-            except ModelError as exc:
-                if collected:
-                    self.store.add_message(
-                        conversation_id, "resident", "".join(collected), label
-                    )
-                yield {"type": "error", "message": str(exc)}
-                return
-
-            said = "".join(collected)
-            said_anything = said_anything or bool(said.strip())
-
-            if stopped:
-                # Stopping mid-step: keep what was said, abandon what was
-                # asked for. Running a tool nobody is waiting on is work the
-                # owner has just said they do not want.
-                if said.strip():
-                    self.store.add_message(conversation_id, "resident", said, label)
-                if self.tools:
-                    self._stop_tools()
-                yield {"type": "stopped", "partial": bool(said.strip())}
-                yield {"type": "done", "model_label": label}
-                return
-
-            if not calls:
-                # Nothing asked for: the turn is finished.
-                if said.strip():
-                    self.store.add_message(conversation_id, "resident", said, label)
-                elif thought and not said_anything:
-                    yield {
-                        "type": "error",
-                        "message": (
-                            f"{label} spent its whole reply thinking and never "
-                            "answered. Its reasoning budget is likely too small "
-                            "for this request."
-                        ),
-                    }
-                    return
-                yield {"type": "done", "model_label": label}
-                return
-
-            # It asked for something. Record the asking as part of the
-            # conversation -- it is what happened, and the model needs to see
-            # its own request next time round or it will ask again.
-            self.store.add_message(
-                conversation_id,
-                "tool_call",
-                json.dumps({
-                    "said": said,
-                    "calls": [
-                        {"id": c.id, "name": c.name, "arguments": c.arguments}
-                        for c in calls
-                    ],
-                }),
-                label,
-            )
-            for call in calls:
-                yield {
-                    "type": "tool_call",
-                    "id": call.id,
-                    "name": call.name,
-                    "arguments": call.arguments,
-                }
-
-            for call in calls:
+        try:
+            async for fragment in build_adapter(connection, api_key).stream(
+                history, system=system
+            ):
+                # Checked between fragments rather than by cancelling the
+                # task: leaving the loop closes the model's stream on the way
+                # out, and whatever was already said is kept below exactly as
+                # it would be after a normal finish.
                 if turn is not None and turn.stopping:
-                    stopped = True
-                    break
-                result = await self.tools.invoke(call.name, call.arguments)
-                # What AWORG observed is stored beside what the model will be
-                # told, so that a later claim about this step can be checked
-                # against the record rather than taken on trust.
+                    said = "".join(collected)
+                    if said.strip():
+                        self.store.add_message(
+                            conversation_id, "resident", said, label
+                        )
+                    yield {"type": "stopped", "partial": bool(said.strip())}
+                    yield {"type": "done", "model_label": label}
+                    return
+                if fragment.kind == "thinking":
+                    # Thinking is not what the Resident said, so it is never
+                    # kept. It is still reported, because a model silent for
+                    # thirty seconds is indistinguishable from one that hung.
+                    thought = True
+                    yield {"type": "thinking", "text": fragment.text}
+                else:
+                    collected.append(fragment.text)
+                    yield {"type": "delta", "text": fragment.text}
+        except ModelError as exc:
+            if collected:
                 self.store.add_message(
-                    conversation_id,
-                    "tool_result",
-                    json.dumps({
-                        "id": call.id,
-                        "name": call.name,
-                        "output": result.for_model(),
-                        "observed": result.observed,
-                        "failed": result.failed,
-                    }),
-                    label,
+                    conversation_id, "resident", "".join(collected), label
                 )
-                yield {
-                    "type": "tool_result",
-                    "id": call.id,
-                    "name": call.name,
-                    "failed": result.failed,
-                    "observed": result.observed,
-                    "output": result.output,
-                }
+            yield {"type": "error", "message": str(exc)}
+            return
 
-            if stopped:
-                if self.tools:
-                    self._stop_tools()
-                yield {"type": "stopped", "partial": said_anything}
-                yield {"type": "done", "model_label": label}
-                return
-
-            # Rebuild from storage rather than appending in memory, so that
-            # what goes back to the model is exactly what was written down.
-            history = self._to_messages(self.store.messages(conversation_id))
-            plan = self._fit(history, system, connection.get("context"))
-            history = plan["kept"]
-            if plan["dropped"]:
-                yield {
-                    "type": "context",
-                    "dropped": plan["dropped"],
-                    "overflowing": plan["overflowing"],
-                }
-
-        # The ceiling. Said plainly rather than passed off as a finished
-        # answer, because an owner reading a reply that stops mid-task
-        # deserves to know it was cut off rather than concluded.
-        yield {
-            "type": "error",
-            "message": (
-                f"Stopped after {self.MAX_STEPS} steps without finishing. "
-                "Everything done so far is above, and in the workspace."
-            ),
-        }
+        said = "".join(collected)
+        if said.strip():
+            self.store.add_message(conversation_id, "resident", said, label)
+        elif thought:
+            yield {
+                "type": "error",
+                "message": (
+                    f"{label} spent its whole reply thinking and never "
+                    "answered. Its reasoning budget is likely too small "
+                    "for this request."
+                ),
+            }
+            return
         yield {"type": "done", "model_label": label}
-
-
-def _unenveloped(content: str) -> str:
-    """Strip an internal tool envelope that got stored as plain speech.
-
-    A model shown its own past in AWORG's storage format will copy that
-    format instead of calling anything -- it writes the JSON out as prose and
-    no tool ever runs. The fix is upstream, but a conversation that already
-    caught it keeps the bad example on disk forever, so the envelope is
-    removed on the way out rather than left to teach the same lesson twice.
-
-    Only what the Resident actually said survives. The calls named inside
-    never ran -- there are no results paired with them -- so presenting them
-    as real calls would put a claim in the record that nothing backs.
-    """
-    text = content.lstrip()
-    if not text.startswith("{") or '"calls"' not in text:
-        return content
-    try:
-        payload = json.loads(text)
-    except (ValueError, TypeError):
-        return content
-    if not isinstance(payload, dict) or "calls" not in payload or "said" not in payload:
-        return content
-    return str(payload.get("said") or "")
 
 
 def _label(connection: dict[str, Any]) -> str:

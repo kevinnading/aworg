@@ -15,7 +15,7 @@ from typing import AsyncIterator
 
 import httpx
 
-from .base import Fragment, Message, ModelAdapter, ModelError, ToolCall
+from .base import Fragment, Message, ModelAdapter, ModelError
 
 
 #: A thinking model can be silent for a long time before its first word, so a
@@ -170,124 +170,22 @@ class OpenAICompatibleAdapter(ModelAdapter):
     def default_base_url(self) -> str:
         return "https://api.openai.com/v1"
 
-    def _wire(self, messages: list[Message], system: str) -> list[dict[str, Any]]:
-        """AWORG's conversation, in the shape this API expects.
-
-        Four kinds of message rather than two: the owner speaking, the
-        Resident speaking, the Resident asking for tools, and a tool
-        answering. The last two have to keep their ids paired or the model
-        cannot tell which answer belongs to which request when it asked for
-        several at once.
-        """
-        wire: list[dict[str, Any]] = []
+    def _wire(self, messages: list[Message], system: str) -> list[dict[str, str]]:
+        wire: list[dict[str, str]] = []
         if system:
             wire.append({"role": "system", "content": system})
-
-        for message in messages:
-            if message.tool_calls:
-                wire.append({
-                    "role": "assistant",
-                    "content": message.content or None,
-                    "tool_calls": [
-                        {
-                            "id": call.id,
-                            "type": "function",
-                            "function": {
-                                "name": call.name,
-                                "arguments": json.dumps(call.arguments),
-                            },
-                        }
-                        for call in message.tool_calls
-                    ],
-                })
-            elif message.tool_call_id:
-                wire.append({
-                    "role": "tool",
-                    "tool_call_id": message.tool_call_id,
-                    "content": message.content,
-                })
-            else:
-                wire.append({
-                    "role": "user" if message.role == "owner" else "assistant",
-                    "content": message.content,
-                })
+        wire.extend(
+            {"role": "user" if m.role == "owner" else "assistant", "content": m.content}
+            for m in messages
+        )
         return wire
 
-    @staticmethod
-    def _tools(tools: list[dict[str, Any]] | None) -> list[dict[str, Any]] | None:
-        """AWORG's tool descriptions, in this API's shape."""
-        if not tools:
-            return None
-        return [
-            {
-                "type": "function",
-                "function": {
-                    "name": tool["name"],
-                    "description": tool["description"],
-                    "parameters": tool["parameters"],
-                },
-            }
-            for tool in tools
-        ]
-
-    async def count_tokens(self, messages: list[Message], system: str) -> int | None:
-        """Exact, on llama.cpp: render the chat template, then tokenize it.
-
-        Two calls rather than one because tokenizing the raw text misses the
-        template's own tokens -- a few per message, which is a few hundred
-        over a long conversation. Anything that is not llama.cpp answers
-        neither endpoint and gets None.
-        """
-        root = self.base_url[:-3] if self.base_url.endswith("/v1") else self.base_url
-        try:
-            async with httpx.AsyncClient(timeout=20.0) as client:
-                rendered = await client.post(
-                    f"{root}/apply-template", json={"messages": self._wire(messages, system)}
-                )
-                if rendered.status_code != 200:
-                    return None
-                prompt = rendered.json().get("prompt")
-                if not isinstance(prompt, str):
-                    return None
-                counted = await client.post(f"{root}/tokenize", json={"content": prompt})
-                if counted.status_code != 200:
-                    return None
-                tokens = counted.json().get("tokens")
-                return len(tokens) if isinstance(tokens, list) else None
-        except (httpx.RequestError, ValueError):
-            return None
-
-    async def detect_context(self) -> int | None:
-        """llama.cpp publishes its window at /props, beside the /v1 API.
-
-        Gateways and OpenAI itself have no such endpoint and answer with a
-        404 or an HTML page, both of which mean "unknown" here, not "broken".
-        """
-        root = self.base_url[:-3] if self.base_url.endswith("/v1") else self.base_url
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.get(f"{root}/props")
-                if response.status_code != 200:
-                    return None
-                settings = response.json().get("default_generation_settings") or {}
-                n_ctx = settings.get("n_ctx")
-                return int(n_ctx) if isinstance(n_ctx, int) and n_ctx > 0 else None
-        except (httpx.RequestError, ValueError):
-            return None
-
     async def stream(
-        self,
-        messages: list[Message],
-        system: str,
-        tools: list[dict[str, Any]] | None = None,
+        self, messages: list[Message], system: str
     ) -> AsyncIterator[Fragment]:
         wire = self._wire(messages, system)
 
         payload: dict[str, Any] = {"model": self.model, "messages": wire, "stream": True}
-        described = self._tools(tools)
-        if described:
-            payload["tools"] = described
-            payload["tool_choice"] = "auto"
         if self.reasoning == "off":
             # The convention llama.cpp and most gateways accept. A server that
             # does not understand it ignores it, which is the right failure:
@@ -299,11 +197,6 @@ class OpenAICompatibleAdapter(ModelAdapter):
         }
 
         splitter = _ThinkSplitter()
-        # Tool calls arrive shredded: an id in one chunk, the name in
-        # another, the arguments as a dozen fragments of half-written JSON.
-        # They are accumulated by their index in the array and only become
-        # ToolCalls once the stream says it has finished asking.
-        pending: dict[int, dict[str, str]] = {}
 
         try:
             async with httpx.AsyncClient(timeout=STREAM_TIMEOUT) as client:
@@ -344,52 +237,10 @@ class OpenAICompatibleAdapter(ModelAdapter):
                             for kind, part in splitter.feed(text):
                                 yield Fragment(kind, part)
 
-                        for piece in delta.get("tool_calls") or []:
-                            slot = pending.setdefault(
-                                piece.get("index", 0), {"id": "", "name": "", "arguments": ""}
-                            )
-                            if piece.get("id"):
-                                slot["id"] = piece["id"]
-                            function = piece.get("function") or {}
-                            if function.get("name"):
-                                slot["name"] += function["name"]
-                            if function.get("arguments"):
-                                slot["arguments"] += function["arguments"]
-
-                        # Some servers signal the end of the asking; others
-                        # simply stop. Either way the calls are emitted once,
-                        # below, when the stream is done.
                     for kind, part in splitter.drain():
                         yield Fragment(kind, part)
-
-                    for _, slot in sorted(pending.items()):
-                        if not slot["name"]:
-                            continue
-                        yield Fragment("tool_call", call=_assemble(slot))
         except httpx.RequestError as exc:
             raise ModelError(f"Could not reach {self.base_url}: {exc}") from exc
-
-
-def _assemble(slot: dict[str, str]) -> ToolCall:
-    """Turn accumulated fragments into a call.
-
-    Arguments are a JSON string built up across many chunks, and a model can
-    finish one badly. That is not a reason to end the turn: an empty argument
-    set reaches the tool, the tool says what was wrong with it, and the model
-    gets to try again -- which is a far better outcome than an exception
-    surfacing to the owner as a broken Resident.
-    """
-    try:
-        arguments = json.loads(slot["arguments"] or "{}")
-        if not isinstance(arguments, dict):
-            arguments = {"value": arguments}
-    except json.JSONDecodeError:
-        arguments = {}
-    return ToolCall(
-        id=slot["id"] or f"call_{slot['name']}",
-        name=slot["name"],
-        arguments=arguments,
-    )
 
 
 def _describe(status: int, body: str) -> str:
