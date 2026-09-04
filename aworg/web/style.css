@@ -1576,3 +1576,38 @@ body.resizing.row * { cursor: row-resize !important; }
   color: var(--muted);
 }
 .tool[open] .tool-output { display: block; }
+
+/* ---- tasks ---- */
+
+/* Commands are read left to right and their outcome is read at the dot, so
+   the command gets the width and the dot carries the state. A task that is
+   still running is the only thing in this pane that moves, which is what
+   makes it findable without hunting. */
+
+.pane-item.task .pane-item-name {
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 11.5px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.pane-item.task.failed::before { background: var(--danger); }
+.pane-item.task.abandoned::before {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--muted);
+}
+.pane-item.task.running::before {
+  background: var(--accent);
+  animation: task-pulse 1.4s ease-in-out infinite;
+}
+.pane-item.task.abandoned .pane-item-name { color: var(--muted); }
+
+@keyframes task-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: .35; transform: scale(.8); }
+}
+
+/* Someone who has asked not to see motion still needs to know it is running;
+   the dot stays lit and stops moving. */
+@media (prefers-reduced-motion: reduce) {
+  .pane-item.task.running::before { animation: none; }
+}

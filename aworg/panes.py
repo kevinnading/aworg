@@ -54,11 +54,11 @@ PANES: list[dict[str, Any]] = [
         "id": "tasks",
         "label": "Tasks",
         "hint": "What the Resident is doing and what it means to do next.",
-        "available": False,
-        "empty": ("Nothing in progress.", ""),
-        "blocked": ("Nothing in progress.",
-                    "Your Resident cannot act yet, so it has nothing to be "
-                    "part-way through."),
+        "available": True,
+        "empty": ("Nothing in progress.",
+                  "Every command the Resident runs appears here, with what "
+                  "came of it."),
+        "blocked": None,
     },
     {
         "id": "log",
