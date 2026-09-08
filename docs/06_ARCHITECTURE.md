@@ -157,6 +157,47 @@ written into them: the instructions are the owner's to write, the facts are
 AWORG's to observe, and mixing the two would leave the owner maintaining a
 description of their own machine.
 
+### Tool calls are not gated, and that is on purpose for now
+
+There is no approval step between the Resident asking for a tool and the tool
+running. Every call executes immediately. **AWORG has full control.**
+
+This is a decision rather than an omission, and it is worth separating from
+the section above. Confinement is about what AWORG *could* do, and it is the
+owner's, settled with a container or a VM. This is about what AWORG does
+*without asking*, which is a different axis and is AWORG's own question.
+
+Today the answer is easy because a person is present by construction: the
+owner typed a message and is watching the reply arrive, and Stop works. The
+question only becomes real with the autonomous loop, when the Living Log
+reports trouble at three in the morning and the Resident repairs it with
+nobody there.
+
+What replaces this is a set of modes — automatic, manual, and standing
+accepts for particular things — rather than a single gate. That is a design
+worth doing properly and it is not this milestone's.
+
+When it arrives, it should not need new machinery. The Activity lifecycle
+already has `waiting` and `timed_out`, and neither is ever entered:
+
+    call needs a person  ->  Activity enters `waiting`, and emits
+                         ->  subscribers decide what that means: the pane
+                             offers Approve or Refuse, a notifier reaches
+                             the owner wherever they are
+                         ->  they answer, or nobody does and it times out
+
+Which is the Activity Manager's own principle applied to permission: it
+tracks and emits, and what a `waiting` Activity *means* is the subscriber's
+business. Building the gate as another subscriber rather than as a branch
+inside the tool layer is what keeps the tool layer from slowly becoming
+where all policy lives.
+
+Two things will need deciding and neither is decided here. What marks a call
+as needing a person — a shell tool cannot reliably read intent out of a
+command string, so capability-level rules may hold where per-call judgement
+will not. And what happens when nobody answers, given that waiting forever is
+safe and defeats the entire point of an unattended repair.
+
 ### The consequence for snapshots
 
 The white paper separates `workspace/` -- what may be published -- from
