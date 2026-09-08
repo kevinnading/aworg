@@ -61,10 +61,14 @@ INPUT_SCHEMA = {
     "required": ["tasks"],
 }
 
-#: A guard against a model that has decided to enumerate the universe. A plan
-#: longer than this is not a plan, and it would crowd out the context the
-#: Resident needs to actually do any of it.
-MAX_AT_ONCE = 25
+#: Where a plan stops being a plan. Advice rather than a ceiling: the tasks
+#: are still added, and the Resident is told the list has got long enough to
+#: crowd out the context it needs to actually do any of it.
+#:
+#: Refusing would be the wrong shape. AWORG does not know that this
+#: particular plan is too long -- it knows the usual one is -- and a tool
+#: that rejects work on a guess costs a round trip to learn nothing.
+MANY_AT_ONCE = 25
 
 
 async def run(context: ToolContext, tasks: list | None = None) -> ToolResult:
@@ -78,13 +82,6 @@ async def run(context: ToolContext, tasks: list | None = None) -> ToolResult:
         tasks = [tasks]
     if not tasks:
         raise ToolError("No tasks were given. Say what you intend to do.")
-    if len(tasks) > MAX_AT_ONCE:
-        raise ToolError(
-            f"That is {len(tasks)} tasks at once, and the limit is "
-            f"{MAX_AT_ONCE}. Add the next few steps rather than the whole "
-            "project, and add more as you get there."
-        )
-
     prepared = []
     for entry in tasks:
         if isinstance(entry, str):
@@ -104,11 +101,21 @@ async def run(context: ToolContext, tasks: list | None = None) -> ToolResult:
 
     created = store.add_tasks(prepared)
     lines = "\n".join(f"  {t['id']}  {t['title']}" for t in created)
+
+    note = ""
+    if len(created) > MANY_AT_ONCE:
+        note = (
+            f"\n\nThat is {len(created)} at once. They are all saved, but a "
+            "plan this long costs context on every message and usually means "
+            "planning further ahead than is useful. Consider working the next "
+            "few and adding the rest when you get there."
+        )
+
     return ToolResult(
         text=(
             f"Added {len(created)} task{'s' if len(created) != 1 else ''} to "
             f"your plan:\n{lines}\n\nMark one active with update_task when you "
-            "start it, and done when you have watched it succeed."
+            "start it, and done when you have watched it succeed." + note
         ),
         summary=f"+{len(created)} task{'s' if len(created) != 1 else ''}",
     )

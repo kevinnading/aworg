@@ -85,6 +85,14 @@ PANES: list[dict[str, Any]] = [
         "blocked": None,
     },
     {
+        "id": "system",
+        "label": "System",
+        "hint": "What was found on this machine at startup.",
+        "available": True,
+        "empty": ("Nothing observed.", ""),
+        "blocked": None,
+    },
+    {
         "id": "skills",
         "label": "Skills",
         "hint": "Procedures the Resident knows how to carry out.",
@@ -111,22 +119,20 @@ PANE_IDS = [pane["id"] for pane in PANES]
 def capabilities(
     facts: dict[str, Any], registry: Any = None, enabled: Any = None
 ) -> list[dict[str, Any]]:
-    """What the Resident can do here, as facts rather than promises.
+    """What the Resident has been granted: its Capabilities and their Tools.
 
-    Two registers in one pane, and they answer different halves of the same
-    question. The installed Capabilities are what the Resident has been
-    *granted* -- its Tools, grouped as they are packaged, each switchable by
-    the owner. The machine facts are what is *present* to use them on.
+    Only that. This pane used to hold the machine facts as well, on the
+    argument that a Shell capability and a machine with no package manager
+    are two halves of one question. They are -- but they are also two
+    different *kinds* of thing, one the owner decides and one the owner
+    merely learns, and mixing them made the pane hard to scan and gave the
+    switches somewhere to hide. The facts now live in System.
 
-    Neither is sufficient alone. A Resident with a Shell capability on a
-    machine with no package manager still cannot install postgres, and an
-    owner who can see only one of those two things cannot tell why. So they
-    sit together, marked by `kind` so the interface can keep them visually
-    distinct.
-
-    An owner about to ask for postgres needs to know whether this Aworg can
-    install anything at all before they ask, not after it fails. Privilege
-    is the first line of the facts because it decides most of the rest.
+    Each Capability carries what it costs. Tool schemas are sent on every
+    single request, and the Resident's five capabilities came to more tokens
+    than its entire system prompt -- so an owner leaving everything on
+    forever is paying for it on every message, in a currency nobody was
+    showing them.
     """
     items: list[dict[str, Any]] = []
 
@@ -151,6 +157,10 @@ def capabilities(
             "enabled": on,
             "builtin": capability.builtin,
             "tools": tools,
+            # What offering this costs on every request, whether or not the
+            # Resident reaches for it. Shown so that "enable everything" is
+            # a decision with a visible price rather than a free default.
+            "tokens": schema_tokens(capability.tools),
             # A tool file that would not parse is named rather than merely
             # absent. "Nothing here" and "one of these is broken" are
             # different facts and the owner is owed the right one.
@@ -160,8 +170,50 @@ def capabilities(
             ],
         })
 
-    items.extend(_machine_facts(facts))
     return items
+
+
+def system(facts: dict[str, Any]) -> list[dict[str, Any]]:
+    """What was observed about this machine at startup.
+
+    Its own pane now rather than the tail of Capabilities. These are facts
+    the owner *learns*, where a Capability is a decision the owner *makes*,
+    and a pane that mixes the two invites reading a fact as a control.
+
+    An owner about to ask for postgres needs to know whether this Aworg could
+    install anything at all before they ask rather than after it fails, which
+    is why this is on screen instead of only in the Resident's prompt.
+    Privilege comes first because it decides most of the rest.
+    """
+    return _machine_facts(facts)
+
+
+#: Characters per token, matching Resident.CHARS_PER_TOKEN. Duplicated
+#: rather than imported because panes.py has no business importing the
+#: Resident, and the number is a property of the tokenizer rather than of
+#: either module.
+CHARS_PER_TOKEN = 3.6
+
+
+def schema_tokens(specs: list[Any]) -> int:
+    """What a set of tools costs to offer, in tokens, per request.
+
+    Estimated from the JSON that actually goes on the wire. Approximate, and
+    labelled as such in the interface -- the point is the order of magnitude,
+    which is what tells an owner that leaving Browser enabled all year is not
+    free.
+    """
+    import json
+
+    payload = json.dumps([
+        {
+            "name": spec.name,
+            "description": spec.description,
+            "inputSchema": spec.input_schema,
+        }
+        for spec in specs
+    ])
+    return int(len(payload) / CHARS_PER_TOKEN)
 
 
 def _machine_facts(facts: dict[str, Any]) -> list[dict[str, Any]]:
@@ -254,8 +306,10 @@ def describe(
         else:
             heading, detail = pane["blocked"] or pane["empty"]
         items: list[dict[str, Any]] = []
-        if pane["id"] == "capabilities" and facts:
-            items = capabilities(facts, registry, enabled)
+        if pane["id"] == "capabilities":
+            items = capabilities(facts or {}, registry, enabled)
+        elif pane["id"] == "system" and facts:
+            items = system(facts)
         elif pane["id"] == "workers" and crew:
             items = workers(crew)
         elif pane["id"] == "tasks" and plan:

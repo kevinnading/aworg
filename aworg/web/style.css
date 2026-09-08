@@ -1728,3 +1728,17 @@ button.ghost.small {
 .task-state.active  { color: var(--accent); border-color: var(--accent); }
 .task-state.blocked { color: var(--warn); border-color: var(--warn); }
 .pane-item.task.active .pane-item-name { color: var(--text); font-weight: 500; }
+
+/* What a capability costs to leave switched on. Quiet by default -- it is a
+   number to consult when deciding, not one to read on every glance -- and it
+   dims with the row when the capability is off, because a capability that is
+   off is costing nothing. */
+.capability-cost {
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  flex: none;
+  margin-left: auto;
+  padding-right: 6px;
+}
+.pane-item.capability.off .capability-cost { opacity: 0.4; }

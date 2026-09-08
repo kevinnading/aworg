@@ -1029,7 +1029,10 @@ const FIXED_PANES = {
  * the activity row and into the workspace column is a line moved here; every
  * other file goes on not caring where anything is. */
 const REGIONS = [
-  { id: "faculties", element: "faculties", axis: "column", panes: ["capabilities", "skills"] },
+  // System first: what this machine *is* frames what any capability could
+  // do on it, and it is read once rather than worked in. Capabilities and
+  // Skills sit below it, where the owner reaches for them deliberately.
+  { id: "faculties", element: "faculties", axis: "column", panes: ["system", "capabilities", "skills"] },
   { id: "side", element: "side", axis: "column", panes: ["preview", "lifecycle", "workspace"] },
   { id: "activity", element: "activity", axis: "row", panes: ["tasks", "workers"] },
   // What happened, then what is happening. Reading order follows the way
@@ -1456,7 +1459,17 @@ function capabilityRow(item) {
     : `Turn ${item.name} back on.`;
   toggle.onclick = () => setCapability(item.id, !item.enabled);
 
-  head.append(name, toggle);
+  // What it costs to leave switched on. Tool schemas ride along with every
+  // single request, so an owner who enables everything and forgets is paying
+  // on each message -- and until this was shown, in a currency nobody named.
+  const cost = document.createElement("span");
+  cost.className = "capability-cost";
+  cost.textContent = `~${item.tokens ?? 0} tok`;
+  cost.title =
+    `Offering ${item.name} costs roughly ${item.tokens ?? 0} tokens of ` +
+    `context on every message, whether or not the Resident uses it.`;
+
+  head.append(name, cost, toggle);
 
   const detail = document.createElement("span");
   detail.className = "pane-item-detail";
