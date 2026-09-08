@@ -11,21 +11,42 @@ not in anticipation.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import AsyncIterator
+from dataclasses import dataclass, field
+from typing import Any, AsyncIterator
 
 
 @dataclass
 class Message:
     """One turn in a conversation, in AWORG's own vocabulary.
 
-    Internally the two roles are "owner" and "resident". Adapters translate
-    those into whatever a given provider calls them. The vocabulary of the
-    product does not bend to the vocabulary of an API.
+    Internally the roles are "owner", "resident" and "tool". Adapters
+    translate those into whatever a given provider calls them. The
+    vocabulary of the product does not bend to the vocabulary of an API.
+
+    `blocks` carries MCP content blocks for the messages that are more than
+    prose -- a reply that asked for tools, and the results that answered it.
+    It is None for ordinary text, which is most messages. When it is set it
+    is the truth and `content` is a rendering of it for display.
     """
 
     role: str
     content: str
+    blocks: list[dict[str, Any]] | None = None
+
+
+@dataclass
+class ToolCall:
+    """A model asking for a tool, in MCP's terms.
+
+    `id` is the provider's own correlation id and must come back attached to
+    the result. Both wire formats reject a result whose id matches no call,
+    which is what forces a tool exchange to be kept together when history is
+    trimmed to fit a window.
+    """
+
+    id: str
+    name: str
+    arguments: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -42,9 +63,12 @@ class Fragment:
     what to do about it.
     """
 
-    #: "reply" -- part of the answer. "thinking" -- reasoning on the way to it.
+    #: "reply" -- part of the answer. "thinking" -- reasoning on the way to
+    #: it. "tool_use" -- the model asking to run something, which is not
+    #: text at all and carries a ToolCall instead.
     kind: str
     text: str = ""
+    tool_call: "ToolCall | None" = None
 
 
 class ModelError(Exception):
@@ -138,10 +162,23 @@ class ModelAdapter:
         """
         return []
 
+    #: Whether this adapter can carry tool calls at all. An owner pointed at
+    #: a provider that cannot is told so, rather than watching a Resident
+    #: that never reaches for anything and looks merely unhelpful.
+    supports_tools: bool = False
+
     async def stream(
-        self, messages: list[Message], system: str
+        self,
+        messages: list[Message],
+        system: str,
+        tools: list[dict[str, Any]] | None = None,
     ) -> AsyncIterator[Fragment]:
-        """Yield the reply as it arrives, one fragment at a time."""
+        """Yield the reply as it arrives, one fragment at a time.
+
+        `tools` is a list of MCP tool descriptors, or None for a plain
+        conversation. An adapter translates them into its provider's shape;
+        nothing above this layer knows what that shape is.
+        """
         raise NotImplementedError
         yield Fragment("reply", "")  # pragma: no cover - marks this a generator
 

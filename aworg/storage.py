@@ -64,9 +64,20 @@ CREATE TABLE IF NOT EXISTS messages (
     conversation_id TEXT NOT NULL,
     role            TEXT NOT NULL,
     content         TEXT NOT NULL,
+    -- MCP content blocks, as JSON, for a message that is more than prose:
+    -- a reply that asked for tools, or the results that answered it. NULL
+    -- for the ordinary case, which is most messages and stays a plain
+    -- string. See add_message for why both columns exist.
+    blocks          TEXT,
     model_label     TEXT,
     created_at      TEXT NOT NULL DEFAULT (datetime('now')),
     FOREIGN KEY (conversation_id) REFERENCES conversations(id)
+);
+
+CREATE TABLE IF NOT EXISTS capability_state (
+    id         TEXT PRIMARY KEY,
+    enabled    INTEGER NOT NULL DEFAULT 1,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_messages_conversation
@@ -111,10 +122,7 @@ When a step fails, say so and say what failed. Never call something done that
 you have not watched succeed.
 
 Speak plainly and directly. The owner may not be a programmer, and should
-never need to be one to work with you."""]
-
-
-DEFAULT_SYSTEM_PROMPT = """You are the Resident of this Aworg.
+never need to be one to work with you.""", """You are the Resident of this Aworg.
 
 You are not a chat assistant that appears when summoned and forgets afterward.
 You are a persistent inhabitant of this machine. You live here. The owner you
@@ -125,6 +133,33 @@ At present you can only converse. You cannot run anything, read or write any
 file, or act on this machine in any way. Be straightforward about that if it
 comes up, rather than implying abilities you do not have or describing what
 you would do as though you had done it.
+
+Speak plainly and directly. The owner may not be a programmer, and should
+never need to be one to work with you."""]
+
+
+#: Kept deliberately short. Measured against the models this is developed
+#: for, longer system prompts scored *worse* -- see docs/06_ARCHITECTURE.md.
+#: Every sentence here is earning its place or should be cut.
+DEFAULT_SYSTEM_PROMPT = """You are the Resident of this Aworg.
+
+You are not a chat assistant that appears when summoned and forgets afterward.
+You are a persistent inhabitant of this machine. You live here. The owner you
+are speaking with installed you, and you will still be here tomorrow, holding
+the same conversation and remembering what was decided in it.
+
+You have tools, and you can act on this machine rather than only describe it.
+Use them instead of reasoning about what is probably there: read the file, run
+the command, look at what came back. Guessing and checking cost you the same
+one step, and only one of them is true.
+
+The owner cannot check your work for you. That is the whole reason you are
+here, so it matters more than anything else you do: never call something done
+that you have not watched succeed, and when a step fails, say plainly that it
+failed and what it said. Be clear about the difference between what you have
+verified and what you believe. Things going wrong is ordinary -- investigate
+and try again, and involve the owner when you are genuinely stuck rather than
+merely inconvenienced.
 
 Speak plainly and directly. The owner may not be a programmer, and should
 never need to be one to work with you."""
@@ -153,6 +188,7 @@ class Store:
         ("resident", "worker_connection_id", "TEXT"),
         ("connections", "reasoning", "TEXT NOT NULL DEFAULT 'auto'"),
         ("connections", "context", "INTEGER"),
+        ("messages", "blocks", "TEXT"),
     ]
 
     def _init(self) -> None:
@@ -450,13 +486,34 @@ class Store:
         role: str,
         content: str,
         model_label: str | None = None,
-    ) -> None:
+        blocks: list[dict[str, Any]] | None = None,
+    ) -> int:
+        """Record one message, and return the row id it was given.
+
+        Two columns hold the content, and they are not redundant. `blocks`
+        is the structured truth -- MCP content blocks, which is what a model
+        that asked for a tool actually said, and what has to go back to it
+        verbatim next turn. `content` is the same thing rendered as prose,
+        which is what the interface shows and what the token estimate
+        measures.
+
+        Deriving one from the other on every read would be the alternative,
+        and it would mean the rendering rules becoming load-bearing for
+        anything that counts tokens. Storing both costs a column.
+
+        The row id comes back because a tool exchange is written in two
+        steps -- the reply that asked, then the results that answered -- and
+        the second has to be able to point at the first.
+        """
+        payload = json.dumps(blocks) if blocks else None
         with self._connect() as conn:
-            conn.execute(
-                "INSERT INTO messages (conversation_id, role, content, model_label) "
-                "VALUES (?, ?, ?, ?)",
-                (conversation_id, role, content, model_label),
+            cursor = conn.execute(
+                "INSERT INTO messages "
+                "(conversation_id, role, content, blocks, model_label) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (conversation_id, role, content, payload, model_label),
             )
+            return int(cursor.lastrowid)
 
     def messages(self, conversation_id: str) -> list[dict[str, Any]]:
         with self._connect() as conn:
@@ -464,8 +521,53 @@ class Store:
                 # The id comes back because summarising has to record how
                 # far it has read; nothing else uses it, and it is harmless
                 # to the callers that ignore it.
-                "SELECT id, role, content, model_label, created_at FROM messages "
-                "WHERE conversation_id = ? ORDER BY id",
+                "SELECT id, role, content, blocks, model_label, created_at "
+                "FROM messages WHERE conversation_id = ? ORDER BY id",
                 (conversation_id,),
             ).fetchall()
-        return [dict(r) for r in rows]
+
+        out = []
+        for row in rows:
+            record = dict(row)
+            # A row written before this column existed has no blocks, and a
+            # row whose JSON is somehow unreadable is treated the same way:
+            # as the plain message it also is. Losing the structure degrades
+            # the conversation; raising here would lose all of it.
+            raw = record.pop("blocks", None)
+            try:
+                record["blocks"] = json.loads(raw) if raw else None
+            except (TypeError, ValueError):
+                record["blocks"] = None
+            out.append(record)
+        return out
+
+    # -- capabilities ---------------------------------------------------
+
+    def capability_enabled(self, identifier: str) -> bool:
+        """Whether the owner has this Capability switched on.
+
+        Absent means enabled. A Capability discovered for the first time --
+        because AWORG shipped a new one, or the owner installed it -- should
+        work without the owner having to go and turn it on, and only ever
+        appears here once they have actually decided something about it.
+        """
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT enabled FROM capability_state WHERE id = ?", (identifier,)
+            ).fetchone()
+        return True if row is None else bool(row["enabled"])
+
+    def set_capability_enabled(self, identifier: str, enabled: bool) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO capability_state (id, enabled, updated_at) "
+                "VALUES (?, ?, datetime('now')) "
+                "ON CONFLICT(id) DO UPDATE SET "
+                "enabled = excluded.enabled, updated_at = excluded.updated_at",
+                (identifier, int(bool(enabled))),
+            )
+
+    def capability_states(self) -> dict[str, bool]:
+        with self._connect() as conn:
+            rows = conn.execute("SELECT id, enabled FROM capability_state").fetchall()
+        return {row["id"]: bool(row["enabled"]) for row in rows}

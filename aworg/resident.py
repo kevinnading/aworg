@@ -1,14 +1,21 @@
 """The Resident.
 
-In Milestone 1 the Resident can only converse -- it has no tools, no workspace
-access, and no ability to act. What it does have is continuity: one ongoing
-conversation that outlives the browser tab and the process, and an identity
-that is independent of whichever model is currently behind it.
+One ongoing conversation that outlives the browser tab and the process, and an
+identity independent of whichever model is currently behind it. The owner can
+change the mind the Resident thinks with, mid-conversation, and the Resident
+carries on as itself. Everything here is arranged to make that true rather
+than to make it look true.
 
-That independence is the point of this milestone. The owner can change the mind
-the Resident thinks with, mid-conversation, and the Resident carries on as
-itself. Everything here is arranged to make that true rather than to make it
-look true.
+What this file is *not* is the agent loop. Reaching for a tool, reading what
+came back and going round again lives in agent.py, because a loop that is a
+method on this class is a loop no worker can ever run. The Resident is one
+caller of it: the one whose messages go in the owner's conversation and whose
+tool scope is everything the owner has left enabled.
+
+What stays here is what genuinely belongs to the inhabitant rather than to
+the act of running a model -- which connection it thinks with, what it is
+told about the machine it lives on, how much of the conversation still fits,
+and the turn currently in progress.
 """
 
 from __future__ import annotations
@@ -18,7 +25,10 @@ import asyncio
 from typing import Any, AsyncIterator
 
 from . import host
+from .activities import ActivityManager
+from .agent import AgentLoop
 from .models import Message, ModelError, build_adapter
+from .tools import Registry, ToolContext
 from .secrets import SecretStore, credential_ref
 from .storage import Store
 
@@ -64,6 +74,17 @@ class Resident:
     def __init__(self, store: Store, secrets: SecretStore, paths: Any = None):
         self.store = store
         self.secrets = secrets
+        self.paths = paths
+        #: What is happening right now, for anything that wants to watch.
+        #: Held by the Resident today because it is the only thing running
+        #: work; it belongs to the Aworg rather than to the Resident, and
+        #: moves out when workers need to share one.
+        self.activities = ActivityManager()
+        #: Discovered once at startup. Whether a capability is *enabled* is
+        #: asked of the store on every use rather than captured here, so the
+        #: owner turning one off takes effect on the next call instead of at
+        #: the next restart.
+        self.registry = Registry(is_enabled=store.capability_enabled)
         #: Observed at startup rather than at install, because a machine
         #: surveyed at install time is wrong the first time its owner
         #: installs anything -- and refreshed as it ages, because an Aworg
@@ -149,7 +170,14 @@ class Resident:
         positions in a rendered list is not the same question.
         """
         return [
-            (row["id"], Message(role=row["role"], content=row["content"]))
+            (
+                row["id"],
+                Message(
+                    role=row["role"],
+                    content=row["content"],
+                    blocks=row.get("blocks"),
+                ),
+            )
             for row in rows
         ]
 
@@ -157,6 +185,37 @@ class Resident:
     def _to_messages(cls, rows: list[dict[str, Any]]) -> list[Message]:
         """Stored conversation rows as the model layer's messages."""
         return [message for _, message in cls._converted(rows)]
+
+    @staticmethod
+    def _grouped(messages: list[Message]) -> list[list[Message]]:
+        """Messages gathered into the units history can be trimmed by.
+
+        Almost every group is one message. The exception is a tool exchange:
+        a reply that asked for tools and the results that answered it are
+        one indivisible thing, because both wire formats reject a result
+        whose call is not there and a call whose result never came.
+
+        Trimming by message would eventually cut between the two and break
+        the conversation permanently -- not for one turn, since history only
+        grows and the same cut would be made every turn after. So the edge
+        falls between groups and never inside one.
+        """
+        groups: list[list[Message]] = []
+        for message in messages:
+            asked_for_tools = bool(
+                groups
+                and groups[-1]
+                and groups[-1][-1].role == "resident"
+                and any(
+                    block.get("type") == "tool_use"
+                    for block in (groups[-1][-1].blocks or [])
+                )
+            )
+            if message.role == "tool" and asked_for_tools:
+                groups[-1].append(message)
+            else:
+                groups.append([message])
+        return groups
 
     async def refresh_host(self) -> None:
         """Look at the machine again if what we know has gone stale.
@@ -214,15 +273,35 @@ class Resident:
         reserve = max(self.REPLY_RESERVE_MIN, window // self.REPLY_RESERVE_SHARE)
         budget = window - reserve - self._estimate(system) - self.TOKENS_PER_MESSAGE
 
-        kept: list[Message] = []
+        # Trimmed in groups rather than messages, so the cut never falls
+        # inside a tool exchange. See _grouped.
+        groups = self._grouped(history)
+        kept_groups: list[list[Message]] = []
         used = 0
-        for message in reversed(history):
-            cost = self._estimate(message.content) + self.TOKENS_PER_MESSAGE
-            if used + cost > budget and kept:
+        for group in reversed(groups):
+            cost = sum(
+                self._estimate(message.content) + self.TOKENS_PER_MESSAGE
+                for message in group
+            )
+            if used + cost > budget and kept_groups:
                 break
             used += cost
-            kept.append(message)
-        kept.reverse()
+            kept_groups.append(group)
+        kept_groups.reverse()
+
+        # The window has to open on something the owner said. Anthropic
+        # refuses a conversation whose first message is the assistant's
+        # outright, and a history that begins mid-exchange -- with the
+        # Resident answering a question that is no longer there -- reads as
+        # a non-sequitur to any model.
+        #
+        # So whole groups come off the front until one of the owner's
+        # messages is first. Never the last group, because sending a
+        # truncated conversation beats sending none.
+        while len(kept_groups) > 1 and kept_groups[0][0].role != "owner":
+            kept_groups.pop(0)
+
+        kept = [message for group in kept_groups for message in group]
 
         # One message larger than the whole budget still gets sent: dropping
         # it would mean answering nothing at all. The provider will refuse,
@@ -410,57 +489,43 @@ class Resident:
             }
 
         label = _label(connection)
-        collected: list[str] = []
-        thought = False
 
-        try:
-            async for fragment in build_adapter(connection, api_key).stream(
-                history, system=system
-            ):
-                # Checked between fragments rather than by cancelling the
-                # task: leaving the loop closes the model's stream on the way
-                # out, and whatever was already said is kept below exactly as
-                # it would be after a normal finish.
-                if turn is not None and turn.stopping:
-                    said = "".join(collected)
-                    if said.strip():
-                        self.store.add_message(
-                            conversation_id, "resident", said, label
-                        )
-                    yield {"type": "stopped", "partial": bool(said.strip())}
-                    yield {"type": "done", "model_label": label}
-                    return
-                if fragment.kind == "thinking":
-                    # Thinking is not what the Resident said, so it is never
-                    # kept. It is still reported, because a model silent for
-                    # thirty seconds is indistinguishable from one that hung.
-                    thought = True
-                    yield {"type": "thinking", "text": fragment.text}
-                else:
-                    collected.append(fragment.text)
-                    yield {"type": "delta", "text": fragment.text}
-        except ModelError as exc:
-            if collected:
-                self.store.add_message(
-                    conversation_id, "resident", "".join(collected), label
-                )
-            yield {"type": "error", "message": str(exc)}
-            return
+        def record(
+            role: str,
+            content: str,
+            blocks: list[dict[str, Any]] | None = None,
+            model_label: str | None = None,
+        ) -> int:
+            return self.store.add_message(
+                conversation_id, role, content, model_label, blocks
+            )
 
-        said = "".join(collected)
-        if said.strip():
-            self.store.add_message(conversation_id, "resident", said, label)
-        elif thought:
-            yield {
-                "type": "error",
-                "message": (
-                    f"{label} spent its whole reply thinking and never "
-                    "answered. Its reasoning budget is likely too small "
-                    "for this request."
-                ),
-            }
-            return
-        yield {"type": "done", "model_label": label}
+        loop = AgentLoop(
+            adapter=build_adapter(connection, api_key),
+            registry=self.registry,
+            context=ToolContext(
+                paths=self.paths, activities=self.activities, host=self.host
+            ),
+            activities=self.activities,
+            # None: the Resident sees every tool the owner has left enabled.
+            # A worker gets a list; that is the same argument, used
+            # differently, which is the point of the loop not being a method
+            # on this class any more.
+            scope=None,
+            source="resident",
+            label=label,
+        )
+
+        async for event in loop.run(
+            history,
+            system,
+            record,
+            should_stop=lambda: turn is not None and turn.stopping,
+        ):
+            yield event
+            if event["type"] == "stopped":
+                yield {"type": "done", "model_label": label}
+                return
 
 
 def _label(connection: dict[str, Any]) -> str:

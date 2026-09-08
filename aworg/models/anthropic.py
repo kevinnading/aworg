@@ -7,7 +7,7 @@ from typing import Any, AsyncIterator
 
 import httpx
 
-from .base import Fragment, Message, ModelAdapter, ModelError
+from .base import Fragment, Message, ModelAdapter, ModelError, ToolCall
 
 
 ANTHROPIC_VERSION = "2023-06-01"
@@ -27,6 +27,7 @@ STREAM_TIMEOUT = httpx.Timeout(connect=10.0, read=None, write=30.0, pool=10.0)
 
 class AnthropicAdapter(ModelAdapter):
     provider = "anthropic"
+    supports_tools = True
 
     @property
     def default_base_url(self) -> str:
@@ -70,7 +71,10 @@ class AnthropicAdapter(ModelAdapter):
         return sorted(names)
 
     async def stream(
-        self, messages: list[Message], system: str
+        self,
+        messages: list[Message],
+        system: str,
+        tools: list[dict[str, Any]] | None = None,
     ) -> AsyncIterator[Fragment]:
         payload: dict[str, Any] = {
             "model": self.model,
@@ -80,18 +84,30 @@ class AnthropicAdapter(ModelAdapter):
             # is a better failure than a reply that stops mid-sentence.
             "max_tokens": MAX_TOKENS,
             "stream": True,
-            "messages": [
-                {
-                    "role": "user" if m.role == "owner" else "assistant",
-                    "content": m.content,
-                }
-                for m in messages
-            ],
+            "messages": _wire_messages(messages),
         }
         if system:
             payload["system"] = system
+        if tools:
+            # MCP names the field inputSchema; this API names it
+            # input_schema. Translating here is exactly what an adapter is
+            # for -- nothing above this layer should know either spelling.
+            payload["tools"] = [
+                {
+                    "name": tool["name"],
+                    "description": tool.get("description", ""),
+                    "input_schema": tool.get("inputSchema")
+                    or {"type": "object", "properties": {}},
+                }
+                for tool in tools
+            ]
 
         headers = self._headers()
+        #: Tool calls arrive as their arguments being typed out a few
+        #: characters at a time, keyed by position in the reply. Held here
+        #: until the block closes, because a half-built argument object is
+        #: not something anyone can be handed.
+        building: dict[int, dict[str, Any]] = {}
 
         try:
             async with httpx.AsyncClient(timeout=STREAM_TIMEOUT) as client:
@@ -114,17 +130,92 @@ class AnthropicAdapter(ModelAdapter):
                             event = json.loads(chunk)
                         except json.JSONDecodeError:
                             continue
-                        if event.get("type") == "content_block_delta":
+                        kind = event.get("type")
+
+                        if kind == "content_block_start":
+                            block = event.get("content_block") or {}
+                            if block.get("type") == "tool_use":
+                                building[event.get("index", 0)] = {
+                                    "id": block.get("id", ""),
+                                    "name": block.get("name", ""),
+                                    "json": "",
+                                }
+
+                        elif kind == "content_block_delta":
                             delta = event.get("delta") or {}
                             if delta.get("type") == "text_delta":
                                 yield Fragment("reply", delta.get("text", ""))
                             elif delta.get("type") == "thinking_delta":
                                 yield Fragment("thinking", delta.get("thinking", ""))
-                        elif event.get("type") == "error":
+                            elif delta.get("type") == "input_json_delta":
+                                pending = building.get(event.get("index", 0))
+                                if pending is not None:
+                                    pending["json"] += delta.get("partial_json", "")
+
+                        elif kind == "content_block_stop":
+                            pending = building.pop(event.get("index", 0), None)
+                            if pending is not None:
+                                yield Fragment(
+                                    "tool_use",
+                                    tool_call=ToolCall(
+                                        id=pending["id"],
+                                        name=pending["name"],
+                                        arguments=_arguments(pending["json"]),
+                                    ),
+                                )
+
+                        elif kind == "error":
                             detail = (event.get("error") or {}).get("message", "unknown error")
                             raise ModelError(detail)
         except httpx.RequestError as exc:
             raise ModelError(f"Could not reach {self.base_url}: {exc}") from exc
+
+
+def _arguments(raw: str) -> dict[str, Any]:
+    """The arguments a tool call was streamed with.
+
+    A model that emitted no arguments at all sends an empty string rather
+    than `{}`, and one that was cut off mid-object sends something that will
+    not parse. Both become an empty dict here, because the tool layer already
+    answers a missing argument by naming the schema -- which gives the model
+    something to correct -- where an exception here would end the turn.
+    """
+    if not raw.strip():
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _wire_messages(messages: list[Message]) -> list[dict[str, Any]]:
+    """AWORG's conversation in this API's shape.
+
+    Two translations. AWORG's three roles collapse into the two this API
+    has: a tool result is something the model is *told*, so it travels as a
+    user message, which is where this API expects tool_result blocks.
+
+    And adjacent messages of the same role are merged. Several tools
+    answering one reply are separate rows in the conversation and one turn
+    on the wire, and sending them separately would be several user messages
+    in a row where the API expects one.
+    """
+    wire: list[dict[str, Any]] = []
+    for message in messages:
+        role = "assistant" if message.role == "resident" else "user"
+        content: Any = message.blocks if message.blocks else message.content
+
+        if wire and wire[-1]["role"] == role:
+            previous = wire[-1]["content"]
+            if isinstance(previous, str):
+                previous = [{"type": "text", "text": previous}] if previous else []
+            if isinstance(content, str):
+                content = [{"type": "text", "text": content}] if content else []
+            wire[-1]["content"] = previous + content
+        else:
+            wire.append({"role": role, "content": content})
+    return wire
 
 
 def _describe(status: int, body: str) -> str:

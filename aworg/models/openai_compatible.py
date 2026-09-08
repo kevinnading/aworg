@@ -11,11 +11,11 @@ AWORG needing to know anything about it.
 from __future__ import annotations
 
 import json
-from typing import AsyncIterator
+from typing import Any, AsyncIterator
 
 import httpx
 
-from .base import Fragment, Message, ModelAdapter, ModelError
+from .base import Fragment, Message, ModelAdapter, ModelError, ToolCall
 
 
 #: A thinking model can be silent for a long time before its first word, so a
@@ -165,19 +165,72 @@ def _partial_tail(buffer: str, *markers: str) -> int:
 
 class OpenAICompatibleAdapter(ModelAdapter):
     provider = "openai-compatible"
+    supports_tools = True
 
     @property
     def default_base_url(self) -> str:
         return "https://api.openai.com/v1"
 
-    def _wire(self, messages: list[Message], system: str) -> list[dict[str, str]]:
-        wire: list[dict[str, str]] = []
+    def _wire(self, messages: list[Message], system: str) -> list[dict[str, Any]]:
+        """AWORG's conversation in this API's shape.
+
+        Where the Anthropic format carries tool results as blocks inside a
+        user message, this one gives every result a message of its own with
+        role "tool". So one stored message holding three results becomes
+        three messages here -- the two formats disagree about shape, and
+        reconciling that is the whole job of an adapter.
+        """
+        wire: list[dict[str, Any]] = []
         if system:
             wire.append({"role": "system", "content": system})
-        wire.extend(
-            {"role": "user" if m.role == "owner" else "assistant", "content": m.content}
-            for m in messages
-        )
+
+        for message in messages:
+            if not message.blocks:
+                wire.append(
+                    {
+                        "role": "user" if message.role == "owner" else "assistant",
+                        "content": message.content,
+                    }
+                )
+                continue
+
+            if message.role == "tool":
+                for block in message.blocks:
+                    if block.get("type") != "tool_result":
+                        continue
+                    wire.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": block.get("tool_use_id", ""),
+                            "content": _as_text(block.get("content")),
+                        }
+                    )
+                continue
+
+            text = "".join(
+                block.get("text", "")
+                for block in message.blocks
+                if block.get("type") == "text"
+            )
+            calls = [
+                {
+                    "id": block.get("id", ""),
+                    "type": "function",
+                    "function": {
+                        "name": block.get("name", ""),
+                        # This API wants the arguments as a JSON string,
+                        # where the other wants an object.
+                        "arguments": json.dumps(block.get("input") or {}),
+                    },
+                }
+                for block in message.blocks
+                if block.get("type") == "tool_use"
+            ]
+            entry: dict[str, Any] = {"role": "assistant", "content": text or None}
+            if calls:
+                entry["tool_calls"] = calls
+            wire.append(entry)
+
         return wire
 
     async def list_models(self) -> list[str]:
@@ -249,11 +302,29 @@ class OpenAICompatibleAdapter(ModelAdapter):
             return None
 
     async def stream(
-        self, messages: list[Message], system: str
+        self,
+        messages: list[Message],
+        system: str,
+        tools: list[dict[str, Any]] | None = None,
     ) -> AsyncIterator[Fragment]:
         wire = self._wire(messages, system)
 
         payload: dict[str, Any] = {"model": self.model, "messages": wire, "stream": True}
+        if tools:
+            # MCP's inputSchema becomes this API's function.parameters. Same
+            # JSON Schema, different place to put it.
+            payload["tools"] = [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": tool["name"],
+                        "description": tool.get("description", ""),
+                        "parameters": tool.get("inputSchema")
+                        or {"type": "object", "properties": {}},
+                    },
+                }
+                for tool in tools
+            ]
         if self.reasoning == "off":
             # The convention llama.cpp and most gateways accept. A server that
             # does not understand it ignores it, which is the right failure:
@@ -266,6 +337,10 @@ class OpenAICompatibleAdapter(ModelAdapter):
         }
 
         splitter = _ThinkSplitter()
+        #: Tool calls accumulate by index across many chunks. Unlike the
+        #: Anthropic stream there is no per-call "stop" event, so these are
+        #: held until the stream ends and flushed together.
+        building: dict[int, dict[str, str]] = {}
 
         try:
             async with httpx.AsyncClient(timeout=STREAM_TIMEOUT) as client:
@@ -306,8 +381,36 @@ class OpenAICompatibleAdapter(ModelAdapter):
                             for kind, part in splitter.feed(text):
                                 yield Fragment(kind, part)
 
+                        for call in delta.get("tool_calls") or []:
+                            slot = building.setdefault(
+                                call.get("index", 0), {"id": "", "name": "", "json": ""}
+                            )
+                            # The id and name arrive once, at the start; the
+                            # arguments arrive in pieces after. Guarding each
+                            # rather than overwriting stops a later empty
+                            # chunk from erasing what was already collected.
+                            if call.get("id"):
+                                slot["id"] = call["id"]
+                            function = call.get("function") or {}
+                            if function.get("name"):
+                                slot["name"] = function["name"]
+                            if function.get("arguments"):
+                                slot["json"] += function["arguments"]
+
                     for kind, part in splitter.drain():
                         yield Fragment(kind, part)
+
+                    for _, slot in sorted(building.items()):
+                        if not slot["name"]:
+                            continue
+                        yield Fragment(
+                            "tool_use",
+                            tool_call=ToolCall(
+                                id=slot["id"] or f"call_{slot['name']}",
+                                name=slot["name"],
+                                arguments=_arguments(slot["json"]),
+                            ),
+                        )
         except httpx.RequestError as exc:
             raise ModelError(f"Could not reach {self.base_url}: {exc}") from exc
 
@@ -328,3 +431,37 @@ def _describe(status: int, body: str) -> str:
     if status == 429:
         return f"Rate limited by the provider. ({detail})"
     return f"Provider returned {status}: {detail}"
+
+
+def _arguments(raw: str) -> dict[str, Any]:
+    """The arguments a tool call was streamed with.
+
+    Small models are the reason this is forgiving. One that emits nothing
+    sends an empty string rather than `{}`, and one cut off mid-object sends
+    something that will not parse. Both become an empty dict, because the
+    tool layer answers a missing argument by naming the schema -- which the
+    model can correct -- where raising here would end the turn.
+    """
+    if not raw.strip():
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _as_text(content: Any) -> str:
+    """A tool result as this API wants it: a plain string.
+
+    MCP allows a result to be a list of content blocks. This wire format has
+    nowhere to put that, so the text is pulled out and joined.
+    """
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "\n".join(
+            block.get("text", "") if isinstance(block, dict) else str(block)
+            for block in content
+        )
+    return "" if content is None else str(content)

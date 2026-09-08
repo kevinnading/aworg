@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from .. import providers
 from .anthropic import AnthropicAdapter
-from .base import Fragment, Message, ModelAdapter, ModelError
+from .base import Fragment, Message, ModelAdapter, ModelError, ToolCall
 from .openai_compatible import OpenAICompatibleAdapter
 
 
@@ -51,6 +51,7 @@ __all__ = [
     "Message",
     "ModelAdapter",
     "ModelError",
+    "ToolCall",
     "ADAPTERS",
     "PROVIDER_LABELS",
     "CAPABILITY_TAGS",
