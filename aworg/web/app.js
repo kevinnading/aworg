@@ -77,6 +77,9 @@ async function boot() {
   resumeReply();
   // Home is where the owner lands, and the workspace is part of it.
   startWorkspaceWatch();
+  // Not awaited: it holds a connection open for the life of the page, and
+  // waiting on it would mean boot never finishing.
+  startActivities();
 }
 
 async function refresh() {
@@ -1025,10 +1028,13 @@ const FIXED_PANES = {
  * the activity row and into the workspace column is a line moved here; every
  * other file goes on not caring where anything is. */
 const REGIONS = [
-  { id: "faculties", element: "faculties", axis: "column", panes: ["capabilities", "skills", "tools"] },
+  { id: "faculties", element: "faculties", axis: "column", panes: ["capabilities", "skills"] },
   { id: "side", element: "side", axis: "column", panes: ["preview", "lifecycle", "workspace"] },
   { id: "activity", element: "activity", axis: "row", panes: ["tasks", "workers"] },
-  { id: "console", element: "console", axis: "column", panes: ["log"] },
+  // What happened, then what is happening. Reading order follows the way
+  // work actually moves: an Activity that turns out to matter becomes a
+  // Living Log entry, and both halves are visible while it does.
+  { id: "console", element: "console", axis: "row", panes: ["log", "activities"] },
 ];
 
 function buildPanes() {
@@ -1050,6 +1056,170 @@ function buildPanes() {
       // gets a divider after it.
       if (!last && !pane.derived) container.appendChild(paneResizer(pane, region));
     });
+  }
+  // The pane is rebuilt whenever the arrangement changes, which throws away
+  // whatever was drawn in it. Repainting from state kept outside the DOM is
+  // what stops a capability toggle wiping the running Activities list.
+  paintActivities();
+}
+
+/* ---------- Activities ---------- */
+
+/* What is happening right now, as its own pane beside the Living Log.
+ *
+ * Kept out of the conversation on purpose. A Resident that narrates every
+ * tool call into Forever Chat buries the parts an owner actually wants to
+ * read -- the reasoning, the decisions, what it concluded -- under
+ * mechanics. So the mechanics come here, where they are watchable while
+ * they happen and gone when they stop mattering. */
+
+const activityState = {
+  // id -> snapshot, in insertion order, which is the order work started.
+  known: new Map(),
+  stream: null,
+};
+
+/* Finished work lingers briefly rather than vanishing the instant it ends.
+ *
+ * A tool that takes 200ms would otherwise appear and disappear before the
+ * owner's eye reached it, and the pane would look broken -- it would seem
+ * that nothing had run at all. Holding the last few means the owner sees
+ * that something happened even when it happened quickly. */
+const ACTIVITY_KEEP_FINISHED = 6;
+
+async function startActivities() {
+  try {
+    const current = await api("/api/activities");
+    for (const item of current.live) activityState.known.set(item.id, item);
+    for (const item of current.recent.slice(-ACTIVITY_KEEP_FINISHED)) {
+      if (!activityState.known.has(item.id)) activityState.known.set(item.id, item);
+    }
+    paintActivities();
+  } catch (_) { /* the stream below is the one that matters */ }
+
+  followActivities();
+}
+
+/* One long-lived connection, reopened if it drops.
+ *
+ * Reconnecting matters more than it looks: the Activity Manager holds its
+ * state server-side, so a browser that comes back re-reads the snapshot and
+ * is immediately correct again rather than showing a frozen picture of
+ * whatever was running when the connection died. */
+async function followActivities() {
+  while (true) {
+    try {
+      const response = await fetch("/api/activities/stream");
+      if (!response.ok) throw new Error(String(response.status));
+      for await (const event of ndjson(response)) {
+        if (event.event === "snapshot") {
+          for (const item of event.live) activityState.known.set(item.id, item);
+        } else if (event.activity) {
+          activityState.known.set(event.activity.id, event.activity);
+          trimFinishedActivities();
+        }
+        paintActivities();
+      }
+    } catch (_) { /* fall through to the wait below */ }
+    // The server may simply be restarting. Waiting a moment and trying
+    // again is right; a page that needs reloading to show live work is not.
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+  }
+}
+
+function trimFinishedActivities() {
+  const finished = [...activityState.known.values()].filter(isActivityFinished);
+  const excess = finished.length - ACTIVITY_KEEP_FINISHED;
+  for (let i = 0; i < excess; i += 1) activityState.known.delete(finished[i].id);
+}
+
+const ACTIVITY_TERMINAL = ["completed", "failed", "cancelled", "timed_out"];
+const isActivityFinished = (item) => ACTIVITY_TERMINAL.includes(item.state);
+
+function paintActivities() {
+  const host = el("activities");
+  if (!host) return;
+
+  const items = [...activityState.known.values()];
+  if (!items.length) {
+    host.replaceChildren(
+      emptyPane({
+        empty_heading: "Nothing running.",
+        empty_detail: "Tool calls and other work appear here while they happen.",
+      })
+    );
+    return;
+  }
+
+  const list = document.createElement("div");
+  list.className = "activity-list";
+  // Newest at the top: the thing that just started is the thing being
+  // watched, and it should not be below a scroll.
+  for (const item of items.reverse()) list.appendChild(activityRow(item));
+  host.replaceChildren(list);
+}
+
+function activityRow(item) {
+  const row = document.createElement("div");
+  row.className = `activity-row ${item.state}`;
+  if (item.parent_id) row.classList.add("child");
+
+  const dot = document.createElement("span");
+  dot.className = "activity-dot";
+
+  const name = document.createElement("code");
+  name.className = "activity-name";
+  name.textContent = item.label;
+
+  const detail = document.createElement("span");
+  detail.className = "activity-detail";
+  // Once it is over, what it did matters more than what it was called with.
+  detail.textContent = isActivityFinished(item)
+    ? item.error || item.summary || ""
+    : item.detail || "";
+
+  const meta = document.createElement("span");
+  meta.className = "activity-meta";
+  meta.textContent = activityMeta(item);
+
+  row.append(dot, name, detail, meta);
+  return row;
+}
+
+function activityMeta(item) {
+  if (item.state === "running") {
+    return item.duration > 1 ? `${item.duration.toFixed(1)}s` : "running";
+  }
+  if (item.state === "failed") return "failed";
+  if (item.state === "cancelled") return "stopped";
+  if (item.state === "timed_out") return "timed out";
+  if (item.state === "completed") {
+    return item.duration != null ? `${item.duration.toFixed(1)}s` : "done";
+  }
+  return item.state;
+}
+
+/* Newline-delimited JSON off a fetch body, a record at a time.
+ *
+ * A chunk is not a line: one read can carry half a record or three of them,
+ * so the tail is held until its newline arrives. Parsing per chunk would
+ * work in testing and fail on the first long tool result. */
+async function* ndjson(response) {
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop();
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      try {
+        yield JSON.parse(line);
+      } catch (_) { /* a partial record; the next chunk completes it */ }
+    }
   }
 }
 
@@ -1167,18 +1337,115 @@ function paneItems(items) {
   const list = document.createElement("div");
   list.className = "pane-items";
   for (const item of items) {
-    const row = document.createElement("div");
-    row.className = `pane-item ${item.state || ""}`;
-    const name = document.createElement("span");
-    name.className = "pane-item-name";
-    name.textContent = item.name;
-    const detail = document.createElement("span");
-    detail.className = "pane-item-detail";
-    detail.textContent = item.detail || "";
-    row.append(name, detail);
-    list.appendChild(row);
+    list.appendChild(
+      item.kind === "capability" ? capabilityRow(item) : factRow(item)
+    );
   }
   return list;
+}
+
+function factRow(item) {
+  const row = document.createElement("div");
+  row.className = `pane-item ${item.state || ""}`;
+  const name = document.createElement("span");
+  name.className = "pane-item-name";
+  name.textContent = item.name;
+  const detail = document.createElement("span");
+  detail.className = "pane-item-detail";
+  detail.textContent = item.detail || "";
+  row.append(name, detail);
+  return row;
+}
+
+/* An installed Capability, with the Tools it actually contains named.
+ *
+ * The Tools are listed rather than counted because "3 tools" tells an owner
+ * nothing they can act on. Seeing `read_file, write_file, search_files` is
+ * what makes the switch beside it a decision they can make -- turning off
+ * Shell is only an informed choice if you can see it is the thing holding
+ * execute_command. */
+function capabilityRow(item) {
+  const row = document.createElement("div");
+  row.className = `pane-item capability ${item.state || ""}`;
+
+  const head = document.createElement("div");
+  head.className = "capability-head";
+
+  const name = document.createElement("span");
+  name.className = "pane-item-name";
+  name.textContent = item.name;
+
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.className = "capability-toggle";
+  toggle.setAttribute("aria-pressed", String(item.enabled));
+  toggle.textContent = item.enabled ? "On" : "Off";
+  toggle.title = item.enabled
+    ? `Turn ${item.name} off. Its tools disappear from the Resident immediately.`
+    : `Turn ${item.name} back on.`;
+  toggle.onclick = () => setCapability(item.id, !item.enabled);
+
+  head.append(name, toggle);
+
+  const detail = document.createElement("span");
+  detail.className = "pane-item-detail";
+  detail.textContent = item.detail || "";
+
+  const tools = document.createElement("div");
+  tools.className = "capability-tools";
+  for (const tool of item.tools || []) {
+    const chip = document.createElement("code");
+    chip.className = "tool-chip";
+    chip.textContent = tool.name;
+    chip.title = tool.description || "";
+    tools.appendChild(chip);
+  }
+  // A tool file that would not load is named here rather than being silently
+  // missing. "This capability has two tools" and "it has three and one is
+  // broken" are different facts.
+  for (const broken of item.broken || []) {
+    const chip = document.createElement("code");
+    chip.className = "tool-chip broken";
+    chip.textContent = broken.name;
+    chip.title = `This tool could not be loaded: it ${broken.detail}`;
+    tools.appendChild(chip);
+  }
+
+  row.append(head, detail, tools);
+  return row;
+}
+
+async function setCapability(id, enabled) {
+  try {
+    await api(`/api/capabilities/${encodeURIComponent(id)}`, {
+      method: "POST",
+      body: JSON.stringify({ enabled }),
+    });
+  } catch (error) {
+    return;
+  }
+  // Re-read rather than patching the row in place: the server is the one
+  // that knows what is enabled, and a button that lies about it is worse
+  // than one that takes a moment.
+  app.panes = await api("/api/panes");
+  repaintPane("capabilities");
+}
+
+/* Redraw one pane's body from the current payload.
+ *
+ * Deliberately not buildPanes(). That rebuilds every pane from its template,
+ * which blanks the ones whose contents are painted elsewhere -- the
+ * lifecycle stepper, the workspace listing, the Activities list. It was only
+ * ever called once at boot, before any of those had been filled in, so
+ * calling it again mid-session emptied three panes as a side effect of
+ * toggling a capability. */
+function repaintPane(id) {
+  const pane = app.panes.find((candidate) => candidate.id === id);
+  const body = document.querySelector(`#pane-${id} .pane-body`);
+  if (!pane || !body) return;
+  body.replaceChildren(
+    pane.items && pane.items.length ? paneItems(pane.items) : emptyPane(pane)
+  );
 }
 
 function emptyPane(pane) {

@@ -642,15 +642,21 @@ button.tiny { padding: 5px 11px; font-size: 13px; }
    only one of the pair that grows when the window does. */
 .activity > .pane:first-child { flex: 0 1 auto; flex-basis: var(--tasks-width); min-width: 0; }
 
+/* Split between the Living Log and Activities: what happened, and what is
+   happening. A row rather than a column so both are readable at once --
+   stacked, the owner would be scrolling one to see the other, and the whole
+   value of the pair is seeing them together. */
 .console {
   flex: none;
   height: var(--log-height);
   display: flex;
-  flex-direction: column;
   min-height: 0;
   background: var(--panel);
   border-top: 1px solid var(--line);
 }
+/* The Living Log takes a share, so Activities is not the only half that
+   grows with the window. Same reasoning as Tasks in the activity row. */
+.console > .pane:first-child { flex: 0 1 auto; flex-basis: var(--log-width); min-width: 0; }
 
 /* The conversation takes the darker ground it sits on rather than being
    drawn as a card on top of it. The panes around it are the objects; this is
@@ -1011,9 +1017,12 @@ body.has-maximised-pane .resizer { pointer-events: none; }
   .chat { min-height: 60vh; }
 
   /* Side by side stops meaning anything in a single column. */
-  .activity { flex-direction: column; height: auto; }
-  .activity .pane { width: 100% !important; }
-  .activity .pane + .pane { border-top: 1px solid var(--line); }
+  .activity, .console { flex-direction: column; height: auto; }
+  .activity .pane, .console .pane { width: 100% !important; }
+  .activity .pane + .pane,
+  .console .pane + .pane { border-top: 1px solid var(--line); }
+  /* The share is a horizontal one, so it means nothing stacked. */
+  .console > .pane:first-child { flex: none; flex-basis: auto; }
 
   /* Nothing has a vertical edge left to drag. The heights still mean
      something, so those handles stay. */
@@ -1492,9 +1501,129 @@ body.resizing.row * { cursor: row-resize !important; }
 }
 .pane-item.ok::before { background: var(--ok); }
 .pane-item.warn::before { background: var(--warn); }
+.pane-item.off::before { background: var(--muted); opacity: 0.5; }
 
 .pane-item-name { font-size: 12.5px; color: var(--text); }
 .pane-item-detail { font-size: 11.5px; line-height: 1.4; color: var(--muted); }
+
+/* ---- capabilities: what the Resident has been granted ---- */
+
+/* A Capability is a heavier thing than an observed fact -- it has a switch
+   and it contains named Tools -- so it is given a little more room and a
+   rule above it, to read as a group rather than as another bullet. */
+.pane-item.capability { gap: 4px; padding-bottom: 9px; }
+.pane-item.capability + .pane-item.capability { padding-top: 9px; }
+.pane-item.capability + .pane-item.capability::after {
+  content: "";
+  position: absolute;
+  left: 11px;
+  right: 0;
+  top: 0;
+  border-top: 1px solid var(--line);
+}
+/* A switched-off Capability stays fully legible -- it is a thing the owner
+   turned off and may turn back on, not an error. Only its tools recede. */
+.pane-item.capability.off .capability-tools { opacity: 0.45; }
+
+.capability-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.capability-toggle {
+  flex: none;
+  font: inherit;
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.capability-toggle[aria-pressed="true"] {
+  border-color: color-mix(in srgb, var(--ok) 45%, var(--line));
+  color: var(--ok);
+}
+.capability-toggle:hover { border-color: var(--accent); color: var(--text); }
+
+.capability-tools { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
+
+/* Tools are named rather than counted. "3 tools" tells an owner nothing they
+   can act on; seeing execute_command is what makes turning Shell off a
+   decision rather than a guess. */
+.tool-chip {
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 10.5px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--code-bg);
+  color: var(--muted);
+  border: 1px solid transparent;
+}
+.tool-chip.broken {
+  color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 40%, transparent);
+  text-decoration: line-through;
+}
+
+/* ---- activities: what is happening at this moment ---- */
+
+.activities { height: 100%; overflow: auto; }
+.activity-list { display: flex; flex-direction: column; }
+
+.activity-row {
+  display: grid;
+  grid-template-columns: 9px minmax(0, auto) minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 7px;
+  padding: 3px 8px;
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 11.5px;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 45%, transparent);
+}
+/* A child Activity is indented under whatever spawned it. Workers will make
+   this carry real weight; a tool call the Resident made directly has no
+   parent and sits flush. */
+.activity-row.child { padding-left: 22px; }
+
+.activity-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--muted);
+  align-self: center;
+}
+.activity-row.running .activity-dot { background: var(--accent); animation: activity-pulse 1.4s ease-in-out infinite; }
+.activity-row.completed .activity-dot { background: var(--ok); }
+.activity-row.failed .activity-dot,
+.activity-row.timed_out .activity-dot { background: var(--warn); }
+
+/* A running tool has to look alive. Without this the pane is
+   indistinguishable from one showing a job that hung. */
+@keyframes activity-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .activity-row.running .activity-dot { animation: none; }
+}
+
+.activity-name { color: var(--text); white-space: nowrap; }
+.activity-detail {
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.activity-row.failed .activity-detail { color: var(--warn); }
+.activity-meta { color: var(--muted); opacity: 0.75; font-size: 10.5px; white-space: nowrap; }
+/* Finished work is still readable but stops competing with what is live. */
+.activity-row.completed { opacity: 0.72; }
 
 /* ---- connection form: provider and model ---- */
 

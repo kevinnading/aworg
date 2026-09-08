@@ -128,6 +128,14 @@ class Registry:
         A disabled capability is invisible even when named in a scope. The
         owner's switch outranks whatever the Resident asked a worker to
         carry, because it is the owner's machine.
+
+        Nothing here knows or cares what operating system this is. Tools are
+        OS-dependent and it is the tool's business to be: one that cannot run
+        here says so when it is called, in its own words, which are better
+        words than anything this file could invent. A filter here would be
+        AWORG translating between environments, and that layer is exactly
+        what must not exist -- it would be wrong everywhere at once and it
+        would grow forever.
         """
         wanted = set(scope) if scope is not None else None
         chosen: list[ToolSpec] = []

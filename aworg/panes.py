@@ -71,14 +71,17 @@ PANES: list[dict[str, Any]] = [
                     "the Resident it is in trouble. Nothing is running to use it."),
     },
     {
-        "id": "tools",
-        "label": "Tools",
-        "hint": "What the Resident can directly do.",
-        "available": False,
-        "empty": ("No tools.", ""),
-        "blocked": ("No tools yet.",
-                    "Reading and writing files, running commands, and the rest "
-                    "of the Resident's hands arrive in Milestone 3."),
+        # Sits beside the Living Log, and the pairing is the point: one says
+        # what is happening, the other says what happened and mattered.
+        # Neither answers the other's question, and a single pane trying to
+        # do both would be a feed the owner cannot read either way.
+        "id": "activities",
+        "label": "Activities",
+        "hint": "What the Resident is doing at this moment.",
+        "available": True,
+        "empty": ("Nothing running.",
+                  "Tool calls and other work appear here while they happen."),
+        "blocked": None,
     },
     {
         "id": "skills",
@@ -94,7 +97,7 @@ PANES: list[dict[str, Any]] = [
     {
         "id": "capabilities",
         "label": "Capabilities",
-        "hint": "What this Aworg can actually do, on this machine.",
+        "hint": "What this Aworg can do: its Tools, and what this machine has.",
         "available": True,
         "empty": ("Nothing installed.", ""),
         "blocked": None,
@@ -104,13 +107,58 @@ PANES: list[dict[str, Any]] = [
 PANE_IDS = [pane["id"] for pane in PANES]
 
 
-def capabilities(facts: dict[str, Any]) -> list[dict[str, Any]]:
+def capabilities(
+    facts: dict[str, Any], registry: Any = None, enabled: Any = None
+) -> list[dict[str, Any]]:
     """What the Resident can do here, as facts rather than promises.
+
+    Two registers in one pane, and they answer different halves of the same
+    question. The installed Capabilities are what the Resident has been
+    *granted* -- its Tools, grouped as they are packaged, each switchable by
+    the owner. The machine facts are what is *present* to use them on.
+
+    Neither is sufficient alone. A Resident with a Shell capability on a
+    machine with no package manager still cannot install postgres, and an
+    owner who can see only one of those two things cannot tell why. So they
+    sit together, marked by `kind` so the interface can keep them visually
+    distinct.
 
     An owner about to ask for postgres needs to know whether this Aworg can
     install anything at all before they ask, not after it fails. Privilege
-    is the first line because it is the one that decides most of the rest.
+    is the first line of the facts because it decides most of the rest.
     """
+    items: list[dict[str, Any]] = []
+
+    for capability in (registry.capabilities() if registry else []):
+        on = enabled(capability.id) if enabled else True
+        tools = [
+            {"name": spec.name, "description": spec.description}
+            for spec in capability.tools
+        ]
+        items.append({
+            "kind": "capability",
+            "id": capability.id,
+            "name": capability.label,
+            "detail": capability.description,
+            "state": "ok" if on else "off",
+            "enabled": on,
+            "builtin": capability.builtin,
+            "tools": tools,
+            # A tool file that would not parse is named rather than merely
+            # absent. "Nothing here" and "one of these is broken" are
+            # different facts and the owner is owed the right one.
+            "broken": [
+                {"name": name, "detail": reason}
+                for name, reason in sorted(capability.broken.items())
+            ],
+        })
+
+    items.extend(_machine_facts(facts))
+    return items
+
+
+def _machine_facts(facts: dict[str, Any]) -> list[dict[str, Any]]:
+    """What was observed about this machine, as items for the same pane."""
     elevated = facts["elevated"]
     privilege = (
         ("Elevated", "Running with root or administrator rights.")
@@ -120,26 +168,28 @@ def capabilities(facts: dict[str, Any]) -> list[dict[str, Any]]:
         else ("Privilege unknown", "AWORG could not determine what it is allowed to do.")
     )
     items = [
-        {"name": f"{facts['os']} {facts['release']}",
+        {"kind": "fact", "name": f"{facts['os']} {facts['release']}",
          "detail": f"{facts['arch']}, {facts['cpus']} CPUs", "state": "fact"},
-        {"name": f"Running as {facts['user']}",
+        {"kind": "fact", "name": f"Running as {facts['user']}",
          "detail": privilege[1], "state": "ok" if elevated else "warn"},
-        {"name": privilege[0], "detail": f"on {facts['hostname']}", "state": "hidden"},
+        {"kind": "fact", "name": privilege[0],
+         "detail": f"on {facts['hostname']}", "state": "hidden"},
     ]
     if facts["package_manager"]:
-        items.append({"name": f"{facts['package_manager']} available",
+        items.append({"kind": "fact", "name": f"{facts['package_manager']} available",
                       "detail": "System packages can be installed.", "state": "ok"})
     else:
-        items.append({"name": "No system package manager",
+        items.append({"kind": "fact", "name": "No system package manager",
                       "detail": "Nothing on PATH to install system packages with.",
                       "state": "warn"})
-    items.append({"name": "Conversation only",
-                  "detail": "No tools yet -- it cannot act on any of this.",
-                  "state": "warn"})
     return [item for item in items if item["state"] != "hidden"]
 
 
-def describe(facts: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+def describe(
+    facts: dict[str, Any] | None = None,
+    registry: Any = None,
+    enabled: Any = None,
+) -> list[dict[str, Any]]:
     """The panes as the owner interface renders them.
 
     The two empty texts collapse into the one that applies here rather than
@@ -154,7 +204,7 @@ def describe(facts: dict[str, Any] | None = None) -> list[dict[str, Any]]:
             heading, detail = pane["blocked"] or pane["empty"]
         items: list[dict[str, Any]] = []
         if pane["id"] == "capabilities" and facts:
-            items = capabilities(facts)
+            items = capabilities(facts, registry, enabled)
 
         described.append(
             {

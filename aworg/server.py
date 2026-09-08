@@ -87,6 +87,10 @@ class AppearancePatch(BaseModel):
     overrides: dict[str, str] | None = None
 
 
+class CapabilityPatch(BaseModel):
+    enabled: bool
+
+
 class LayoutPatch(BaseModel):
     #: The whole set of dragged sizes. An empty object resets the view.
     #:
@@ -466,7 +470,85 @@ def create_app(paths: Paths) -> FastAPI:
         One request rather than seven. These are read together, and they
         stay together until one of them grows enough to want its own.
         """
-        return panes.describe(resident.host)
+        return panes.describe(
+            resident.host, resident.registry, store.capability_enabled
+        )
+
+    @app.post("/api/capabilities/{capability_id}")
+    def set_capability(capability_id: str, body: CapabilityPatch) -> dict[str, Any]:
+        """Switch a Capability on or off.
+
+        The owner's decision, and it outranks anything the Resident asks
+        for: a disabled Capability is invisible to the Resident and to any
+        worker it spawns, whatever tool scope that worker was given.
+
+        Takes effect on the next tool call rather than the next restart,
+        because the registry asks the store on every use.
+        """
+        if resident.registry.get_capability(capability_id) is None:
+            raise HTTPException(404, f"No capability called {capability_id!r}")
+        store.set_capability_enabled(capability_id, body.enabled)
+        return {"id": capability_id, "enabled": body.enabled}
+
+    # -- Activities -----------------------------------------------------
+
+    @app.get("/api/activities")
+    def list_activities() -> dict[str, Any]:
+        """What is running now, and what recently was.
+
+        Both, because the panel shows live work and the owner still wants to
+        see the last thing that finished rather than an empty box the
+        instant it does.
+        """
+        return {
+            "live": resident.activities.live(),
+            "recent": resident.activities.recent(30),
+        }
+
+    @app.get("/api/activities/stream")
+    async def stream_activities() -> StreamingResponse:
+        """Follow Activity lifecycle events as they are emitted.
+
+        A subscriber in the sense the Activity Manager means: it is told
+        what happened and decides for itself what that is worth. Here that
+        decision is "draw it".
+        """
+        async def events():
+            queue = resident.activities.subscribe()
+            try:
+                # The current picture first, so a browser that connects
+                # mid-run sees what is already going rather than waiting for
+                # something to change before the panel fills in.
+                yield json.dumps(
+                    {"event": "snapshot", "live": resident.activities.live()}
+                ) + "\n"
+                while True:
+                    yield json.dumps(await queue.get()) + "\n"
+            finally:
+                resident.activities.unsubscribe(queue)
+
+        return StreamingResponse(events(), media_type="application/x-ndjson")
+
+    @app.get("/api/activities/{activity_id}/payload")
+    def activity_payload(activity_id: str) -> dict[str, Any]:
+        """The whole of what a tool returned, not the extract the model saw.
+
+        This is the evidence half of the split. The conversation stores what
+        was said -- sized to a window -- and this is what actually came back,
+        for an owner who wants to check rather than take the Resident's word.
+        """
+        activity = resident.activities.get(activity_id)
+        if activity is None:
+            raise HTTPException(404, "No such activity, or it has been forgotten.")
+        return {
+            "id": activity.id,
+            "label": activity.label,
+            "state": activity.state,
+            "summary": activity.summary,
+            "error": activity.error,
+            "payload": activity.payload if isinstance(activity.payload, str)
+            else ("" if activity.payload is None else str(activity.payload)),
+        }
 
     # -- the Living Workspace -------------------------------------------
 

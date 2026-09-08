@@ -31,12 +31,17 @@ from typing import Any
 #:
 #:     +-------------+--------------------------+-----------+
 #:     | Application | Tasks     |   Workers    | Capabil.  |
-#:     | Lifecycle   +--------------------------+ Skills    |
-#:     | Workspace   |                          | Tools     |
+#:     | Lifecycle   +--------------------------+           |
+#:     | Workspace   |                          | Skills    |
 #:     |             |     Conversation         |           |
 #:     +-------------+--------------------------+-----------+
-#:     |            Living Log, the full width              |
+#:     |     Living Log      |     Activities               |
 #:     +----------------------------------------------------+
+#:
+#: The console is split rather than being the Living Log alone. What is
+#: happening and what has happened are different questions, and the pair
+#: reads as a pair: an Activity that mattered becomes a log entry, and the
+#: owner can watch that happen from left to right.
 #:
 #: The workspace and the conversation hold the middle, because that is where
 #: the work happens. What the Resident can do is held at the right edge: it
@@ -67,10 +72,11 @@ PANES: dict[str, dict[str, Any]] = {
     #: box with a fixed ratio has one dimension worth dragging, and it is the
     #: column's.
     "lifecycle-height": {"default": 132, "min": 96, "max": 300},
-    #: Taller than the panes below it because it is the only one with real
-    #: content: four observed facts about the machine, each with what it
-    #: means. The others are still saying "not yet".
-    "capabilities-height": {"default": 260, "min": 90, "max": 600},
+    #: Taller than the pane below it because it is the only one with real
+    #: content, and it now holds two registers rather than one: the installed
+    #: Capabilities with their Tools, and the observed facts about the
+    #: machine they would act on. Skills is still saying "not yet".
+    "capabilities-height": {"default": 320, "min": 90, "max": 700},
     "skills-height": {"default": 190, "min": 90, "max": 600},
     # -- the activity row above the conversation, and the split within it
     "activity-height": {"default": 186, "min": 96, "max": 600},
@@ -79,6 +85,12 @@ PANES: dict[str, dict[str, Any]] = {
     "tasks-width": {"default": 45, "min": 20, "max": 75, "unit": "%"},
     # -- the console along the bottom
     "log-height": {"default": 172, "min": 90, "max": 800},
+    #: The split within the console. A proportion rather than pixels, for the
+    #: same reason the columns are: on a wide screen both halves should be
+    #: wider, not just the one that happens to flex. Slightly under half,
+    #: because Activities carries a line per running tool and the Living Log
+    #: carries wrapped sentences.
+    "log-width": {"default": 46, "min": 20, "max": 80, "unit": "%"},
 }
 
 DEFAULTS: dict[str, float] = {name: spec["default"] for name, spec in PANES.items()}
