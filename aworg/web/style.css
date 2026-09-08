@@ -1625,6 +1625,36 @@ body.resizing.row * { cursor: row-resize !important; }
 /* Finished work is still readable but stops competing with what is live. */
 .activity-row.completed { opacity: 0.72; }
 
+/* A row holding evidence can be opened. The affordance is deliberately
+   quiet -- most of the time the owner is watching rather than auditing --
+   but it has to be discoverable, or the evidence may as well not be kept. */
+.activity-row.openable { cursor: pointer; }
+.activity-row.openable:hover,
+.activity-row.openable:focus-visible {
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  opacity: 1;
+  outline: none;
+}
+.activity-row.openable .activity-name { text-decoration: underline dotted var(--muted); text-underline-offset: 3px; }
+.activity-row.open { background: color-mix(in srgb, var(--accent) 5%, transparent); opacity: 1; }
+
+/* The full result. Capped so a 40,000-line build log cannot swallow the
+   pane; it scrolls inside its own box instead. */
+.activity-payload {
+  margin: 0;
+  padding: 8px 10px 10px 22px;
+  max-height: 260px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--accent) 4%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 45%, transparent);
+}
+
 /* ---- connection form: provider and model ---- */
 
 /* The model row is one control made of three parts: a list when the

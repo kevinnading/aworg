@@ -23,7 +23,7 @@ from __future__ import annotations
 from typing import Any, AsyncIterator, Callable, Iterable
 
 from .activities import ActivityManager
-from .models import Fragment, Message, ModelError, ToolCall
+from .models import Message, ModelError, ToolCall
 from .tools import Registry, ToolContext, ToolResult
 
 
@@ -155,11 +155,20 @@ class AgentLoop:
             # sees a request it made rather than prose about one.
             self._keep(record, working, text, calls)
 
-            results = []
-            for call in calls:
+            results: list[dict[str, Any]] = []
+            for index, call in enumerate(calls):
                 async for event in self._run_tool(call, results):
                     yield event
                 if should_stop():
+                    # Whatever was not reached still has to be answered. The
+                    # reply asking for all of them is already recorded, and a
+                    # tool_use with no tool_result is rejected outright by
+                    # both wire formats -- so stopping here without this
+                    # would break the conversation permanently, exactly the
+                    # way a cut inside a tool exchange does. Nothing ran;
+                    # saying so is both true and valid.
+                    for skipped in calls[index + 1:]:
+                        yield self._cancel(skipped, results)
                     break
 
             self._keep_results(record, working, results)
@@ -236,6 +245,36 @@ class AgentLoop:
             "name": call.name,
             "summary": result.summary,
             "is_error": result.is_error,
+        }
+
+    def _cancel(self, call: ToolCall, results: list[dict[str, Any]]) -> dict[str, Any]:
+        """Answer a tool call that was never run, because the owner stopped.
+
+        Given an Activity of its own, created and immediately cancelled, so
+        the pane shows what was dropped rather than the work quietly being
+        one item shorter than the Resident said it would be.
+        """
+        activity = self.activities.create(
+            kind="tool",
+            label=call.name,
+            source=self.source,
+            detail=_describe_arguments(call.arguments),
+        )
+        self.activities.cancelled(activity)
+        results.append(
+            {
+                "type": "tool_result",
+                "tool_use_id": call.id,
+                "content": "Not run: the owner stopped the Resident before this.",
+                "is_error": True,
+            }
+        )
+        return {
+            "type": "tool_end",
+            "activity": activity.id,
+            "name": call.name,
+            "summary": "cancelled",
+            "is_error": True,
         }
 
     # -- keeping what happened ------------------------------------------

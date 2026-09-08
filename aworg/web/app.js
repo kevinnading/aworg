@@ -1077,6 +1077,12 @@ const activityState = {
   // id -> snapshot, in insertion order, which is the order work started.
   known: new Map(),
   stream: null,
+  // Which rows the owner has opened, and what came back. Both live out here
+  // rather than in the DOM because the list is rebuilt on every lifecycle
+  // event -- an open payload would otherwise slam shut whenever anything
+  // else in the pane changed.
+  expanded: new Set(),
+  payloads: new Map(),
 };
 
 /* Finished work lingers briefly rather than vanishing the instant it ends.
@@ -1155,14 +1161,72 @@ function paintActivities() {
   list.className = "activity-list";
   // Newest at the top: the thing that just started is the thing being
   // watched, and it should not be below a scroll.
-  for (const item of items.reverse()) list.appendChild(activityRow(item));
+  for (const item of items.reverse()) {
+    list.appendChild(activityRow(item));
+    if (activityState.expanded.has(item.id)) list.appendChild(activityPayload(item));
+  }
   host.replaceChildren(list);
+}
+
+/* The whole of what a tool returned, for an owner who wants to check.
+ *
+ * This is the other half of the split the conversation makes. What the model
+ * saw is an extract sized to fit a window, and that extract is what the
+ * conversation stores, because it is what was said. The Activity kept the
+ * rest -- and evidence nobody can open is not evidence, which is why this
+ * exists rather than the endpoint merely being available. */
+function activityPayload(item) {
+  const block = document.createElement("pre");
+  block.className = "activity-payload";
+  const held = activityState.payloads.get(item.id);
+  block.textContent = held === undefined ? "Loading…" : held;
+  return block;
+}
+
+async function toggleActivityPayload(item) {
+  if (activityState.expanded.has(item.id)) {
+    activityState.expanded.delete(item.id);
+    paintActivities();
+    return;
+  }
+  activityState.expanded.add(item.id);
+  paintActivities();
+
+  if (activityState.payloads.has(item.id)) return;
+  try {
+    const full = await api(`/api/activities/${encodeURIComponent(item.id)}/payload`);
+    activityState.payloads.set(
+      item.id,
+      full.payload || full.error || "(this tool returned nothing)"
+    );
+  } catch (error) {
+    // Activities are runtime state and are forgotten in time. Saying so is
+    // better than an empty box that looks like the tool returned nothing.
+    activityState.payloads.set(item.id, `Could not load: ${error.message}`);
+  }
+  paintActivities();
 }
 
 function activityRow(item) {
   const row = document.createElement("div");
   row.className = `activity-row ${item.state}`;
   if (item.parent_id) row.classList.add("child");
+
+  // Only rows that actually kept something are openable. A row that offers
+  // to show evidence and then has none would be worse than a plain one.
+  if (item.has_payload) {
+    row.classList.add("openable");
+    if (activityState.expanded.has(item.id)) row.classList.add("open");
+    row.tabIndex = 0;
+    row.title = "Show everything this returned";
+    row.onclick = () => toggleActivityPayload(item);
+    row.onkeydown = (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        toggleActivityPayload(item);
+      }
+    };
+  }
 
   const dot = document.createElement("span");
   dot.className = "activity-dot";
