@@ -220,7 +220,7 @@ class Resident:
     async def refresh_host(self) -> None:
         """Look at the machine again if what we know has gone stale.
 
-        On a worker thread: the look takes about a quarter of a second, and
+        On a worker thread: the look takes about two-thirds of a second, and
         holding the event loop for that would stall every other request in
         an interface that is streaming a reply at the time.
         """

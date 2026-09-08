@@ -13,7 +13,7 @@ the code.
 
 ## Current state
 
-**Milestones 1 and 2: the Resident is present and legible, but cannot yet act.**
+**The Resident is present, legible, and can act.**
 
 It holds one ongoing conversation — the only one there is, with nothing that
 ends it — and connects to whichever model you choose —
@@ -22,8 +22,13 @@ the application area and Living Workspace on the left, the conversation down the
 right. Replies render with syntax highlighting, and the workspace listing
 follows along as it changes.
 
-It still has no tools, no workspace access, and no ability to run anything.
-That arrives in Milestone 3.
+It now has hands: five tools across three Capabilities, so it can read, write
+and search files, run commands, and make HTTP requests. What it is doing shows
+up in the **Activities** pane as it happens.
+
+What it does not have yet is workers to delegate to, the Living Log, or the
+autonomous repair loop — the parts that would let it work with nobody
+watching.
 
 ## Running it
 
@@ -47,7 +52,7 @@ By default `~/.aworg`, overridable with `AWORG_HOME` or `--home`:
 ~/.aworg/
   state.db      configuration, model connections, conversation
   secrets.db    credentials — kept deliberately separate
-  workspace/    the Living Workspace (unused until Milestone 3)
+  workspace/    the Living Workspace, where the Resident builds
   logs/
 ```
 
@@ -72,7 +77,16 @@ answers straight away. On the 9B developed against, the same request went from
 
 At every start AWORG looks at the host: operating system, architecture, CPUs,
 memory, free disk, which package manager exists, whether it is running
-elevated, and what is on PATH. About 230ms, no extra dependencies.
+elevated, and what is on PATH. About 700ms, no extra dependencies.
+
+Being on PATH is not the same as working, and the difference is not academic.
+Windows ships zero-byte "app execution aliases" — typing `python` opens the
+Store — which fail with "not found" when run from a script, on a machine with
+three Pythons installed. Told that `python` was available, a 9B spent its
+entire round budget hunting for an interpreter and never answered the
+question. So candidates are actually run, and anything that turns out to be a
+placeholder is listed as present-and-unusable rather than counted as a tool.
+That check is most of the 700ms and it is worth every millisecond of it.
 
 Those facts go two places — the **Capabilities** pane, so you can see before
 asking whether this Aworg could install postgres, and the Resident's context,
@@ -88,6 +102,99 @@ it that way. Its job is to tell you which it is.
 The Living Workspace is where the Resident builds by convention, so that what
 it made stays identifiable when snapshots arrive. It is not a fence. Helping
 run the machine is part of the job, and none of that happens in `workspace/`.
+
+## What the Resident can do
+
+Three words that are easy to blur, kept apart here and in the code:
+
+- a **Tool** is one callable function the model can ask for;
+- a **Capability** is an installable folder of related Tools, switched on or
+  off as a unit;
+- a **Skill** is knowing how to do something with the Tools you have.
+
+Three Capabilities ship, and they are prepackaged rather than special — they
+load by the same path anything downloaded later will:
+
+```
+Filesystem   read_file  write_file  search_files
+Shell        execute_command
+HTTP         http_request
+```
+
+Five tools, and the number is deliberate. Tool-selection accuracy falls away
+as the surface grows: on the models this is developed against — a 9B and a 2B
+— routing is reliable at around five and not at fifteen. Capability is the
+unit of enablement partly so that stays true as more arrive. `search_files`
+is one tool rather than three because listing a directory, matching filenames
+and searching contents are one question asked in three moods.
+
+The **Capabilities** pane names the Tools inside each one rather than counting
+them, and each has a switch. "3 tools" tells you nothing you can act on;
+seeing that Shell is the thing holding `execute_command` is what makes turning
+it off a decision rather than a guess. The switch is yours and it outranks the
+Resident: a disabled Capability is invisible to it, and to any worker it
+spawns, whatever that worker was handed. It takes effect on the next tool
+call, not the next restart.
+
+**MCP is the contract.** Where MCP defines how a tool is described, called and
+answered, that is the format used — a competing dialect would buy nothing and
+cost every future external tool an adapter. How a Python tool is packaged,
+discovered and run is not MCP's business and is AWORG's own: a Capability is a
+folder, a Tool is a module in it, and adding one is writing a file rather than
+registering anything.
+
+Operating-system detail belongs to tools, never to AWORG. A tool either
+handles its platform itself or reports that it cannot run here. There is no
+translation layer in the core and there should never be one — it would be
+wrong everywhere at once and would grow forever.
+
+## Activities: what is happening right now
+
+Tool calls do not narrate themselves into the conversation. A Resident that
+announces every `read_file` buries the parts you actually want — the
+reasoning, the decisions, what it concluded — under machinery.
+
+So the machinery goes to the **Activities** pane, beside the Living Log. Those
+two answer different questions and the pairing is the point: Activities is
+what is happening, the Living Log is what happened and mattered. A row per
+call, with a live dot while it runs, what it was called with, and what came
+back. Failures are marked. Finished work fades but lingers a moment, because a
+tool that takes 200ms would otherwise flash past and leave the pane looking
+broken.
+
+Click a row and it opens the **whole** of what the tool returned.
+
+That is not the same thing as what the model saw, and the difference is
+deliberate. A tool result is sized before it reaches the model — a 40,000-line
+build log would otherwise spend a small model's entire context on one call —
+and the extract, not the full text, is what the conversation stores, because a
+conversation records what was *said*. Storing the full result and re-cutting
+it later would reconstruct a conversation that never happened. The Activity
+keeps the rest, as evidence, for an owner who would rather check than take the
+Resident's word.
+
+The cut is announced in the text the model receives, never hidden. A result
+silently halved produces a Resident reasoning confidently about output it
+never saw. And the extract is always a deterministic head and tail, never a
+summary the model wrote — a summary of a tool result, written by the model
+about to be judged on it, is testimony rather than evidence.
+
+## Nothing asks permission yet
+
+Every tool call runs the moment the Resident asks for it. There is no approval
+step.
+
+That is a decision rather than an oversight, and it is a different question
+from confinement: AWORG has the privileges of the account that started it, and
+locking that down is yours to do with a container or a VM. This is about what
+it does *without asking*, which today is everything.
+
+It is fine for now because a person is present by construction — you typed a
+message and are watching the reply, and Stop works. It becomes a real question
+with the autonomous loop, when the Living Log reports trouble at three in the
+morning. What replaces it is a set of modes — automatic, manual, and standing
+accepts — rather than one gate bolted on. See
+[docs/06_ARCHITECTURE.md](docs/06_ARCHITECTURE.md).
 
 ## A reply belongs to the Resident, not to a browser tab
 
@@ -190,11 +297,11 @@ can be dragged to whatever size it deserves.
 ```
 +-------------+--------------------------+-----------+
 | Application | Tasks     |   Workers    | Capabil.  |
-| Lifecycle   +--------------------------+ Skills    |
-| Workspace   |                          | Tools     |
+| Lifecycle   +--------------------------+           |
+| Workspace   |                          | Skills    |
 |             |     Conversation         |           |
 +-------------+--------------------------+-----------+
-|            Living Log, the full width              |
+|     Living Log      |      Activities              |
 +----------------------------------------------------+
 ```
 
@@ -202,8 +309,10 @@ The workspace and the conversation hold the middle, because that is where the
 work happens. What the Resident *can* do is held at the right edge — it
 changes least and is glanced at rather than worked in. What it *is* doing sits
 directly above the conversation, because that is what the owner is talking to
-it about. The Living Log runs the whole width underneath, the way a console
-does, because it is the one thing that reports on all of it.
+it about. The console runs the whole width underneath, split between the Living Log
+and Activities — what has happened, and what is happening — because those are
+different questions and one feed trying to answer both is readable as
+neither.
 
 Most panes are empty, and several are for abilities the Resident does not have
 yet. They say which: a pane marked **not yet** is one whose ability does not
@@ -257,11 +366,17 @@ aworg/
   panes.py       the register of what the status column holds
   lifecycle.py   how far along the Resident's application is
   resident.py    the Resident itself
+  agent.py       the loop: reach for a tool, read what came back, carry on
+  activities.py  what is happening right now, and who is watching it
   server.py      the owner interface's backing service
   providers.py   the model providers an owner may choose from
   models/        provider-neutral model interface and adapters
+  tools/         Capabilities, the Tools inside them, and the registry
   web/           the owner interface
 ```
 
-The rule that matters: provider-specific detail stays inside `models/`.
-Everything above it speaks only AWORG's own vocabulary.
+Two rules that matter. Provider-specific detail stays inside `models/`, and
+everything above it speaks only AWORG's own vocabulary. And operating-system
+detail stays inside `tools/` — AWORG does not translate between environments,
+so a tool either handles its platform itself or says it cannot run here. A
+compatibility layer in the core would be wrong everywhere at once.

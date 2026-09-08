@@ -85,7 +85,7 @@ class ToolContext:
     activities: ActivityManager
     #: What was observed about this machine, already gathered and kept fresh
     #: by whoever is running the loop. Passed in rather than re-surveyed:
-    #: observing costs about a quarter of a second, which is nothing once at
+    #: observing costs about two-thirds of a second, which is nothing once at
     #: startup and absurd on every command.
     host: dict[str, Any] = field(default_factory=dict)
     #: The Activity representing this call, so a long-running tool can say

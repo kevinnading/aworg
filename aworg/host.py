@@ -12,15 +12,16 @@ Everything here comes from the standard library. AWORG has four dependencies
 and adding a fifth to answer "how much memory is there" would be a poor
 trade; the two facts the stdlib will not give portably -- total memory, and
 whether we are elevated -- are small enough to reach for directly. Measured
-at about 230ms in total, which is why it is done at startup rather than once
-at install: a machine surveyed at install time is wrong the first time its
-owner installs anything.
+at about 700ms in total, most of it spent proving that the placeholder
+programs Windows puts on PATH will not actually run (see _is_stub). Done at
+startup rather than once at install: a machine surveyed at install time is
+wrong the first time its owner installs anything.
 
 Startup is not enough either. An Aworg is started once and then runs for
 weeks -- that is the point of it -- so facts gathered at boot are stale by
 the second day. They are re-gathered whenever they are older than a few
-hours, which costs a quarter of a second somewhere between one owner's
-message and the next.
+hours, which costs about two-thirds of a second somewhere between one
+owner's message and the next.
 
 Nothing here is a boundary. AWORG runs with exactly the privileges of the
 account that started it -- run it as yourself and it is you, run it as root
@@ -48,10 +49,13 @@ from typing import Any
 STALE_AFTER = 3 * 60 * 60
 
 
-#: Programs worth knowing about before planning any work. Presence is not the
-#: same as usability -- on Windows `python` may resolve to a Store stub that
-#: does nothing -- so this answers "is it on PATH", and the Resident confirms
-#: anything it depends on by running it.
+#: Programs worth knowing about before planning any work.
+#:
+#: Presence is not the same as usability, and this list no longer pretends
+#: otherwise: anything found here that turns out to be a placeholder is
+#: reported separately as a stub. Leaving that to the Resident to discover
+#: was the old approach and it does not survive contact with a small model --
+#: see _is_stub.
 KNOWN_TOOLS = [
     # version control and fetching
     "git", "curl", "wget",
