@@ -89,6 +89,73 @@ PACKAGE_MANAGERS = [
 ]
 
 
+def _is_stub(path: str) -> bool:
+    """Whether something on PATH is a placeholder that will not run.
+
+    Windows ships "app execution aliases" in WindowsApps: zero-byte reparse
+    points that exist so that typing `python` at an interactive prompt opens
+    the Microsoft Store. Launched any other way they fail with "Python was
+    not found", which reads like Python is missing on a machine that has
+    three of them.
+
+    This is worth detecting rather than leaving to the Resident to discover.
+    Observed live: told `python` was on PATH, a 9B spent its entire round
+    budget hunting for an interpreter -- `python --version`, `python3
+    --version`, `where python`, searching Program Files -- and never wrote
+    the answer it had been asked for. The facts said the tool was there. The
+    facts were wrong, and being wrong about the machine is the one thing
+    AWORG owes the owner not to be.
+
+    Not a translation of the environment: nothing here rewrites a command or
+    substitutes an interpreter. It only stops AWORG claiming something is
+    available when it is not.
+
+    Two steps, because the cheap test alone is wrong. Every one of these
+    aliases is a zero-byte reparse point, including the ones that work --
+    `winget` on this machine is exactly that shape and answers `v1.29.290`
+    quite happily. So the file test only narrows the field, and each
+    candidate is then actually run. A broken alias exits 9009, the shell's
+    "command not found"; anything that gets far enough to return any other
+    code has really executed and is not a stub.
+
+    Only the candidates are run, which is typically two or three programs out
+    of the twenty-odd looked for. Running all of them to find out would cost
+    more than the whole rest of the observation.
+    """
+    if sys.platform != "win32":
+        return False
+    try:
+        stat = os.lstat(path)
+    except OSError:
+        return False
+    reparse = bool(getattr(stat, "st_file_attributes", 0) & _REPARSE_POINT)
+    if not (reparse and stat.st_size == 0):
+        return False
+
+    try:
+        result = subprocess.run(
+            [path, "--version"],
+            capture_output=True,
+            # A program that decides to wait for input would otherwise hang
+            # the observation, and with it the start of the Aworg.
+            stdin=subprocess.DEVNULL,
+            timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        # It would not start at all, which is the thing being detected.
+        return True
+    return result.returncode == _COMMAND_NOT_FOUND
+
+
+#: FILE_ATTRIBUTE_REPARSE_POINT.
+_REPARSE_POINT = 0x400
+
+#: What cmd returns when the name resolved to nothing runnable. A program
+#: that does not understand `--version` returns its own error instead, which
+#: still means it ran.
+_COMMAND_NOT_FOUND = 9009
+
+
 def _memory_bytes() -> tuple[int | None, int | None]:
     """Total and available memory. Not portable in the stdlib; reachable."""
     if sys.platform == "win32":
@@ -184,7 +251,11 @@ def observe() -> dict[str, Any]:
     # exactly what happened, reporting "no package manager" on a machine
     # with winget on PATH.
     wanted = KNOWN_TOOLS + [exe for exe, _ in PACKAGE_MANAGERS]
-    tools = {name: path for name in wanted if (path := shutil.which(name))}
+    found = {name: path for name in wanted if (path := shutil.which(name))}
+    # Present on PATH and present in a useful sense are different things, and
+    # the difference is not academic: see _is_stub.
+    stubs = {name: path for name, path in found.items() if _is_stub(path)}
+    tools = {name: path for name, path in found.items() if name not in stubs}
     total_memory, available_memory = _memory_bytes()
 
     try:
@@ -216,6 +287,11 @@ def observe() -> dict[str, Any]:
         "python": platform.python_version(),
         "python_executable": sys.executable,
         "tools": sorted(tools),
+        #: On PATH, and not usable. Kept apart from `tools` rather than
+        #: dropped, because "there is no python here" and "there is
+        #: something called python that will not run" lead to different
+        #: next steps.
+        "stubs": sorted(stubs),
         #: When this was taken, so anything holding on to it can tell how
         #: old it is -- and so the interface can say so rather than
         #: presenting a week-old reading as though it were current.
@@ -325,11 +401,26 @@ def summary(facts: dict[str, Any]) -> str:
     lines.append(
         f"Commands run through {shell}"
         + (f" {version}" if version else "")
-        + f". Python {facts['python']}."
+        + "."
+    )
+    # The interpreter AWORG itself runs on, named by its full path. The bare
+    # version was misleading: it described a Python the Resident had no way
+    # to invoke, while the `python` it could type resolved to something else
+    # entirely. A path is a fact the Resident can act on.
+    lines.append(
+        f"AWORG runs on Python {facts['python']} at {facts['python_executable']}."
     )
     lines.extend(_shell_notes(shell, version))
     if facts["tools"]:
         lines.append(f"On PATH: {', '.join(facts['tools'])}.")
+    if facts.get("stubs"):
+        lines.append(
+            f"On PATH but NOT usable: {', '.join(facts['stubs'])}. These are "
+            "Windows Store placeholder aliases -- they are zero-byte stubs "
+            "that fail with \"not found\" when run from a script, even though "
+            "the real program may well be installed. Do not try to make them "
+            "work; use a full path to a real installation instead."
+        )
     lines.append(
         "These are observed facts about this machine. Do not assume anything "
         "not listed is installed -- check before relying on it."
