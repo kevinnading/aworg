@@ -115,6 +115,115 @@ failed is the exact failure the owner cannot catch for themselves, and it
 is not fixed by choosing a better model. It is fixed by the result being
 evidence rather than testimony.
 
+## Tools, Capabilities, and the Loop
+
+### Three words, kept apart
+
+    Tool          one callable function a model can ask for
+    Capability    an installable folder of related Tools
+    Skill         knowing how to do something with the Tools you have
+
+They blur the moment nobody is watching, and the interface has already been
+wrong about it once: there was a Tools pane and a Capabilities pane meaning
+different things, and Tools never held anything. A Capability is what gets
+installed and switched; a Tool is what gets called.
+
+### The loop does not belong to the Resident
+
+The agent loop is a free-standing object (`agent.py`), not a method on
+`Resident`. This was got wrong once and the whole tooling layer was rolled
+back over it.
+
+A loop that is a method on the Resident is a loop no worker can ever run,
+because it is the property of one particular inhabitant rather than something
+anything with a model behind it can do. A worker is a connection, a prompt and
+a tool scope; it needs exactly what the loop takes and nothing the Resident
+owns. So the loop is handed an adapter, a registry, a scope, and a `record`
+callback for putting messages somewhere — the Resident's writes to the owner's
+conversation, a worker's to a scratch history that is thrown away with it.
+
+If a future change wants to reach `self.store` from inside the loop, that is
+the signal it has started belonging to the Resident again.
+
+### MCP is the contract; packaging is ours
+
+Where MCP defines how a tool is described, called and answered, AWORG follows
+it. A competing tool-call dialect would buy nothing and would cost every
+future external tool an adapter.
+
+What MCP does not define is how a native Python tool is packaged, discovered
+or executed, and that half is AWORG's own: a Capability is a folder, a Tool is
+a module inside it, and adding one is writing a file rather than registering
+anything. Discovery parses each file's declarations without importing it, so a
+tool whose dependency is missing is one broken tool rather than an Aworg that
+will not start.
+
+Native tools and future external MCP tools enter the same registry and look
+the same to the Resident. AWORG keeps its own metadata beside them —
+capability membership, enabled state, source — without that leaking into the
+MCP boundary.
+
+### Operating systems are the tools' business
+
+AWORG does not translate between environments and must not start. There is no
+compatibility layer in the core, and a tool either handles its platform itself
+or reports that it cannot run here — in its own words, which are better than
+anything the core could invent.
+
+An earlier attempt had the registry filter tools by `sys.platform`. That is
+the same mistake wearing a different hat: a decision about an environment,
+made in the core. It was removed. A layer like that is wrong everywhere at
+once and grows forever.
+
+### A tool exchange is one indivisible thing
+
+Tool calls and their results are stored as MCP content blocks under real roles
+— never under invented ones, and never as private JSON, which is what
+previously let a model read its own past as a format to imitate rather than a
+conversation to continue.
+
+The consequence that matters: **both wire formats reject a tool result whose
+call is missing, and a call whose result never came.** So anything that trims,
+interrupts or otherwise ends a round part-way has to keep the pair together.
+This has been got wrong twice — once in the context-fitting logic, once in the
+stop path — so treat it as the default hazard of any new code that can end a
+round early. Every `tool_use` gets a `tool_result`, including "this did not
+run".
+
+Because history only grows, a single bad cut is permanent rather than
+temporary: the same cut is made on every subsequent turn.
+
+### What the model saw and what actually happened are different records
+
+A tool result is sized before it reaches the model, and **the extract is what
+the conversation stores**, because a conversation records what was *said*.
+Storing the full result and re-cutting it later would reconstruct a
+conversation that never happened.
+
+The whole result lives on the Activity instead, as evidence for an owner who
+would rather check than take the Resident's word — which is the same argument
+as *Verification Is A Property Of The System* below, applied to one tool call.
+
+Two rules follow. The cut is always announced in the text the model receives,
+because a result silently halved produces a Resident reasoning confidently
+about output it never saw. And the extract is deterministic, never a summary
+the model wrote: a summary of a tool result, produced by the model about to be
+judged on it, is testimony rather than evidence.
+
+### Activities track and emit; they decide nothing
+
+An Activity is a runtime object, not a callback. Something creates one, it
+moves through a lifecycle, and every transition is emitted to whoever
+subscribed. The manager will not start work, will not decide what runs next,
+and will not judge that something belongs in the Living Log.
+
+That restraint is the design. A tool call that notified the interface, the
+Living Log and its caller directly would have to know about all three; it
+knows about none of them, and gains a fourth subscriber without being touched.
+Anything that wants to add behaviour to the Activity Manager should become a
+subscriber instead — including, when it arrives, the approval step described
+above.
+
 ## Authority Is The Account's, Not AWORG's
 
 Earlier drafts of this project described a boundary around the Living

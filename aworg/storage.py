@@ -567,7 +567,3 @@ class Store:
                 (identifier, int(bool(enabled))),
             )
 
-    def capability_states(self) -> dict[str, bool]:
-        with self._connect() as conn:
-            rows = conn.execute("SELECT id, enabled FROM capability_state").fetchall()
-        return {row["id"]: bool(row["enabled"]) for row in rows}

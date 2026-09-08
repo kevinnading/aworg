@@ -30,7 +30,7 @@ import asyncio
 import itertools
 import time
 import uuid
-from typing import Any, Iterable
+from typing import Any
 
 
 #: Lifecycle states. The first four are the ordinary path; the last four are
@@ -265,16 +265,3 @@ class ActivityManager:
             self._activities.pop(activity_id, None)
             self._order.remove(activity_id)
 
-
-async def wait_for_all(activities: Iterable[Activity], poll: float = 0.05) -> None:
-    """Block until every one of these Activities has finished.
-
-    Polled rather than event-driven, which is the honest version of what this
-    needs today: nothing calls it yet, and a subscription-based barrier that
-    has never had a second waiter is a guess about a shape workers have not
-    asked for. It becomes event-driven when a worker actually runs two tools
-    at once and this shows up in a profile.
-    """
-    pending = list(activities)
-    while any(not activity.finished for activity in pending):
-        await asyncio.sleep(poll)

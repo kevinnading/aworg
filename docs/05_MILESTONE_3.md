@@ -1,5 +1,17 @@
 # AWORG Milestone 3
 
+> **Status.** Most of this is built: the Resident has five tools across three
+> Capabilities, an agent loop that any role can run, and an Activities pane
+> showing work as it happens. What is not built is the part this document
+> calls the real work — nothing yet checks the Resident's account of what it
+> did with independent eyes, and the Lifecycle stepper still stops at "Being
+> built" because nothing observes a running process.
+>
+> This file stays as written. It is a statement of intent, and rewriting it to
+> match what got built would destroy the only record of what was aimed at.
+> Current state lives in the README; settled decisions live in
+> [06_ARCHITECTURE.md](06_ARCHITECTURE.md).
+
 ## Goal
 
 Give the Resident hands:

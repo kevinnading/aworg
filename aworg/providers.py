@@ -186,11 +186,6 @@ def profile(provider: str) -> dict[str, Any]:
     return PROVIDERS.get(provider) or PROVIDERS["openai-compatible"]
 
 
-def adapter_for(provider: str) -> str:
-    """Which wire format a provider speaks."""
-    return profile(provider)["adapter"]
-
-
 def for_interface() -> list[dict[str, Any]]:
     """The list as the owner interface offers it."""
     return [
@@ -207,30 +202,3 @@ def for_interface() -> list[dict[str, Any]]:
         for key in ORDER
     ]
 
-
-def looks_wrong(provider: str, base_url: str) -> str | None:
-    """Whether this URL looks like it belongs to a different provider.
-
-    A warning, never a refusal. The owner may well be pointing at a proxy,
-    a gateway or a local mirror, and being told they cannot is worse than
-    being told it looks odd. This only speaks when the host clearly belongs
-    to a provider in the list other than the one chosen.
-    """
-    url = (base_url or "").strip().lower()
-    if not url:
-        return None
-    for key, known in PROVIDERS.items():
-        if key == provider or not known["base_url"]:
-            continue
-        host = known["base_url"].split("//", 1)[-1].split("/", 1)[0]
-        # Local addresses are shared by every local runner, so a match there
-        # says nothing about which one is meant.
-        if host.startswith(("127.", "localhost")):
-            continue
-        if host and host in url:
-            return (
-                f"That URL looks like {known['label']}, but this connection "
-                f"is set to {profile(provider)['label']}. It will be spoken "
-                f"to as {profile(provider)['label']}."
-            )
-    return None

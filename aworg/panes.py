@@ -36,8 +36,8 @@ PANES: list[dict[str, Any]] = [
         "hint": "Where the Resident builds by default. Not a limit on where it can work.",
         "available": True,
         "empty": ("Nothing here yet.",
-                  "Your Resident cannot create files until it is given tools "
-                  "and the ability to act."),
+                  "Ask your Resident to build something and it will appear "
+                  "here as it works."),
         "blocked": None,
     },
     {
@@ -57,8 +57,9 @@ PANES: list[dict[str, Any]] = [
         "available": False,
         "empty": ("Nothing in progress.", ""),
         "blocked": ("Nothing in progress.",
-                    "Your Resident cannot act yet, so it has nothing to be "
-                    "part-way through."),
+                    "Your Resident does its work in one go and does not yet "
+                    "keep a plan of what it means to do next. What it is "
+                    "doing right now appears in Activities."),
     },
     {
         "id": "log",

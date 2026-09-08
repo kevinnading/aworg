@@ -322,7 +322,8 @@ function renderChat() {
       empty.innerHTML =
         "<strong>Your Resident is present.</strong>" +
         "It lives on this machine and will remember this conversation. " +
-        "For now it can only talk — it has no workspace and no tools yet.";
+        "It can read and write files, run commands, and fetch things — " +
+        "watch the Activities pane to see what it does.";
     } else {
       empty.innerHTML =
         "<strong>No model is connected.</strong>" +
@@ -2021,8 +2022,8 @@ function renderWorkspace() {
     empty.className = "files-empty";
     empty.innerHTML =
       "<strong>Nothing here yet.</strong>" +
-      "Your Resident cannot create files until it is given tools and the " +
-      "ability to act.";
+      "Ask your Resident to build something and it will appear here as " +
+      "it works.";
     files.appendChild(empty);
     return;
   }
