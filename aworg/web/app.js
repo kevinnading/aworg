@@ -1744,6 +1744,25 @@ function wireResizers() {
 function bindResizer(handle, { pane, axis, measure, fromEnd = false, unit = "px" }) {
   const bounds = app.layout.panes[pane];
 
+  // A divider for a pane the server has no size for. This used to throw,
+  // and because resizers are wired during boot it took the whole interface
+  // down with it: panes never built, the conversation never loaded, and the
+  // status sat on "Waking…" forever. The cause was one new pane added
+  // without a matching entry in layout.py.
+  //
+  // The cost of the wrong behaviour was enormously out of proportion to the
+  // fault, so the fault is now survivable: that one divider does not drag,
+  // and everything else works. The console still says which, because a
+  // divider that silently does nothing is its own small mystery.
+  if (!bounds) {
+    console.warn(
+      `No registered size for "${pane}" — its divider will not drag. ` +
+      `Add it to PANES in aworg/layout.py.`
+    );
+    handle.remove();
+    return;
+  }
+
   handle.dataset.pane = pane;
   handle.setAttribute("aria-valuemin", bounds.min);
   handle.setAttribute("aria-valuemax", bounds.max);

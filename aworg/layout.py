@@ -72,12 +72,14 @@ PANES: dict[str, dict[str, Any]] = {
     #: box with a fixed ratio has one dimension worth dragging, and it is the
     #: column's.
     "lifecycle-height": {"default": 132, "min": 96, "max": 300},
-    #: Taller than the pane below it because it is the only one with real
-    #: content, and it now holds two registers rather than one: the installed
-    #: Capabilities with their Tools, and the observed facts about the
-    #: machine they would act on. Skills is still saying "not yet".
-    "capabilities-height": {"default": 320, "min": 90, "max": 700},
-    "skills-height": {"default": 190, "min": 90, "max": 600},
+    #: The observed facts about this machine. Read once and then glanced at,
+    #: so it sits above the things the owner actually operates.
+    "system-height": {"default": 150, "min": 80, "max": 500},
+    #: Smaller than it was, because it no longer carries the machine facts as
+    #: well -- those moved to System, and leaving this at the height it
+    #: needed when it held both would squeeze Skills to nothing.
+    "capabilities-height": {"default": 230, "min": 90, "max": 700},
+    "skills-height": {"default": 120, "min": 80, "max": 600},
     # -- the activity row above the conversation, and the split within it
     "activity-height": {"default": 186, "min": 96, "max": 600},
     #: A proportion of that row, for the same reason the columns are: Workers
@@ -135,10 +137,41 @@ def sanitize(raw: Any) -> dict[str, float]:
     return clean
 
 
+#: Panes whose stored heights stop meaning anything once the column they
+#: sit in gains or loses a member, keyed by the pane whose arrival changed
+#: it. Sizes are saved per pane, not per column, so a column that grows a
+#: third pane keeps two saved heights that now add up to more than there is
+#: -- which is exactly how Skills ended up 28 pixels tall and overflowing.
+SUPERSEDED_BY = {
+    "system-height": ("capabilities-height", "skills-height"),
+}
+
+
+def _heal(stored: dict[str, float]) -> dict[str, float]:
+    """Drop saved heights that were measured against a different column.
+
+    A layout saved when a column had two panes cannot be honoured once it has
+    three: the arithmetic no longer closes, and the pane at the foot absorbs
+    a negative remainder. The owner's drags are theirs, but they were drags
+    on an arrangement that no longer exists, so the affected column goes back
+    to defaults rather than staying broken.
+
+    Detected by absence: if the new pane has no saved height, this layout
+    predates it. Nothing else in the file is touched, so a column the owner
+    tuned elsewhere keeps exactly what they set.
+    """
+    healed = dict(stored)
+    for arrival, affected in SUPERSEDED_BY.items():
+        if arrival not in healed and any(name in healed for name in affected):
+            for name in affected:
+                healed.pop(name, None)
+    return healed
+
+
 def resolve(stored: dict[str, float] | None = None) -> dict[str, float]:
     """The sizes in force: the defaults, with whatever the owner dragged."""
     sizes = dict(DEFAULTS)
-    sizes.update(sanitize(stored or {}))
+    sizes.update(sanitize(_heal(stored or {})))
     return sizes
 
 
