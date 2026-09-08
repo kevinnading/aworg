@@ -68,26 +68,6 @@ endpoint and the credential. Set **Thinking → Off** on a connection and it
 answers straight away. On the 9B developed against, the same request went from
 99 seconds to under 1.
 
-## The Resident can act
-
-It has one tool: `run_command`. A shell on this machine, running with AWORG's
-own privileges, in the Living Workspace unless told otherwise. One tool rather
-than four narrow ones because tool-selection accuracy is the scarce resource —
-a shell can read files, write them, install things and check results, and every
-tool added is accuracy spent.
-
-There is no timeout. A build that takes an hour takes an hour, and a number
-chosen here would break exactly the long installs this exists for. Stopping a
-reply kills whatever it left running.
-
-What a tool returns is two things, deliberately: **what the model is told**, and
-**what AWORG observed** — the exit code, the duration, the directory. The second
-is recorded by AWORG and never written by a model, so a Resident claiming a
-command worked can be checked against the record of it exiting 1. The exit
-status is put in front of the output rather than left to be inferred, because a
-command that printed nothing and failed looks, from its output alone, exactly
-like one that worked.
-
 ## What the Resident knows about your machine
 
 At every start AWORG looks at the host: operating system, architecture, CPUs,
@@ -163,13 +143,24 @@ connection at a different model updates every role at once. See
 
 ## Connecting a model
 
-Two adapters cover most of what an owner will want:
+Choose your provider by name. Sixteen are listed — hosted ones first
+(OpenAI, Anthropic, Gemini, Groq, OpenRouter, DeepSeek, Mistral, xAI,
+Together, Fireworks), then the ones that run on this machine (llama.cpp,
+Ollama, LM Studio, vLLM), then two fall-throughs for anything not named.
 
-- **Anthropic** — leave the endpoint blank
-- **OpenAI-compatible** — OpenAI itself, most gateways, and local model servers
+Which of the two wire formats a provider speaks is a fact about that
+provider, not a question you should have to answer. You know you are
+connecting to Groq, not that Groq happens to implement OpenAI's API.
 
-For a local model, choose OpenAI-compatible and set the endpoint to something
-like `http://localhost:11434/v1`.
+The base URL is pre-filled and stays editable, because an owner behind a
+proxy or a company gateway has a real reason to change it. A URL that
+clearly belongs to a different provider gets a warning, never a refusal —
+and the wire format still comes from the provider, so a genuine mistake
+fails at the first request saying exactly what it was.
+
+Models are fetched rather than typed: fill in the provider and credential
+and press **Fetch**. Providers that publish no list fall back to a text
+field. A local server needs no credential at all.
 
 Credentials pass through one interface (`aworg/secrets.py`) and are never
 returned to the browser once stored — the interface can only ask whether a
@@ -260,12 +251,14 @@ aworg/
   paths.py       where an Aworg keeps its life
   secrets.py     the credential choke point
   storage.py     runtime and Resident state
+  host.py        what AWORG can see about the machine it runs on
   theme.py       the owner interface's colour tokens and presets
   layout.py      the owner interface's pane sizes
   panes.py       the register of what the status column holds
   lifecycle.py   how far along the Resident's application is
   resident.py    the Resident itself
   server.py      the owner interface's backing service
+  providers.py   the model providers an owner may choose from
   models/        provider-neutral model interface and adapters
   web/           the owner interface
 ```

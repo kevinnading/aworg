@@ -167,9 +167,10 @@ def _shell_version(shell: str) -> str | None:
 def _default_shell(tools: dict[str, str]) -> str:
     """The shell a command should be run through on this machine."""
     if sys.platform == "win32":
-        # Matches what tools/shell.py actually reaches for: the newer one
-        # when it is there. A fact block that named a different shell from
-        # the one running the commands would be worse than none.
+        # The newer one when it is there. Nothing runs commands yet,
+        # but whatever eventually does has to reach for the same shell:
+        # a fact block naming a different one from the one running the
+        # commands would be worse than none.
         if tools.get("pwsh"):
             return "pwsh"
         return "powershell" if tools.get("powershell") else "cmd"
