@@ -43,12 +43,12 @@ PANES: list[dict[str, Any]] = [
     {
         "id": "workers",
         "label": "Workers",
-        "hint": "Temporary sub-agents the Resident has put to work.",
-        "available": False,
-        "empty": ("No workers running.", ""),
-        "blocked": ("No workers running.",
-                    "Your Resident works alone for now. Delegating bounded "
-                    "work to temporary workers comes with the autonomous loop."),
+        "hint": "Specialists the Resident can hand bounded work to.",
+        "available": True,
+        "empty": ("No workers configured.",
+                  "Without any, the Resident has nobody to delegate to and "
+                  "does everything itself."),
+        "blocked": None,
     },
     {
         "id": "tasks",
@@ -131,6 +131,12 @@ def capabilities(
     items: list[dict[str, Any]] = []
 
     for capability in (registry.capabilities() if registry else []):
+        # Environment-embedded capabilities are machinery, not something the
+        # owner installed and may switch. Delegation lives here; workers are
+        # configured in their own pane, which is the control that means
+        # something.
+        if capability.internal:
+            continue
         on = enabled(capability.id) if enabled else True
         tools = [
             {"name": spec.name, "description": spec.description}
@@ -186,10 +192,33 @@ def _machine_facts(facts: dict[str, Any]) -> list[dict[str, Any]]:
     return [item for item in items if item["state"] != "hidden"]
 
 
+def workers(crew: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The configured workers, as the pane lists them.
+
+    Each one shows the tools it is allowed to use, for the same reason a
+    Capability names its tools rather than counting them: the scope is the
+    interesting fact about a worker. Seeing that the checker cannot write
+    is what makes it worth trusting to check.
+    """
+    return [
+        {
+            "kind": "worker",
+            "id": worker["id"],
+            "name": worker["name"],
+            "detail": worker["description"],
+            "state": "ok" if worker["enabled"] else "off",
+            "enabled": worker["enabled"],
+            "tools": [{"name": name} for name in worker["tools"]],
+        }
+        for worker in crew
+    ]
+
+
 def describe(
     facts: dict[str, Any] | None = None,
     registry: Any = None,
     enabled: Any = None,
+    crew: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """The panes as the owner interface renders them.
 
@@ -206,6 +235,8 @@ def describe(
         items: list[dict[str, Any]] = []
         if pane["id"] == "capabilities" and facts:
             items = capabilities(facts, registry, enabled)
+        elif pane["id"] == "workers" and crew:
+            items = workers(crew)
 
         described.append(
             {

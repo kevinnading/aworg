@@ -1212,6 +1212,9 @@ function activityRow(item) {
   const row = document.createElement("div");
   row.className = `activity-row ${item.state}`;
   if (item.parent_id) row.classList.add("child");
+  // A worker is a different kind of thing from a tool call -- it is someone
+  // the Resident handed a job to, and the calls underneath it are its work.
+  if (item.kind === "worker") row.classList.add("worker");
 
   // Only rows that actually kept something are openable. A row that offers
   // to show evidence and then has none would be worse than a plain one.
@@ -1403,7 +1406,9 @@ function paneItems(items) {
   list.className = "pane-items";
   for (const item of items) {
     list.appendChild(
-      item.kind === "capability" ? capabilityRow(item) : factRow(item)
+      item.kind === "capability" ? capabilityRow(item)
+      : item.kind === "worker" ? workerRow(item)
+      : factRow(item)
     );
   }
   return list;
@@ -1478,6 +1483,70 @@ function capabilityRow(item) {
 
   row.append(head, detail, tools);
   return row;
+}
+
+/* A configured worker, with the tools it is allowed to use.
+ *
+ * The scope is the interesting fact about a worker, so it is shown rather
+ * than summarised. Seeing that the checker holds no write tool is what makes
+ * it worth trusting to check -- it is not being asked to avoid changing
+ * things, it has not been handed the means. */
+function workerRow(item) {
+  const row = document.createElement("div");
+  row.className = `pane-item capability ${item.state || ""}`;
+
+  const head = document.createElement("div");
+  head.className = "capability-head";
+
+  const name = document.createElement("span");
+  name.className = "pane-item-name";
+  name.textContent = item.name;
+
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.className = "capability-toggle";
+  toggle.setAttribute("aria-pressed", String(item.enabled));
+  toggle.textContent = item.enabled ? "On" : "Off";
+  toggle.title = item.enabled
+    ? `Stop offering ${item.name} to the Resident.`
+    : `Offer ${item.name} to the Resident again.`;
+  toggle.onclick = () => setWorker(item.id, !item.enabled);
+  head.append(name, toggle);
+
+  const detail = document.createElement("span");
+  detail.className = "pane-item-detail";
+  detail.textContent = item.detail || "";
+
+  const tools = document.createElement("div");
+  tools.className = "capability-tools";
+  if (!item.tools.length) {
+    const none = document.createElement("span");
+    none.className = "pane-item-detail";
+    none.textContent = "No tools — it can only talk.";
+    tools.appendChild(none);
+  }
+  for (const tool of item.tools) {
+    const chip = document.createElement("code");
+    chip.className = "tool-chip";
+    chip.textContent = tool.name;
+    tools.appendChild(chip);
+  }
+
+  row.append(head, detail, tools);
+  return row;
+}
+
+async function setWorker(id, enabled) {
+  try {
+    await api(`/api/workers/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ enabled }),
+    });
+  } catch (error) {
+    return;
+  }
+  app.panes = await api("/api/panes");
+  repaintPane("workers");
 }
 
 async function setCapability(id, enabled) {

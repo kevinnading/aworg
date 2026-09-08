@@ -39,6 +39,7 @@ class Capability:
         description: str,
         path: Path,
         builtin: bool = True,
+        internal: bool = False,
     ):
         self.id = identifier
         self.label = label
@@ -49,6 +50,12 @@ class Capability:
         #: so that the first downloaded capability is not the first thing to
         #: exercise the loader.
         self.builtin = builtin
+        #: An environment-embedded Capability: how the Resident reaches an
+        #: AWORG subsystem, rather than a package the owner chose to add.
+        #: Hidden from the Capabilities pane and not switchable, because the
+        #: owner turning it off would be disabling machinery rather than
+        #: reach -- the things it exposes are configured elsewhere.
+        self.internal = internal
         self.tools: list[ToolSpec] = []
         #: Recorded per tool file that would not parse, so the pane can say
         #: which one and why instead of the tool merely being absent.
@@ -88,6 +95,7 @@ class Registry:
             label=meta.get("LABEL") or folder.name.replace("_", " ").title(),
             description=meta.get("DESCRIPTION", ""),
             path=folder,
+            internal=bool(meta.get("INTERNAL")),
         )
         for file in sorted(folder.glob("*.py")):
             if file.name in SKIP or file.name.startswith("_"):
@@ -106,6 +114,7 @@ class Registry:
                     ),
                     capability=capability.id,
                     module_name=file.stem,
+                    dynamic=bool(declared.get("DYNAMIC")),
                 )
             )
         return capability if (capability.tools or capability.broken) else None
@@ -140,16 +149,46 @@ class Registry:
         wanted = set(scope) if scope is not None else None
         chosen: list[ToolSpec] = []
         for capability in self._capabilities.values():
-            if not self.is_enabled(capability.id):
+            # Internal capabilities have no switch, so they are never asked
+            # about -- there is nowhere in the interface to have turned one
+            # off, and treating an absent answer as "disabled" would make
+            # delegation vanish silently.
+            if not capability.internal and not self.is_enabled(capability.id):
                 continue
             for spec in capability.tools:
                 if wanted is None or spec.name in wanted or capability.id in wanted:
                     chosen.append(spec)
         return chosen
 
-    def descriptors(self, scope: Iterable[str] | None = None) -> list[dict[str, Any]]:
-        """The tool list as MCP describes it, ready for an adapter."""
-        return [spec.descriptor() for spec in self.specs(scope)]
+    def descriptors(
+        self, scope: Iterable[str] | None = None, **live: Any
+    ) -> list[dict[str, Any]]:
+        """The tool list as MCP describes it, ready for an adapter.
+
+        Most tools describe themselves once, at discovery, from constants in
+        their own file. A tool marked DYNAMIC describes itself here instead,
+        from whatever `live` state it is given -- `delegate` does, because its
+        enumeration is the owner's list of workers and that changes without
+        any code changing.
+
+        A dynamic tool that returns nothing is left out entirely. With no
+        workers configured there is no delegate tool, which is better than
+        offering the Resident a way to dispatch to an empty list.
+        """
+        out: list[dict[str, Any]] = []
+        for spec in self.specs(scope):
+            if not spec.dynamic:
+                out.append(spec.descriptor())
+                continue
+            try:
+                described = self._load(spec).describe_for(**live)
+            except Exception:                                 # noqa: BLE001
+                # A broken dynamic descriptor should cost that one tool, not
+                # every tool and the turn along with them.
+                continue
+            if described:
+                out.append(described)
+        return out
 
     def find(self, name: str, scope: Iterable[str] | None = None) -> ToolSpec | None:
         for spec in self.specs(scope):

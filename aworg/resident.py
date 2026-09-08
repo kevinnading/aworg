@@ -21,6 +21,7 @@ and the turn currently in progress.
 from __future__ import annotations
 
 import asyncio
+import json
 
 from typing import Any, AsyncIterator
 
@@ -29,6 +30,7 @@ from .activities import ActivityManager
 from .agent import AgentLoop
 from .models import Message, ModelError, build_adapter
 from .tools import Registry, ToolContext
+from .workers import run_worker
 from .secrets import SecretStore, credential_ref
 from .storage import Store
 
@@ -245,7 +247,40 @@ class Resident:
     def _estimate(self, text: str) -> int:
         return int(len(text) / self.CHARS_PER_TOKEN)
 
-    def _fit(self, history: list[Message], system: str, window: int | None) -> dict[str, Any]:
+    def _offered_tools(self, adapter: Any, crew: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """The tool descriptors this turn will send, or none if it cannot.
+
+        Built here rather than left to the loop because the same list has to
+        be measured before the conversation is fitted around it.
+        """
+        if not getattr(adapter, "supports_tools", False):
+            return []
+        return self.registry.descriptors(None, workers=crew)
+
+    def _tools_cost(self, offered: list[dict[str, Any]]) -> int:
+        """What the tool schemas cost, in tokens, on every request.
+
+        Estimated from the JSON, which is what actually goes on the wire.
+        Not a rounding error: six tools, one of them naming every configured
+        worker and describing it, ran to well over a thousand tokens -- and
+        an 8k window that ignored them sent a 10,070-token prompt and was
+        refused.
+
+        Rounded up rather than down. Overstating the cost drops one more
+        message than strictly necessary; understating it produces a request
+        the provider rejects outright, which ends the turn.
+        """
+        if not offered:
+            return 0
+        return self._estimate(json.dumps(offered)) + self.TOKENS_PER_MESSAGE * len(offered)
+
+    def _fit(
+        self,
+        history: list[Message],
+        system: str,
+        window: int | None,
+        tools_cost: int = 0,
+    ) -> dict[str, Any]:
         """Choose the most recent messages that fit, newest first.
 
         A window is a hard edge, not a suggestion: a prompt past it is
@@ -271,7 +306,15 @@ class Resident:
             return {"kept": history, "dropped": 0, "budget": None, "overflowing": False}
 
         reserve = max(self.REPLY_RESERVE_MIN, window // self.REPLY_RESERVE_SHARE)
-        budget = window - reserve - self._estimate(system) - self.TOKENS_PER_MESSAGE
+        # Tool schemas are sent on every single request and are not free.
+        # Leaving them out of the budget is how an 8k window received a
+        # 10,070-token prompt and the provider refused it outright: six
+        # tools, one of them carrying every worker's description, and none
+        # of it counted. Whatever is charged for has to be subtracted here.
+        budget = (
+            window - reserve - tools_cost
+            - self._estimate(system) - self.TOKENS_PER_MESSAGE
+        )
 
         # Trimmed in groups rather than messages, so the cut never falls
         # inside a tool exchange. See _grouped.
@@ -332,10 +375,21 @@ class Resident:
         connection = self.primary_connection()
         tokens, exact, window = estimate, False, None
         plan = {"kept": history, "dropped": 0, "overflowing": False}
+        tools_cost = 0
         if connection is not None:
             window = connection.get("context")
-            plan = self._fit(history, system, window)
             api_key = self.secrets.get(credential_ref(connection["id"]))
+            # The same schemas the next turn will send, measured the same
+            # way. A ring that ignores them reads comfortable right up to
+            # the request the provider refuses.
+            if api_key:
+                tools_cost = self._tools_cost(
+                    self._offered_tools(
+                        build_adapter(connection, api_key),
+                        self.store.list_workers(enabled_only=True),
+                    )
+                )
+            plan = self._fit(history, system, window, tools_cost)
             if api_key:
                 try:
                     counted = await build_adapter(connection, api_key).count_tokens(
@@ -350,6 +404,8 @@ class Resident:
                         self._estimate(m.content) + self.TOKENS_PER_MESSAGE
                         for m in plan["kept"]
                     )
+                # Counted or estimated, the schemas ride along with it.
+                tokens += tools_cost
 
         # Which stored message the Resident's memory actually begins at.
         # A count of dropped messages is not enough to place the seam: tool
@@ -474,12 +530,23 @@ class Resident:
             }
             return
 
-        resident_config = self.store.get_resident()
         history = self._to_messages(self.store.messages(conversation_id))
+        adapter = build_adapter(connection, api_key)
+
+        # Who the Resident may hand work to. Read fresh each turn rather than
+        # captured, so a worker the owner adds mid-conversation is available
+        # on the next message instead of the next restart.
+        crew = self.store.list_workers(enabled_only=True)
+
+        # Built before fitting, because the schemas are part of every request
+        # and the conversation has to fit in what is left after them.
+        offered = self._offered_tools(adapter, crew)
 
         # Only what fits goes to the model. Everything stays on disk.
         system = self.system_prompt()
-        plan = self._fit(history, system, connection.get("context"))
+        plan = self._fit(
+            history, system, connection.get("context"), self._tools_cost(offered)
+        )
         history = plan["kept"]
         if plan["dropped"] or plan["overflowing"]:
             yield {
@@ -500,13 +567,41 @@ class Resident:
                 conversation_id, role, content, model_label, blocks
             )
 
+        async def spawn(name: str, task: str):
+            """Start one worker. Returns None if there is no such worker.
+
+            Handed to the tool layer rather than imported by it, so that
+            `delegate` can start a worker without being able to reach
+            anything else the Resident owns.
+            """
+            worker = self.store.worker_by_name(name)
+            if worker is None or not worker["enabled"]:
+                return None
+            return await run_worker(
+                worker,
+                task,
+                store=self.store,
+                secrets=self.secrets,
+                registry=self.registry,
+                activities=self.activities,
+                paths=self.paths,
+                host_facts=self.host,
+                parent_id=None,
+            )
+
         loop = AgentLoop(
-            adapter=build_adapter(connection, api_key),
+            adapter=adapter,
             registry=self.registry,
+            tools=offered,
             context=ToolContext(
-                paths=self.paths, activities=self.activities, host=self.host
+                paths=self.paths,
+                activities=self.activities,
+                host=self.host,
+                spawn=spawn,
+                workers=[w["name"] for w in crew],
             ),
             activities=self.activities,
+            live={"workers": crew},
             # None: the Resident sees every tool the owner has left enabled.
             # A worker gets a list; that is the same argument, used
             # differently, which is the point of the loop not being a method

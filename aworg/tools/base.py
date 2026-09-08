@@ -91,6 +91,12 @@ class ToolContext:
     #: The Activity representing this call, so a long-running tool can say
     #: how far it has got without knowing who is listening.
     activity: Activity | None = None
+    #: How a tool starts a worker, and the names it may start. Supplied by
+    #: whoever builds the context -- the delegate tool asks for them by
+    #: attribute rather than importing anything, so a tool still cannot
+    #: acquire something it was not handed.
+    spawn: Any = None
+    workers: list[str] = field(default_factory=list)
     #: Who is calling: "resident", or a worker id. Tools do not currently
     #: branch on it; it is here so that an audit of who ran what is possible
     #: without changing every signature later.
@@ -124,6 +130,9 @@ class ToolSpec:
     #: filename, and resolving the import from the declared name would work
     #: right up until one did.
     module_name: str = ""
+    #: Whether this tool builds its own descriptor at call time from live
+    #: state, rather than declaring a fixed one. See Registry.descriptors.
+    dynamic: bool = False
     #: Filled on first use. Discovery reads the file's declarations without
     #: importing its dependencies, so an Aworg with a broken tool still
     #: starts and still says which tool is broken.

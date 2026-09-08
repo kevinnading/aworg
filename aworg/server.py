@@ -91,6 +91,27 @@ class CapabilityPatch(BaseModel):
     enabled: bool
 
 
+class WorkerBody(BaseModel):
+    name: str
+    description: str = ""
+    connection_id: str | None = None
+    system_prompt: str = ""
+    #: Tool names, capability ids, or both. Empty means no tools at all --
+    #: deliberately not "all of them", because a worker's scope is the thing
+    #: that makes it safe to hand work to.
+    tools: list[str] = []
+    enabled: bool = True
+
+
+class WorkerPatch(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    connection_id: str | None = None
+    system_prompt: str | None = None
+    tools: list[str] | None = None
+    enabled: bool | None = None
+
+
 class LayoutPatch(BaseModel):
     #: The whole set of dragged sizes. An empty object resets the view.
     #:
@@ -471,7 +492,10 @@ def create_app(paths: Paths) -> FastAPI:
         stay together until one of them grows enough to want its own.
         """
         return panes.describe(
-            resident.host, resident.registry, store.capability_enabled
+            resident.host,
+            resident.registry,
+            store.capability_enabled,
+            store.list_workers(),
         )
 
     @app.post("/api/capabilities/{capability_id}")
@@ -489,6 +513,44 @@ def create_app(paths: Paths) -> FastAPI:
             raise HTTPException(404, f"No capability called {capability_id!r}")
         store.set_capability_enabled(capability_id, body.enabled)
         return {"id": capability_id, "enabled": body.enabled}
+
+    # -- workers --------------------------------------------------------
+
+    @app.get("/api/workers")
+    def list_workers() -> list[dict[str, Any]]:
+        return store.list_workers()
+
+    @app.patch("/api/workers/{worker_id}")
+    def update_worker(worker_id: str, body: WorkerPatch) -> dict[str, Any]:
+        """Change a worker.
+
+        Its description is worth as much care as its prompt: it is the only
+        thing the Resident routes on, so editing it changes which jobs this
+        worker gets. See docs/06_ARCHITECTURE.md.
+        """
+        fields = {k: v for k, v in body.model_dump().items() if v is not None}
+        updated = store.update_worker(worker_id, **fields)
+        if updated is None:
+            raise HTTPException(404, "No such worker")
+        return updated
+
+    @app.post("/api/workers")
+    def create_worker(body: WorkerBody) -> dict[str, Any]:
+        return store.create_worker(
+            name=body.name,
+            description=body.description,
+            connection_id=body.connection_id,
+            system_prompt=body.system_prompt,
+            tools=body.tools,
+            enabled=body.enabled,
+        )
+
+    @app.delete("/api/workers/{worker_id}")
+    def delete_worker(worker_id: str) -> dict[str, str]:
+        if store.get_worker(worker_id) is None:
+            raise HTTPException(404, "No such worker")
+        store.delete_worker(worker_id)
+        return {"status": "deleted"}
 
     # -- Activities -----------------------------------------------------
 

@@ -20,6 +20,7 @@ what those mean.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any, AsyncIterator, Callable, Iterable
 
 from .activities import ActivityManager
@@ -51,6 +52,9 @@ class AgentLoop:
         source: str = "resident",
         label: str = "",
         max_rounds: int = MAX_ROUNDS,
+        parent_id: str | None = None,
+        live: dict[str, Any] | None = None,
+        tools: list[dict[str, Any]] | None = None,
     ):
         self.adapter = adapter
         self.registry = registry
@@ -63,6 +67,21 @@ class AgentLoop:
         #: How a reply is attributed in the conversation.
         self.label = label
         self.max_rounds = max_rounds
+        #: The Activity every tool call hangs under, if this loop is itself
+        #: something being watched. A worker sets it so its calls nest
+        #: beneath it in the pane rather than appearing in a flat list with
+        #: no sign of who ran them.
+        self.parent_id = parent_id
+        #: State a self-describing tool needs at the moment it is offered --
+        #: today just the worker list, which decides whether `delegate`
+        #: appears at all and what its enumeration contains.
+        self.live = live or {}
+        #: Precomputed descriptors, when the caller has already built them --
+        #: the Resident does, because it has to measure what the tool schemas
+        #: cost before deciding how much conversation fits alongside them.
+        #: Measuring one list and sending another would be the same bug in a
+        #: quieter form.
+        self._tools = tools
 
     def tools(self) -> list[dict[str, Any]]:
         """The tool descriptors this caller gets, or none if it cannot use them.
@@ -75,7 +94,9 @@ class AgentLoop:
         """
         if not getattr(self.adapter, "supports_tools", False):
             return []
-        return self.registry.descriptors(self.scope)
+        if self._tools is not None:
+            return self._tools
+        return self.registry.descriptors(self.scope, **self.live)
 
     async def run(
         self,
@@ -204,6 +225,7 @@ class AgentLoop:
             kind="tool",
             label=call.name,
             source=self.source,
+            parent_id=self.parent_id,
             detail=_describe_arguments(call.arguments),
         )
         self.activities.started(activity)
@@ -214,13 +236,13 @@ class AgentLoop:
             "arguments": call.arguments,
         }
 
-        context = ToolContext(
-            paths=self.context.paths,
-            activities=self.activities,
-            host=self.context.host,
-            activity=activity,
-            source=self.source,
-        )
+        # Copied from the loop's own context rather than rebuilt field by
+        # field, so that only the two per-call values differ and everything
+        # else travels automatically. Rebuilding it by hand silently dropped
+        # `spawn` the day delegation was added, and would drop the next
+        # field added too -- the failure is invisible, because the tool just
+        # finds the attribute missing and reports itself unwired.
+        context = replace(self.context, activity=activity, source=self.source)
         result: ToolResult = await self.registry.invoke(
             call.name, call.arguments, context, self.scope
         )
@@ -243,6 +265,7 @@ class AgentLoop:
             "type": "tool_end",
             "activity": activity.id,
             "name": call.name,
+            "arguments": call.arguments,
             "summary": result.summary,
             "is_error": result.is_error,
         }
@@ -258,6 +281,7 @@ class AgentLoop:
             kind="tool",
             label=call.name,
             source=self.source,
+            parent_id=self.parent_id,
             detail=_describe_arguments(call.arguments),
         )
         self.activities.cancelled(activity)
@@ -273,6 +297,7 @@ class AgentLoop:
             "type": "tool_end",
             "activity": activity.id,
             "name": call.name,
+            "arguments": call.arguments,
             "summary": "cancelled",
             "is_error": True,
         }

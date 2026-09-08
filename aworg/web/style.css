@@ -1696,3 +1696,16 @@ button.ghost.small {
   color: var(--muted);
   text-transform: uppercase;
 }
+
+/* A dispatched worker, and its own tool calls nested under it. The worker is
+   the heavier row: it is someone the Resident handed a job to, and what sits
+   below it is that worker's work rather than the Resident's. */
+.activity-row.worker .activity-name {
+  color: var(--accent);
+  font-weight: 500;
+}
+.activity-row.worker .activity-dot {
+  border-radius: 2px;
+  width: 6px;
+  height: 6px;
+}

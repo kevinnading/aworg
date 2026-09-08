@@ -74,6 +74,30 @@ CREATE TABLE IF NOT EXISTS messages (
     FOREIGN KEY (conversation_id) REFERENCES conversations(id)
 );
 
+CREATE TABLE IF NOT EXISTS workers (
+    id            TEXT PRIMARY KEY,
+    name          TEXT NOT NULL,
+    -- Load-bearing, not decoration. It is the only thing the Resident routes
+    -- on when choosing which worker to hand a job to, so a vague one is a
+    -- misrouted job the owner experiences as the wrong specialist doing
+    -- their work. See docs/06_ARCHITECTURE.md.
+    description   TEXT NOT NULL DEFAULT '',
+    -- NULL means "whatever the worker connection is set to", which is the
+    -- ordinary case: workers share one small model and differ by prompt and
+    -- tool scope. A worker may name its own connection when it needs a
+    -- bigger mind than its siblings.
+    connection_id TEXT,
+    system_prompt TEXT NOT NULL DEFAULT '',
+    -- JSON list of tool names or capability ids. Empty means every tool the
+    -- owner has enabled, which is deliberately not the default: a worker
+    -- that cannot write cannot damage the workspace however badly it
+    -- misreads its job.
+    tools         TEXT NOT NULL DEFAULT '[]',
+    enabled       INTEGER NOT NULL DEFAULT 1,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS capability_state (
     id         TEXT PRIMARY KEY,
     enabled    INTEGER NOT NULL DEFAULT 1,
@@ -165,6 +189,73 @@ Speak plainly and directly. The owner may not be a programmer, and should
 never need to be one to work with you."""
 
 
+#: The workers a fresh Aworg starts with.
+#:
+#: Seeded once, when the table is empty, and never again -- an owner who
+#: deletes one should not find it back tomorrow.
+#:
+#: Three, and the number is the point. The Resident routes by picking a name
+#: out of this list, and routing degrades as the list grows exactly the way
+#: tool selection does. Three specialists whose jobs do not overlap are
+#: routed correctly; ten shading into each other are not.
+#:
+#: Prompts are deliberately short. Measured against the models this is built
+#: for, longer system prompts scored *worse* -- see docs/06_ARCHITECTURE.md.
+#:
+#: Note what each one is *not given*. The builder has no shell, so it cannot
+#: run anything however badly it misreads a job. The checker cannot write, so
+#: its report cannot be a change it made. That is not trust, it is the tool
+#: scope: a worker is not asked to avoid something, it is simply not handed
+#: the means.
+DEFAULT_WORKERS = [
+    {
+        "name": "builder",
+        "description": (
+            "Writes and edits files. Give it what the file should contain "
+            "and where it goes. Cannot run anything."
+        ),
+        "tools": ["read_file", "write_file", "search_files"],
+        "system_prompt": (
+            "You write files. Do exactly what the task asks and nothing more.\n\n"
+            "Write the file, then say in one or two sentences what you wrote "
+            "and where. If you could not, say so plainly and say why."
+        ),
+    },
+    {
+        "name": "runner",
+        "description": (
+            "Runs commands and reports exactly what they printed and the "
+            "exit code. Cannot write files."
+        ),
+        "tools": ["execute_command", "read_file"],
+        "system_prompt": (
+            "You run commands. Run what the task asks, then report exactly "
+            "what came back.\n\n"
+            "Quote the output rather than summarising it, and always give the "
+            "exit code. A command that failed is a normal result: report the "
+            "failure, do not try to hide or fix it."
+        ),
+    },
+    {
+        "name": "checker",
+        "description": (
+            "Checks whether something actually works and reports what it "
+            "found. Use it to verify work rather than trusting it. Cannot "
+            "change anything."
+        ),
+        "tools": ["read_file", "search_files", "execute_command"],
+        "system_prompt": (
+            "You check whether something actually works. You did not do the "
+            "work and you have no stake in it having gone well.\n\n"
+            "Look for yourself: read the file, run the thing, see what it "
+            "does. Report what you found, not what was hoped for. Saying "
+            "\"this does not work, here is what happened\" is the most useful "
+            "thing you can do. Never report success you did not observe."
+        ),
+    },
+]
+
+
 class Store:
     def __init__(self, path: Path):
         self.path = path
@@ -207,6 +298,30 @@ class Store:
                 "INSERT INTO layout (id) VALUES (1) ON CONFLICT(id) DO NOTHING"
             )
             self._refresh_default_prompt(conn)
+            self._seed_workers(conn)
+
+    @staticmethod
+    def _seed_workers(conn) -> None:
+        """Put the shipped workers in, once, if there are none at all.
+
+        Only when the table is completely empty. An owner who deleted the
+        builder meant to delete it, and finding it back at the next restart
+        would be AWORG overruling them about their own machine.
+        """
+        if conn.execute("SELECT COUNT(*) c FROM workers").fetchone()["c"]:
+            return
+        for spec in DEFAULT_WORKERS:
+            conn.execute(
+                "INSERT INTO workers (id, name, description, system_prompt, tools) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (
+                    uuid.uuid4().hex[:12],
+                    spec["name"],
+                    spec["description"],
+                    spec["system_prompt"],
+                    json.dumps(spec["tools"]),
+                ),
+            )
 
     @staticmethod
     def _refresh_default_prompt(conn) -> None:
@@ -540,6 +655,100 @@ class Store:
                 record["blocks"] = None
             out.append(record)
         return out
+
+    # -- workers --------------------------------------------------------
+
+    def list_workers(self, enabled_only: bool = False) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM workers"
+                + (" WHERE enabled = 1" if enabled_only else "")
+                + " ORDER BY name"
+            ).fetchall()
+        return [self._worker_row(r) for r in rows]
+
+    def get_worker(self, worker_id: str) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM workers WHERE id = ?", (worker_id,)
+            ).fetchone()
+        return self._worker_row(row) if row else None
+
+    def worker_by_name(self, name: str) -> dict[str, Any] | None:
+        """Find a worker the way the Resident names one.
+
+        Matched case-insensitively, because the name travels through a model
+        and comes back capitalised however that model felt about it.
+        """
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM workers WHERE lower(name) = lower(?)", (name.strip(),)
+            ).fetchone()
+        return self._worker_row(row) if row else None
+
+    def create_worker(
+        self,
+        name: str,
+        description: str = "",
+        connection_id: str | None = None,
+        system_prompt: str = "",
+        tools: list[str] | None = None,
+        enabled: bool = True,
+    ) -> dict[str, Any]:
+        worker_id = uuid.uuid4().hex[:12]
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO workers (id, name, description, connection_id, "
+                "system_prompt, tools, enabled) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    worker_id,
+                    name,
+                    description,
+                    connection_id,
+                    system_prompt,
+                    json.dumps(tools or []),
+                    1 if enabled else 0,
+                ),
+            )
+        return self.get_worker(worker_id)  # type: ignore[return-value]
+
+    def update_worker(self, worker_id: str, **fields: Any) -> dict[str, Any] | None:
+        allowed = {
+            "name", "description", "connection_id", "system_prompt", "tools", "enabled",
+        }
+        sets, values = [], []
+        for key, value in fields.items():
+            if key not in allowed:
+                continue
+            if key == "tools":
+                value = json.dumps(value or [])
+            elif key == "enabled":
+                value = 1 if value else 0
+            sets.append(f"{key} = ?")
+            values.append(value)
+        if not sets:
+            return self.get_worker(worker_id)
+        sets.append("updated_at = datetime('now')")
+        with self._connect() as conn:
+            conn.execute(
+                f"UPDATE workers SET {', '.join(sets)} WHERE id = ?",
+                (*values, worker_id),
+            )
+        return self.get_worker(worker_id)
+
+    def delete_worker(self, worker_id: str) -> None:
+        with self._connect() as conn:
+            conn.execute("DELETE FROM workers WHERE id = ?", (worker_id,))
+
+    @staticmethod
+    def _worker_row(row: sqlite3.Row) -> dict[str, Any]:
+        worker = dict(row)
+        try:
+            worker["tools"] = json.loads(worker["tools"] or "[]")
+        except (TypeError, ValueError):
+            worker["tools"] = []
+        worker["enabled"] = bool(worker["enabled"])
+        return worker
 
     # -- capabilities ---------------------------------------------------
 
