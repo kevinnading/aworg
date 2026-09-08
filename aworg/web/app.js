@@ -1408,6 +1408,7 @@ function paneItems(items) {
     list.appendChild(
       item.kind === "capability" ? capabilityRow(item)
       : item.kind === "worker" ? workerRow(item)
+      : item.kind === "task" ? taskRow(item)
       : factRow(item)
     );
   }
@@ -1533,6 +1534,38 @@ function workerRow(item) {
   }
 
   row.append(head, detail, tools);
+  return row;
+}
+
+/* One task in the plan.
+ *
+ * State is shown as a word rather than only a colour, because "blocked" and
+ * "active" are different in a way an owner needs to read rather than infer,
+ * and a colour alone is no use to anyone who cannot distinguish it. */
+function taskRow(item) {
+  const row = document.createElement("div");
+  row.className = `pane-item task ${item.state}`;
+  if (item.child) row.classList.add("child");
+
+  const head = document.createElement("div");
+  head.className = "capability-head";
+
+  const name = document.createElement("span");
+  name.className = "pane-item-name";
+  name.textContent = item.name;
+
+  const state = document.createElement("span");
+  state.className = `task-state ${item.state}`;
+  state.textContent = item.state;
+  head.append(name, state);
+
+  row.appendChild(head);
+  if (item.detail) {
+    const detail = document.createElement("span");
+    detail.className = "pane-item-detail";
+    detail.textContent = item.detail;
+    row.appendChild(detail);
+  }
   return row;
 }
 

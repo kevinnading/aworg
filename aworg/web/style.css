@@ -1709,3 +1709,22 @@ button.ghost.small {
   width: 6px;
   height: 6px;
 }
+
+/* The plan. State is a word as well as a colour: "blocked" and "active" are
+   a difference the owner has to be able to read, and colour alone is no use
+   to anyone who cannot tell these two apart. */
+.pane-item.task.child { padding-left: 18px; }
+
+.task-state {
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 1px 6px;
+  border-radius: 3px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  flex: none;
+}
+.task-state.active  { color: var(--accent); border-color: var(--accent); }
+.task-state.blocked { color: var(--warn); border-color: var(--warn); }
+.pane-item.task.active .pane-item-name { color: var(--text); font-weight: 500; }

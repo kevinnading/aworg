@@ -230,19 +230,68 @@ class Resident:
             return
         self.host = await asyncio.to_thread(host.observe)
 
-    def system_prompt(self) -> str:
-        """What the model is told about itself, and about where it is.
+    #: How many open tasks go into the prompt before it stops listing them
+    #: and starts counting them. The plan has to be visible without becoming
+    #: the reason there is no room to act on it.
+    PLAN_IN_PROMPT = 12
 
-        Two things, kept apart everywhere but here. The standing
+    def plan_block(self) -> str:
+        """The open plan, compactly, for the system prompt.
+
+        This is what makes tasks worth having. The context window is a hard
+        edge and history only grows, so the oldest messages stop being sent --
+        in a real session here, twenty-six of forty-five messages were already
+        invisible. A plan that lived only in the conversation would be
+        forgotten exactly when the job got long enough to need one.
+
+        The system prompt is rebuilt every turn and never truncated, so
+        anything here is the one thing the Resident cannot lose. It is kept
+        short for the same reason: every token spent describing the work is a
+        token not available for doing it.
+        """
+        open_tasks = self.store.list_tasks(self.store.OPEN_STATES)
+        if not open_tasks:
+            return ""
+
+        shown, extra = open_tasks[: self.PLAN_IN_PROMPT], len(open_tasks) - self.PLAN_IN_PROMPT
+        lines = [
+            f"  [{task['state']}] {task['id']}  {task['title']}"
+            + (f" -- {task['note']}" if task["state"] == "blocked" and task["note"] else "")
+            for task in shown
+        ]
+        if extra > 0:
+            lines.append(f"  ... and {extra} more. Use list_tasks to see them.")
+
+        counts = self.store.task_counts()
+        done = counts.get("done", 0)
+        return (
+            "YOUR PLAN -- these are yours, written by you, and they outlive "
+            "this conversation.\n"
+            + "\n".join(lines)
+            + (f"\n  ({done} already done.)" if done else "")
+            + "\nKeep it current as you work: update_task to active when you "
+            "start one and done once you have watched it succeed."
+        )
+
+    def system_prompt(self) -> str:
+        """What the model is told about itself, where it is, and what it is doing.
+
+        Three things, kept apart everywhere but here. The standing
         instructions are the owner's -- theirs to write and theirs to edit.
         The host block is observed fact, refreshed each start. Writing the
         facts into the owner's text would make them the owner's to maintain,
         and they would be wrong by the next time anything was installed.
+
+        The plan is the Resident's own, and it is here rather than in the
+        conversation because the conversation gets truncated and this does
+        not.
         """
         instructions = self.store.get_resident()["system_prompt"]
         block = host.summary(self.host)
+        plan = self.plan_block()
 
-        return f"{instructions}\n\n---\n\n{block}".strip()
+        parts = [instructions, block] + ([plan] if plan else [])
+        return "\n\n---\n\n".join(part for part in parts if part).strip()
 
     def _estimate(self, text: str) -> int:
         return int(len(text) / self.CHARS_PER_TOKEN)
@@ -599,6 +648,7 @@ class Resident:
                 host=self.host,
                 spawn=spawn,
                 workers=[w["name"] for w in crew],
+                store=self.store,
             ),
             activities=self.activities,
             live={"workers": crew},

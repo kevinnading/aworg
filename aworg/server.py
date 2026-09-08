@@ -91,6 +91,14 @@ class CapabilityPatch(BaseModel):
     enabled: bool
 
 
+class TaskPatch(BaseModel):
+    title: str | None = None
+    detail: str | None = None
+    state: str | None = None
+    note: str | None = None
+    position: int | None = None
+
+
 class WorkerBody(BaseModel):
     name: str
     description: str = ""
@@ -496,6 +504,7 @@ def create_app(paths: Paths) -> FastAPI:
             resident.registry,
             store.capability_enabled,
             store.list_workers(),
+            store.list_tasks(store.OPEN_STATES),
         )
 
     @app.post("/api/capabilities/{capability_id}")
@@ -513,6 +522,36 @@ def create_app(paths: Paths) -> FastAPI:
             raise HTTPException(404, f"No capability called {capability_id!r}")
         store.set_capability_enabled(capability_id, body.enabled)
         return {"id": capability_id, "enabled": body.enabled}
+
+    # -- tasks ----------------------------------------------------------
+
+    @app.get("/api/tasks")
+    def list_tasks(state: str = "open") -> list[dict[str, Any]]:
+        if state == "all":
+            return store.list_tasks()
+        if state == "open":
+            return store.list_tasks(store.OPEN_STATES)
+        return store.list_tasks((state,))
+
+    @app.patch("/api/tasks/{task_id}")
+    def update_task(task_id: str, body: TaskPatch) -> dict[str, Any]:
+        fields = {k: v for k, v in body.model_dump().items() if v is not None}
+        updated = store.update_task(task_id, **fields)
+        if updated is None:
+            raise HTTPException(404, "No such task")
+        return updated
+
+    @app.delete("/api/tasks/{task_id}")
+    def delete_task(task_id: str) -> dict[str, str]:
+        if store.get_task(task_id) is None:
+            raise HTTPException(404, "No such task")
+        store.delete_task(task_id)
+        return {"status": "deleted"}
+
+    @app.post("/api/tasks/clear")
+    def clear_tasks() -> dict[str, int]:
+        """Forget finished tasks. Open ones are never touched."""
+        return {"removed": store.clear_tasks()}
 
     # -- workers --------------------------------------------------------
 

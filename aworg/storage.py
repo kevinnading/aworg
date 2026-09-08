@@ -74,6 +74,29 @@ CREATE TABLE IF NOT EXISTS messages (
     FOREIGN KEY (conversation_id) REFERENCES conversations(id)
 );
 
+CREATE TABLE IF NOT EXISTS tasks (
+    id          TEXT PRIMARY KEY,
+    title       TEXT NOT NULL,
+    -- Everything the Resident will need to do this later, when the
+    -- conversation that produced it is long out of the window. A task whose
+    -- detail says "as discussed" is a task that cannot be picked up.
+    detail      TEXT NOT NULL DEFAULT '',
+    state       TEXT NOT NULL DEFAULT 'pending',
+    -- Subtasks. A plan is a shallow tree, not a list: "build the invoice
+    -- module" has parts, and the parts are what get worked.
+    parent_id   TEXT,
+    -- Explicit rather than by id, because the Resident reorders a plan far
+    -- more often than it creates one, and insertion order is not priority.
+    position    INTEGER NOT NULL DEFAULT 0,
+    -- What happened. Set when a task finishes or gets stuck, so that the
+    -- next reader learns something the title does not say.
+    note        TEXT NOT NULL DEFAULT '',
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_tasks_state ON tasks (state, position, id);
+
 CREATE TABLE IF NOT EXISTS workers (
     id            TEXT PRIMARY KEY,
     name          TEXT NOT NULL,
@@ -655,6 +678,109 @@ class Store:
                 record["blocks"] = None
             out.append(record)
         return out
+
+    # -- tasks ----------------------------------------------------------
+
+    #: The states a task can be in. `blocked` is the one that earns its
+    #: place: a Resident that cannot proceed should say so and move on to
+    #: something else, rather than either abandoning the task or grinding at
+    #: it. `abandoned` is deliberately distinct from `done` -- a plan that
+    #: quietly drops what it could not manage is a plan that lies.
+    TASK_STATES = ("pending", "active", "blocked", "done", "abandoned")
+    OPEN_STATES = ("pending", "active", "blocked")
+
+    def list_tasks(
+        self, states: tuple[str, ...] | None = None, limit: int | None = None
+    ) -> list[dict[str, Any]]:
+        query = "SELECT * FROM tasks"
+        params: list[Any] = []
+        if states:
+            query += f" WHERE state IN ({','.join('?' * len(states))})"
+            params.extend(states)
+        # Active first so the thing being worked is never below a scroll or
+        # below a truncation, then by the order the plan was given.
+        query += (
+            " ORDER BY CASE state WHEN 'active' THEN 0 WHEN 'blocked' THEN 1"
+            " WHEN 'pending' THEN 2 ELSE 3 END, position, id"
+        )
+        if limit:
+            query += " LIMIT ?"
+            params.append(limit)
+        with self._connect() as conn:
+            return [dict(r) for r in conn.execute(query, params).fetchall()]
+
+    def get_task(self, task_id: str) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+        return dict(row) if row else None
+
+    def add_tasks(self, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Add several tasks at once, because a plan arrives as a plan.
+
+        One call rather than one per task: a Resident laying out eight steps
+        should not spend eight round trips doing it, and eight separate calls
+        is eight chances to be interrupted half way through a plan.
+        """
+        created: list[str] = []
+        with self._connect() as conn:
+            start = conn.execute(
+                "SELECT COALESCE(MAX(position), 0) p FROM tasks"
+            ).fetchone()["p"]
+            for offset, item in enumerate(items, 1):
+                task_id = uuid.uuid4().hex[:12]
+                conn.execute(
+                    "INSERT INTO tasks (id, title, detail, parent_id, position) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (
+                        task_id,
+                        str(item.get("title") or "").strip() or "Untitled task",
+                        str(item.get("detail") or "").strip(),
+                        item.get("parent_id"),
+                        start + offset,
+                    ),
+                )
+                created.append(task_id)
+        return [t for t in (self.get_task(i) for i in created) if t]
+
+    def update_task(self, task_id: str, **fields: Any) -> dict[str, Any] | None:
+        allowed = {"title", "detail", "state", "parent_id", "position", "note"}
+        sets, values = [], []
+        for key, value in fields.items():
+            if key not in allowed or value is None:
+                continue
+            sets.append(f"{key} = ?")
+            values.append(value)
+        if not sets:
+            return self.get_task(task_id)
+        sets.append("updated_at = datetime('now')")
+        with self._connect() as conn:
+            conn.execute(
+                f"UPDATE tasks SET {', '.join(sets)} WHERE id = ?", (*values, task_id)
+            )
+        return self.get_task(task_id)
+
+    def delete_task(self, task_id: str) -> None:
+        with self._connect() as conn:
+            # Children go with the parent. A subtask whose parent is gone has
+            # no meaning left, and orphans would accumulate invisibly.
+            conn.execute("DELETE FROM tasks WHERE id = ? OR parent_id = ?",
+                         (task_id, task_id))
+
+    def clear_tasks(self, states: tuple[str, ...] = ("done", "abandoned")) -> int:
+        """Forget finished work. Open tasks are never touched."""
+        with self._connect() as conn:
+            cursor = conn.execute(
+                f"DELETE FROM tasks WHERE state IN ({','.join('?' * len(states))})",
+                states,
+            )
+            return cursor.rowcount
+
+    def task_counts(self) -> dict[str, int]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT state, COUNT(*) n FROM tasks GROUP BY state"
+            ).fetchall()
+        return {row["state"]: row["n"] for row in rows}
 
     # -- workers --------------------------------------------------------
 

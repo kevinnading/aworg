@@ -53,13 +53,13 @@ PANES: list[dict[str, Any]] = [
     {
         "id": "tasks",
         "label": "Tasks",
-        "hint": "What the Resident is doing and what it means to do next.",
-        "available": False,
-        "empty": ("Nothing in progress.", ""),
-        "blocked": ("Nothing in progress.",
-                    "Your Resident does its work in one go and does not yet "
-                    "keep a plan of what it means to do next. What it is "
-                    "doing right now appears in Activities."),
+        "hint": "What the Resident means to do. Outlives the conversation.",
+        "available": True,
+        "empty": ("No plan yet.",
+                  "Your Resident writes tasks down when a job takes more "
+                  "than a couple of steps, so it can pick the work back up "
+                  "later. What it is doing right now appears in Activities."),
+        "blocked": None,
     },
     {
         "id": "log",
@@ -214,11 +214,32 @@ def workers(crew: list[dict[str, Any]]) -> list[dict[str, Any]]:
     ]
 
 
+def tasks(plan: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The plan, as the pane lists it.
+
+    Only what is open. Finished work is history and belongs to the Living
+    Log's question rather than this one -- a pane meant to answer "what is
+    left" that fills up with completed items stops answering it.
+    """
+    return [
+        {
+            "kind": "task",
+            "id": task["id"],
+            "name": task["title"],
+            "detail": task["note"] or task["detail"],
+            "state": task["state"],
+            "child": bool(task["parent_id"]),
+        }
+        for task in plan
+    ]
+
+
 def describe(
     facts: dict[str, Any] | None = None,
     registry: Any = None,
     enabled: Any = None,
     crew: list[dict[str, Any]] | None = None,
+    plan: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """The panes as the owner interface renders them.
 
@@ -237,6 +258,8 @@ def describe(
             items = capabilities(facts, registry, enabled)
         elif pane["id"] == "workers" and crew:
             items = workers(crew)
+        elif pane["id"] == "tasks" and plan:
+            items = tasks(plan)
 
         described.append(
             {

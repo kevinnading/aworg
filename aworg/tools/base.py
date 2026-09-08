@@ -97,6 +97,11 @@ class ToolContext:
     #: acquire something it was not handed.
     spawn: Any = None
     workers: list[str] = field(default_factory=list)
+    #: The store, for the internal tools that keep durable state -- the plan,
+    #: today. Handed in like everything else rather than imported, so a tool
+    #: still cannot reach anything it was not given, and a test can hand it
+    #: a different database.
+    store: Any = None
     #: Who is calling: "resident", or a worker id. Tools do not currently
     #: branch on it; it is here so that an audit of who ran what is possible
     #: without changing every signature later.

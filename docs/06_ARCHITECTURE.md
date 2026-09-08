@@ -89,6 +89,25 @@ job, and the owner experiences that as the wrong specialist doing their
 work without ever seeing why. Descriptions deserve the same care in the
 interface as prompts.
 
+### Where the "keep it to five" number does and does not apply
+
+An earlier draft of this file read that measurement as a ceiling on the
+Resident's whole tool surface. It is not, and treating it as one was starting
+to hold the build back.
+
+What was measured is that a **2B routes reliably across four or five tools**.
+That is a fact about workers, and workers already honour it by construction:
+a worker is handed three tools, not everything. The Resident thinks with a
+far larger model and its surface can grow well past five as long as each tool
+is unambiguous and no two overlap.
+
+The number that genuinely wants staying small is the count of *Capabilities*
+an owner is asked to reason about, which is a different question with a
+different audience. Three, today.
+
+So: add tools where a tool earns its place. Keep worker scopes narrow. Do not
+refuse a useful tool to protect a budget that was never about the Resident.
+
 ### Workers run in parallel
 
 Several may run at once. The interface is concurrent even where execution
