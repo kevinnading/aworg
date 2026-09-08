@@ -348,13 +348,32 @@ def _shell_notes(shell: str, version: str | None) -> list[str]:
     """
     if shell not in ("powershell", "pwsh"):
         return []
-    # PowerShell 7 writes UTF-8 without a BOM everywhere and has `&&`. None
-    # of this applies to it, and claiming otherwise would send a Resident
-    # around an obstacle that is not there.
-    if not (version or "").startswith("5."):
-        return []
 
-    return [
+    # True of every PowerShell, so it sits outside the 5.1 guard below.
+    #
+    # Earned exactly like the rest. A checker worker sent to find out whether
+    # a script ran quoted the interpreter path -- which is the natural thing
+    # to do with a path full of backslashes -- got a ParserError, and reported
+    # that the *script* had invalid syntax. The script's actual fault was a
+    # NameError at runtime. So the failure was caught, which is what matters
+    # most, but the diagnosis handed to the owner was invented, and a
+    # confidently wrong diagnosis is its own kind of damage.
+    notes = [
+        "PowerShell note: a quoted path is a string, not a command. "
+        "`\"C:\\path\\to\\prog.exe\" arg` is a parse error; write "
+        "`& \"C:\\path\\to\\prog.exe\" arg` with the call operator, or leave "
+        "the path unquoted when it has no spaces. A ParserError means the "
+        "command line itself was wrong -- it says nothing at all about the "
+        "program or file you were trying to run.",
+    ]
+
+    # PowerShell 7 writes UTF-8 without a BOM everywhere and has `&&`. None
+    # of what follows applies to it, and claiming otherwise would send a
+    # Resident around an obstacle that is not there.
+    if not (version or "").startswith("5."):
+        return notes
+
+    return notes + [
         "PowerShell note: this is Windows PowerShell 5.1. `&&` and `||` are "
         "parse errors here -- chain with `;`, or test $? between commands "
         "when the second should only run if the first worked.",
@@ -371,6 +390,17 @@ def _shell_notes(shell: str, version: str | None) -> list[str]:
         "policy. Prefer passing the command directly; if you must use a "
         "script file, invoke it with -ExecutionPolicy Bypass.",
     ]
+
+
+def shell_notes(facts: dict[str, Any]) -> list[str]:
+    """This shell's traps, for anything that is going to run a command.
+
+    Public because the Resident is not the only thing running commands any
+    more: a worker with a shell needs the same warnings, and reaching into
+    the private helper from another module would be the kind of coupling
+    that quietly rots.
+    """
+    return _shell_notes(facts.get("shell", ""), facts.get("shell_version"))
 
 
 def summary(facts: dict[str, Any]) -> str:

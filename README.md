@@ -26,9 +26,12 @@ It now has hands: five tools across three Capabilities, so it can read, write
 and search files, run commands, and make HTTP requests. What it is doing shows
 up in the **Activities** pane as it happens.
 
-What it does not have yet is workers to delegate to, the Living Log, or the
-autonomous repair loop — the parts that would let it work with nobody
-watching.
+It can also hand bounded work to **workers** — specialists with their own
+prompt and their own narrow set of tools — rather than doing everything
+itself.
+
+What it does not have yet is the Living Log or the autonomous repair loop —
+the parts that would let it work with nobody watching.
 
 ## Running it
 
@@ -147,6 +150,41 @@ Operating-system detail belongs to tools, never to AWORG. A tool either
 handles its platform itself or reports that it cannot run here. There is no
 translation layer in the core and there should never be one — it would be
 wrong everywhere at once and would grow forever.
+
+## Workers
+
+The Resident can do the work itself or hand it to a specialist. Three ship:
+
+```
+builder   writes and edits files          cannot run anything
+runner    runs commands, reports output   cannot write files
+checker   verifies that something works   cannot change anything
+```
+
+A worker is three things — a connection, a prompt, and a **tool scope** — and
+the third does the most work. The checker cannot rubber-stamp by quietly
+fixing what it was asked to check, because it holds no tool that writes. That
+is not trust; it was not handed the means.
+
+Workers are temporary. One bounded job, no memory of it afterwards, disposed.
+Nothing a worker says reaches your conversation directly — only the result the
+Resident reads.
+
+**Delegation is one tool with a list of names, not one tool per worker.**
+Tool-selection accuracy falls away as the surface grows, so a tool per
+specialist would degrade routing the moment you defined a few. One tool keeps
+the surface flat however many workers exist. The consequence is that a
+worker's *description* is load-bearing: it is the only thing the Resident
+routes on, so a vague one is a misrouted job.
+
+**What comes back is evidence, not testimony.** A worker's result carries what
+it claimed *and*, separately, what AWORG watched it actually do — which tools
+ran, which failed. Where a worker reports success over failed calls, the
+result says so. That is the one failure you cannot catch for yourself, and it
+is not fixed by a better model.
+
+Their work nests in the Activities pane, so you can see which worker did what
+rather than a flat list with no sign of who ran anything.
 
 ## Activities: what is happening right now
 
@@ -367,6 +405,7 @@ aworg/
   lifecycle.py   how far along the Resident's application is
   resident.py    the Resident itself
   agent.py       the loop: reach for a tool, read what came back, carry on
+  workers.py     spawning a specialist, and reporting what it actually did
   activities.py  what is happening right now, and who is watching it
   server.py      the owner interface's backing service
   providers.py   the model providers an owner may choose from
