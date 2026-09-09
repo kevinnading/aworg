@@ -268,6 +268,21 @@ Speak plainly and directly. The owner may not be a programmer, and should
 never need to be one to work with you."""
 
 
+#: Tool scopes the shipped workers used to have. A worker still carrying one
+#: of these exactly was configured by AWORG and never touched by the owner,
+#: so it is safe to bring up to date -- the same exact-match rule the system
+#: prompt uses, and for the same reason.
+#:
+#: Needed because tools arrive after workers do. The runner shipped before
+#: start_process existed, so it was left trying to launch a web server with
+#: the tool that waits for things to finish, and sat there until the timeout.
+PREVIOUS_WORKER_TOOLS = {
+    "runner": [["execute_command", "read_file"]],
+    "checker": [["read_file", "search_files", "execute_command"]],
+    "builder": [],
+}
+
+
 #: The workers a fresh Aworg starts with.
 #:
 #: Seeded once, when the table is empty, and never again -- an owner who
@@ -304,9 +319,13 @@ DEFAULT_WORKERS = [
         "name": "runner",
         "description": (
             "Runs commands and reports exactly what they printed and the "
-            "exit code. Cannot write files."
+            "exit code. Can also start and stop long-running things like "
+            "servers. Cannot write files."
         ),
-        "tools": ["execute_command", "read_file"],
+        "tools": [
+            "execute_command", "start_process", "list_processes",
+            "stop_process", "read_file",
+        ],
         "system_prompt": (
             "You run commands. Run what the task asks, then report exactly "
             "what came back.\n\n"
@@ -322,7 +341,13 @@ DEFAULT_WORKERS = [
             "found. Use it to verify work rather than trusting it. Cannot "
             "change anything."
         ),
-        "tools": ["read_file", "search_files", "execute_command"],
+        # http_request so it can check that a served page actually answers,
+        # which is the difference between "the server process exists" and
+        # "the site works". list_processes for the same reason.
+        "tools": [
+            "read_file", "search_files", "execute_command",
+            "http_request", "list_processes",
+        ],
         "system_prompt": (
             "You check whether something actually works. You did not do the "
             "work and you have no stake in it having gone well.\n\n"
@@ -378,6 +403,34 @@ class Store:
             )
             self._refresh_default_prompt(conn)
             self._seed_workers(conn)
+            self._refresh_worker_tools(conn)
+
+    @staticmethod
+    def _refresh_worker_tools(conn) -> None:
+        """Give a shipped worker any tools it predates.
+
+        Only where its scope is still exactly one AWORG set. A worker whose
+        tools the owner has changed is theirs, and widening it behind their
+        back would hand a specialist abilities they deliberately withheld --
+        which is the one thing a tool scope exists to prevent.
+        """
+        wanted = {w["name"]: w["tools"] for w in DEFAULT_WORKERS}
+        for row in conn.execute("SELECT id, name, tools FROM workers").fetchall():
+            target = wanted.get(row["name"])
+            if not target:
+                continue
+            try:
+                current = json.loads(row["tools"] or "[]")
+            except ValueError:
+                continue
+            if current == target:
+                continue
+            if current in PREVIOUS_WORKER_TOOLS.get(row["name"], []):
+                conn.execute(
+                    "UPDATE workers SET tools = ?, updated_at = datetime('now') "
+                    "WHERE id = ?",
+                    (json.dumps(target), row["id"]),
+                )
 
     @staticmethod
     def _seed_workers(conn) -> None:
