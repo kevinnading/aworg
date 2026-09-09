@@ -70,6 +70,10 @@ async function boot() {
   // once the panes have been built.
   buildPanes();
   wireResizers();
+  // The Workers pane ages its own rows out, so it needs a heartbeat rather
+  // than only repainting when something happens -- otherwise the last
+  // finished worker would sit there until the next unrelated event.
+  setInterval(paintWorkers, 2000);
   wireReset();
 
   await refresh();
@@ -1151,10 +1155,33 @@ async function followActivities() {
   }
 }
 
+/* Forget the oldest finished work, per kind rather than in total.
+ *
+ * In total was wrong, and wrong in a way that hid exactly what the owner
+ * wanted to see: a single busy worker made eleven tool calls, those eleven
+ * finished activities blew straight past the keep-six limit, and the worker
+ * row that spawned them was evicted by its own children. Two workers ran for
+ * thirty seconds and the Workers pane stayed empty the whole time.
+ *
+ * A worker and a tool call are not the same size of thing. One tool call is
+ * a moment; one worker is a piece of delegated work with a name, and it is
+ * worth keeping several of those around even while the calls beneath them
+ * are being forgotten. */
+const KEEP_FINISHED_BY_KIND = { worker: 12, tool: ACTIVITY_KEEP_FINISHED };
+
 function trimFinishedActivities() {
-  const finished = [...activityState.known.values()].filter(isActivityFinished);
-  const excess = finished.length - ACTIVITY_KEEP_FINISHED;
-  for (let i = 0; i < excess; i += 1) activityState.known.delete(finished[i].id);
+  const byKind = new Map();
+  for (const item of activityState.known.values()) {
+    if (!isActivityFinished(item)) continue;
+    if (!byKind.has(item.kind)) byKind.set(item.kind, []);
+    byKind.get(item.kind).push(item);
+  }
+  for (const [kind, items] of byKind) {
+    const keep = KEEP_FINISHED_BY_KIND[kind] ?? ACTIVITY_KEEP_FINISHED;
+    for (let i = 0; i < items.length - keep; i += 1) {
+      activityState.known.delete(items[i].id);
+    }
+  }
 }
 
 const ACTIVITY_TERMINAL = ["completed", "failed", "cancelled", "timed_out"];
@@ -1235,15 +1262,35 @@ async function toggleActivityPayload(item) {
  * any more, and leaving it here would rebuild the permanent list this pane
  * was changed to stop being. What it did remains in Activities, which is the
  * pane that answers what happened. */
+//: How long a finished worker stays visible. Twelve seconds is long enough
+//: that an owner glancing over sees it happened, and short enough that the
+//: pane still answers "who is working now" rather than "who has ever worked".
+const WORKER_LINGER = 12;
+
 function paintWorkers() {
   const host = document.querySelector("#pane-workers .pane-body");
   if (!host) return;
 
-  const running = [...activityState.known.values()].filter(
-    (a) => a.kind === "worker" && !isActivityFinished(a)
+  // Running ones, plus any that finished a moment ago.
+  //
+  // Dropping a worker the instant it finishes is technically right and
+  // practically useless: a worker that did eight tool calls and left was
+  // never on screen long enough to be seen, so the pane read as permanently
+  // empty while workers were in fact doing the job. "I did not see any
+  // workers working" was the report, and the workers had worked.
+  //
+  // So a finished one lingers briefly, dimmed, then goes. Long enough to
+  // notice, short enough that this stays a pane about now rather than
+  // becoming the roster it was changed to stop being.
+  const now = Date.now() / 1000;
+  const workers = [...activityState.known.values()].filter(
+    (a) =>
+      a.kind === "worker" &&
+      (!isActivityFinished(a) ||
+        now - (a.created_at + (a.duration || 0)) < WORKER_LINGER)
   );
 
-  if (!running.length) {
+  if (!workers.length) {
     host.replaceChildren(
       emptyPane({
         empty_heading: "No workers running.",
@@ -1257,9 +1304,10 @@ function paintWorkers() {
 
   const list = document.createElement("div");
   list.className = "activity-list";
-  for (const worker of running.reverse()) {
+  for (const worker of workers.reverse()) {
     const row = document.createElement("div");
     row.className = `activity-row worker ${worker.state}`;
+    if (isActivityFinished(worker)) row.classList.add("leaving");
 
     const dot = document.createElement("span");
     dot.className = "activity-dot";

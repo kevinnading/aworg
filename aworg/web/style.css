@@ -1842,3 +1842,7 @@ button.danger:disabled { opacity: 0.4; cursor: not-allowed; }
   background: var(--line);
   flex: 1;
 }
+
+/* A worker on its way out. Still legible, visibly done. */
+.activity-row.worker.leaving { opacity: 0.45; }
+.activity-row.worker.leaving .activity-dot { animation: none; }
