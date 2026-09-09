@@ -27,6 +27,7 @@ from typing import Any, AsyncIterator
 
 from . import host
 from .activities import ActivityManager
+from .processes import ProcessTable
 from .agent import AgentLoop
 from .models import Message, ModelError, build_adapter
 from .tools import Registry, ToolContext
@@ -82,6 +83,10 @@ class Resident:
         #: work; it belongs to the Aworg rather than to the Resident, and
         #: moves out when workers need to share one.
         self.activities = ActivityManager()
+        #: Long-running programs the Resident has started. Session-scoped:
+        #: a restart cannot adopt processes it did not spawn, so nothing
+        #: pretends otherwise.
+        self.processes = ProcessTable()
         #: Discovered once at startup. Whether a capability is *enabled* is
         #: asked of the store on every use rather than captured here, so the
         #: owner turning one off takes effect on the next call instead of at
@@ -490,6 +495,52 @@ class Resident:
             ),
         }
 
+    #: How many times a turn may carry itself on before it must stop and let
+    #: the owner speak.
+    #:
+    #: There is a ceiling because there has to be one, not because six is a
+    #: meaningful number. A Resident working an eight-task plan should not
+    #: need the owner to type "carry on" eight times; a Resident looping on a
+    #: task it cannot finish should not be able to do so all night. Every leg
+    #: is a fresh set of rounds, so this is a large amount of work.
+    MAX_CONTINUATIONS = 6
+
+    def _continuation(self, turn: "Turn", failed: bool) -> tuple[str, list] | None:
+        """Whether to carry on unprompted, and what to say if so.
+
+        Only ever continues towards a plan the Resident wrote down itself.
+        That is the whole guard: without tasks there is no evidence the
+        Resident intended more than it did, and inventing "keep going" for a
+        Resident that thinks it has finished is how an assistant turns into a
+        machine that will not stop talking.
+
+        It stops on any of four things -- the owner asked it to stop, the
+        turn errored, nothing is open, or nothing is left that is not
+        blocked. A blocked task needs a person, and grinding at one is the
+        failure mode this is most likely to produce.
+        """
+        if turn.stopping or failed:
+            return None
+
+        open_tasks = self.store.list_tasks(self.store.OPEN_STATES)
+        workable = [t for t in open_tasks if t["state"] != "blocked"]
+        if not workable:
+            return None
+
+        blocked = [t for t in open_tasks if t["state"] == "blocked"]
+        nudge = (
+            "Continue with your plan. The next thing not yet done is "
+            f"\"{workable[0]['title']}\". Work it, mark it done once you have "
+            "watched it succeed, and stop when the plan is finished or you "
+            "are genuinely stuck."
+        )
+        if blocked:
+            nudge += (
+                f" ({len(blocked)} task{'s' if len(blocked) != 1 else ''} "
+                "blocked and waiting on the owner -- leave those.)"
+            )
+        return nudge, workable
+
     def start_turn(self, text: str) -> "Turn":
         """Begin a reply, and return the turn it happens in.
 
@@ -505,8 +556,24 @@ class Resident:
 
         async def run() -> None:
             try:
-                async for event in self.respond_to(text, turn):
-                    turn.emit(event)
+                message = text
+                for leg in range(self.MAX_CONTINUATIONS + 1):
+                    failed = False
+                    async for event in self.respond_to(message, turn):
+                        if event["type"] == "error":
+                            failed = True
+                        turn.emit(event)
+
+                    nudge = self._continuation(turn, failed)
+                    if nudge is None:
+                        break
+                    # Said in the conversation rather than slipped in behind
+                    # it. The owner should be able to see why the Resident
+                    # carried on without them, and read the same sentence it
+                    # read -- an interface that hides its own prompting is
+                    # one where nobody can tell whose idea something was.
+                    turn.emit({"type": "continuing", "remaining": len(nudge[1])})
+                    message = nudge[0]
             except Exception as exc:                      # noqa: BLE001
                 # Nothing above is watching this task, so a failure here
                 # would otherwise be silent and the turn would never end.
@@ -635,6 +702,7 @@ class Resident:
                 activities=self.activities,
                 paths=self.paths,
                 host_facts=self.host,
+                processes=self.processes,
                 parent_id=None,
             )
 
@@ -649,6 +717,7 @@ class Resident:
                 spawn=spawn,
                 workers=[w["name"] for w in crew],
                 store=self.store,
+                processes=self.processes,
             ),
             activities=self.activities,
             live={"workers": crew},

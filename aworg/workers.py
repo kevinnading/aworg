@@ -116,6 +116,7 @@ async def run_worker(
     activities: ActivityManager,
     paths: Any,
     host_facts: dict[str, Any],
+    processes: Any = None,
     parent_id: str | None = None,
 ) -> WorkerResult:
     """Run one worker on one task and come back with what happened.
@@ -152,7 +153,13 @@ async def run_worker(
         adapter=build_adapter(connection, api_key),
         registry=registry,
         context=ToolContext(
-            paths=paths, activities=activities, host=host_facts
+            paths=paths,
+            activities=activities,
+            host=host_facts,
+            # Shared with the Resident on purpose. A worker that started a
+            # server on its own private table would leave something running
+            # that nothing could later find or stop.
+            processes=processes,
         ),
         activities=activities,
         # The whole point. An empty scope would mean every enabled tool,

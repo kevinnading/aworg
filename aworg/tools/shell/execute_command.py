@@ -23,8 +23,10 @@ from ..base import ToolContext, ToolError, ToolResult, resolve_path, size_for_mo
 NAME = "execute_command"
 
 DESCRIPTION = (
-    "Run a shell command and return its output and exit code. Runs in the "
-    "Living Workspace unless another working directory is given."
+    "Run a shell command, WAIT for it to finish, and return its output and "
+    "exit code. Runs in the Living Workspace unless another directory is "
+    "given. Not for servers or anything else meant to keep running -- use "
+    "start_process for those."
 )
 
 INPUT_SCHEMA = {
@@ -100,6 +102,14 @@ async def run(
     output = stdout.decode("utf-8", errors="replace").strip()
     code = process.returncode
 
+    # A command that launched something into the background and returned.
+    # Exit 0 here means the launcher succeeded, which says nothing whatever
+    # about the thing it launched -- and a Resident that reads it as success
+    # tells the owner a server is running when nothing is listening. That
+    # happened: "Done! The HTTP server is now running on port 8000", with
+    # the port closed.
+    detached = _looks_detached(command)
+
     if not output:
         body = f"(no output)\nExit code: {code}"
     else:
@@ -107,12 +117,37 @@ async def run(
 
     # A non-zero exit comes back flagged. The model should not have to infer
     # failure by reading the text, and a small one frequently will not.
+    if detached and code == 0:
+        body += (
+            "\n\nNote: this command started something and returned "
+            "immediately. Exit 0 means the launcher worked -- it is not "
+            "evidence that what it started is running, and AWORG cannot see "
+            "the process or its output. Use start_process instead, which "
+            "keeps hold of it, or check for yourself before reporting "
+            "success."
+        )
+
     return ToolResult(
         text=size_for_model(body),
         payload=output,
         is_error=code != 0,
-        summary=f"exit {code}",
+        summary=f"exit {code}" + (" (detached)" if detached else ""),
     )
+
+
+#: Ways of saying "start this and do not wait". Not an exhaustive list and
+#: not meant to be -- it catches the shapes a model actually reaches for when
+#: it wants a server, which is what the warning is for.
+DETACHING = ("start-process", "start /b", "nohup", "&disown", "disown")
+
+
+def _looks_detached(command: str) -> bool:
+    lowered = command.strip().lower()
+    if any(marker in lowered for marker in DETACHING):
+        return True
+    # A trailing & on POSIX. Checked last and narrowly, because `&` appears
+    # inside plenty of commands that do wait.
+    return lowered.endswith("&") and not lowered.endswith("&&")
 
 
 def _argv(command: str, facts: dict) -> list[str]:

@@ -470,6 +470,17 @@ async function watchTurn(open, text) {
           // has stopped seeing the start of the conversation at the moment
           // it becomes true, not afterwards.
           document.querySelector(".chat").classList.add("truncating");
+        } else if (event.type === "continuing") {
+          // A visible seam, not a hidden step. The Resident carried on by
+          // itself because its own plan still had work in it, and an owner
+          // who cannot see that happen cannot tell whose idea it was --
+          // which is exactly the thing an autonomous system owes them.
+          const seam = document.createElement("div");
+          seam.className = "turn-seam";
+          const count = event.remaining;
+          seam.textContent =
+            `Carrying on with the plan — ${count} task${count === 1 ? "" : "s"} left`;
+          box.appendChild(seam);
         } else if (event.type === "thinking") {
           thinking += event.text;
           if (!thoughts.isConnected) {
@@ -1066,6 +1077,7 @@ function buildPanes() {
   // whatever was drawn in it. Repainting from state kept outside the DOM is
   // what stops a capability toggle wiping the running Activities list.
   paintActivities();
+  paintWorkers();
 }
 
 /* ---------- Activities ---------- */
@@ -1130,6 +1142,7 @@ async function followActivities() {
           trimFinishedActivities();
         }
         paintActivities();
+        paintWorkers();
       }
     } catch (_) { /* fall through to the wait below */ }
     // The server may simply be restarting. Waiting a moment and trying
@@ -1210,6 +1223,61 @@ async function toggleActivityPayload(item) {
     activityState.payloads.set(item.id, `Could not load: ${error.message}`);
   }
   paintActivities();
+}
+
+/* Who is working right now.
+ *
+ * Painted from the same live stream as Activities rather than from the pane
+ * payload, because a worker's whole nature is to appear and then go: a pane
+ * drawn from a snapshot would show a roster that is already out of date.
+ *
+ * Only unfinished workers. A worker that has finished is not working for you
+ * any more, and leaving it here would rebuild the permanent list this pane
+ * was changed to stop being. What it did remains in Activities, which is the
+ * pane that answers what happened. */
+function paintWorkers() {
+  const host = document.querySelector("#pane-workers .pane-body");
+  if (!host) return;
+
+  const running = [...activityState.known.values()].filter(
+    (a) => a.kind === "worker" && !isActivityFinished(a)
+  );
+
+  if (!running.length) {
+    host.replaceChildren(
+      emptyPane({
+        empty_heading: "No workers running.",
+        empty_detail:
+          "Workers appear here while they are working and leave when they " +
+          "finish. What kinds of worker exist is set in Settings.",
+      })
+    );
+    return;
+  }
+
+  const list = document.createElement("div");
+  list.className = "activity-list";
+  for (const worker of running.reverse()) {
+    const row = document.createElement("div");
+    row.className = `activity-row worker ${worker.state}`;
+
+    const dot = document.createElement("span");
+    dot.className = "activity-dot";
+
+    const name = document.createElement("span");
+    name.className = "activity-name";
+    name.textContent = worker.label;
+
+    // What it was actually asked to do. Without it the pane says three
+    // workers are running and nothing about what any of them is doing.
+    const detail = document.createElement("span");
+    detail.className = "activity-detail";
+    detail.textContent = worker.detail || "";
+
+    row.append(dot, name, detail);
+    list.appendChild(row);
+  }
+  host.replaceChildren(list);
 }
 
 function activityRow(item) {
