@@ -210,33 +210,31 @@ class SkillLibrary:
             return ""
 
         standing = [s for s in skills if s.always]
-        lines = "\n".join(f"  {s.name}: {s.description}" for s in skills)
+        askable = [s for s in skills if not s.always]
+
+        parts: list[str] = []
+        if askable:
+            # Only these need describing. A skill carried in full does
+            # not also need a sentence saying when to read it -- the
+            # Resident has already read it, and the description was pure
+            # duplication sitting four lines above the thing it named.
+            listed = "\n".join(f"  {s.name}: {s.description}" for s in askable)
+            parts.append(
+                "SKILLS you can load. Call read_skill with the name when "
+                "the job matches, before planning or acting -- a skill is "
+                "how this machine does that job, which is not always how "
+                "you would.\n" + listed
+            )
         if standing:
             bodies = "\n\n".join(
                 f"### {s.name}\n{s.body()}" for s in standing
             )
-            lines += (
-                "\n\nThese apply to everything you do here, so they are given "
-                "in full rather than waiting to be asked for:\n\n" + bodies
+            parts.append(
+                "SKILLS already loaded. These apply to everything you do "
+                "here, so they are given in full rather than waiting to "
+                "be asked for. Follow them.\n\n" + bodies
             )
-        # Written as an instruction rather than a listing, because a listing
-        # is what it was and the Resident read straight past it: given a
-        # skill about building websites and asked to build a website, it
-        # built the website without ever opening the skill.
-        #
-        # The last sentence is the load-bearing one. A model asked to do
-        # something familiar feels no need to consult anything, and cannot
-        # tell from the inside that this Aworg's way differs from the one in
-        # its training. Saying so is what makes the difference legible.
-        return (
-            "SKILLS -- procedures this Aworg knows. When a job matches one "
-            "of these, call read_skill FIRST, before planning or acting.\n"
-            + lines
-            + "\nA skill holds what you do not already know: this machine's "
-            "conventions, what has gone wrong here before, how this owner "
-            "wants it done. Doing such a job your usual way instead is how "
-            "you get it confidently and subtly wrong."
-        )
+        return "\n\n".join(parts)
 
 
 def _normalise(name: str) -> str:
