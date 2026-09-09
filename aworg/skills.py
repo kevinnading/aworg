@@ -35,6 +35,12 @@ SKILL_FILE = "SKILL.md"
 SHIPPED = "shipped"
 INSTALLED = "installed"
 
+#: The spec's cap on description plus when_to_use in a skill listing. Held
+#: to because the listing is the thing every message carries, and a skill
+#: that quietly ate a thousand tokens of prompt would be a skill nobody
+#: could see was expensive.
+MAX_DESCRIPTION_CHARS = 1536
+
 #: How much of a skill body to hand over at once. Generous, because a skill
 #: is read deliberately rather than stumbled into, and a procedure cut in
 #: half is worse than no procedure -- but not unbounded, because a skill is
@@ -52,11 +58,22 @@ class Skill:
         path: Path,
         source: str,
         always: bool = False,
+        model_invocable: bool = True,
+        extras: dict[str, str] | None = None,
     ):
         self.name = name
         self.description = description
         self.path = path
         self.source = source
+        #: `disable-model-invocation` inverted. A skill the author marked
+        #: that way is not offered to the Resident at all -- it exists for
+        #: the owner to run deliberately, which is the spec's meaning.
+        self.model_invocable = model_invocable
+        #: Everything else the frontmatter declared. Carried rather than
+        #: discarded so the pane can show it and nothing is silently lost,
+        #: and because the spec's own position on fields a runtime does not
+        #: act on is to accept them.
+        self.extras = extras or {}
         #: Carried in full in every system prompt rather than waiting to be
         #: read. See SkillLibrary.prompt_block for why this exists and when
         #: it is the wrong choice.
@@ -100,6 +117,8 @@ class Skill:
             "description": self.description,
             "source": self.source,
             "always": self.always,
+            "model_invocable": self.model_invocable,
+            "extras": self.extras,
             "path": str(self.path),
             "references": self.references(),
         }
@@ -108,7 +127,16 @@ class Skill:
 class SkillLibrary:
     """Every skill this Aworg can reach, from wherever they live."""
 
-    def __init__(self, shipped: Path | None = None, installed: Path | None = None):
+    def __init__(
+        self,
+        shipped: Path | None = None,
+        installed: Path | None = None,
+        is_enabled: Any = None,
+    ):
+        #: Asked per skill name, on every use rather than captured, so the
+        #: owner turning one off takes effect on the next message instead of
+        #: at the next restart -- the same rule capabilities follow.
+        self.is_enabled = is_enabled or (lambda _name: True)
         #: Ships inside the package, beside the tools.
         self.shipped_root = shipped or (Path(__file__).parent / "skills")
         #: The owner's, under their Aworg home. This is also where a Resident
@@ -140,21 +168,57 @@ class SkillLibrary:
                     self.broken[folder.name] = str(exc)
                     continue
 
-                always = str(meta.get("always", "")).strip().lower() in (
-                    "true", "yes", "1"
-                )
+                always = _flag(meta.get("always"))
+                invocable = not _flag(meta.get("disable-model-invocation"))
                 name = (meta.get("name") or folder.name).strip()
+
+                # when_to_use is appended to the description, which is what
+                # the spec says it is for: extra trigger detail that counts
+                # against the same cap.
                 description = (meta.get("description") or "").strip()
+                when = (meta.get("when_to_use") or "").strip()
+                if when:
+                    description = f"{description} {when}".strip()
+                if len(description) > MAX_DESCRIPTION_CHARS:
+                    # Room for the ellipsis inside the cap, not beyond it.
+                    # Truncating to the limit and then appending three
+                    # characters puts the result over a limit the whole
+                    # point of which is not being exceeded.
+                    keep = MAX_DESCRIPTION_CHARS - 3
+                    description = description[:keep].rstrip() + "..."
                 if not description:
                     # Named rather than silently skipped. A skill with no
                     # description is invisible to the Resident, which looks
                     # exactly like the skill not being installed.
                     self.broken[folder.name] = "declares no description"
                     continue
-                self._skills[name] = Skill(name, description, found, source, always)
+                self._skills[name] = Skill(
+                    name, description, found, source, always, invocable,
+                    {k: v for k, v in meta.items()
+                     if k not in ("name", "description", "when_to_use",
+                                  "always", "disable-model-invocation")},
+                )
 
     def all(self) -> list[Skill]:
+        """Every discovered skill, switched on or off.
+
+        The pane needs the lot, because a skill the owner has disabled still
+        has to be visible in order to be switched back on.
+        """
         return sorted(self._skills.values(), key=lambda s: s.name)
+
+    def offered(self) -> list[Skill]:
+        """What the Resident actually gets.
+
+        Two ways to be left out, and they mean different things. The owner
+        switched it off, which is theirs to decide; or the skill's own
+        frontmatter says disable-model-invocation, which is the author
+        saying this one is for a person to run deliberately.
+        """
+        return [
+            s for s in self.all()
+            if s.model_invocable and self.is_enabled(s.name)
+        ]
 
     def get(self, name: str) -> Skill | None:
         """Find a skill the way the Resident names one, forgivingly.
@@ -162,6 +226,18 @@ class SkillLibrary:
         Matched case-insensitively and ignoring separators, because the name
         travels through a model and comes back with whatever capitalisation
         and hyphenation it felt like.
+        """
+        wanted = _normalise(name)
+        for skill in self.offered():
+            if _normalise(skill.name) == wanted:
+                return skill
+        return None
+
+    def get_any(self, name: str) -> Skill | None:
+        """Find a skill whether or not it is switched on.
+
+        `get` deliberately only sees what is offered, so the Resident cannot
+        read a disabled skill. Turning one back on needs to find it anyway.
         """
         wanted = _normalise(name)
         for skill in self._skills.values():
@@ -205,7 +281,7 @@ class SkillLibrary:
         house-style does. The field is additive: any other implementation of
         this format ignores it and the skill still works there.
         """
-        skills = self.all()
+        skills = self.offered()
         if not skills:
             return ""
 
@@ -235,6 +311,11 @@ class SkillLibrary:
                 "be asked for. Follow them.\n\n" + bodies
             )
         return "\n\n".join(parts)
+
+
+def _flag(value: Any) -> bool:
+    """A frontmatter boolean, in every spelling the spec allows."""
+    return str(value or "").strip().lower() in ("true", "yes", "on", "1")
 
 
 def _normalise(name: str) -> str:

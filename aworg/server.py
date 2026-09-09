@@ -536,7 +536,10 @@ def create_app(paths: Paths) -> FastAPI:
             store.capability_enabled,
             store.list_workers(),
             store.list_tasks(store.OPEN_STATES),
-            [s.snapshot() for s in resident.skills.all()],
+            [
+                {**s.snapshot(), "enabled": store.skill_enabled(s.name)}
+                for s in resident.skills.all()
+            ],
         )
 
     @app.post("/api/capabilities/{capability_id}")
@@ -654,9 +657,24 @@ def create_app(paths: Paths) -> FastAPI:
         # restarting anything.
         resident.skills.discover()
         return {
-            "skills": [s.snapshot() for s in resident.skills.all()],
+            "skills": [
+                {**s.snapshot(), "enabled": store.skill_enabled(s.name)}
+                for s in resident.skills.all()
+            ],
             "broken": resident.skills.broken,
         }
+
+    @app.patch("/api/skills/{name}")
+    def update_skill(name: str, body: CapabilityPatch) -> dict[str, Any]:
+        """Switch a skill on or off.
+
+        Reuses the capability patch shape because it is the same decision:
+        one thing the owner has, and whether the Resident may reach for it.
+        """
+        if resident.skills.get_any(name) is None:
+            raise HTTPException(404, "No such skill")
+        store.set_skill_enabled(name, body.enabled)
+        return {"name": name, "enabled": body.enabled}
 
     # -- tasks ----------------------------------------------------------
 

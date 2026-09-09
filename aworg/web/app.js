@@ -1708,7 +1708,7 @@ function taskRow(item) {
  * same sentence the Resident reads every message. */
 function skillRow(item) {
   const row = document.createElement("div");
-  row.className = "pane-item capability skill";
+  row.className = `pane-item capability skill ${item.state || ""}`;
 
   const head = document.createElement("div");
   head.className = "capability-head";
@@ -1719,10 +1719,30 @@ function skillRow(item) {
 
   // Where it came from. A shipped skill and one the owner (or the Resident)
   // wrote are different things to trust and different things to edit.
-  const source = document.createElement("span");
-  source.className = `skill-source ${item.source}`;
-  source.textContent = item.source;
-  head.append(name, source);
+  // How it reaches the Resident, which is the fact that decides whether
+  // switching it off changes anything today.
+  const mode = document.createElement("span");
+  mode.className = `skill-source ${item.always ? "loaded" : item.source}`;
+  mode.textContent = item.always
+    ? "always"
+    : item.model_invocable ? "on demand" : "owner only";
+  mode.title = item.always
+    ? "Carried in full in every message. The Resident has already read it."
+    : item.model_invocable
+      ? "Described in every message; the Resident loads it with read_skill."
+      : "This skill asks not to be loaded by the Resident.";
+
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.className = "capability-toggle";
+  toggle.setAttribute("aria-pressed", String(item.enabled));
+  toggle.textContent = item.enabled ? "On" : "Off";
+  toggle.title = item.enabled
+    ? `Stop offering ${item.name} to the Resident.`
+    : `Offer ${item.name} to the Resident again.`;
+  toggle.onclick = () => setSkill(item.id, !item.enabled);
+
+  head.append(name, mode, toggle);
 
   const detail = document.createElement("span");
   detail.className = "pane-item-detail";
@@ -1738,6 +1758,19 @@ function skillRow(item) {
     row.appendChild(refs);
   }
   return row;
+}
+
+async function setSkill(name, enabled) {
+  try {
+    await api(`/api/skills/${encodeURIComponent(name)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ enabled }),
+    });
+  } catch (error) {
+    return;
+  }
+  app.panes = await api("/api/panes");
+  repaintPane("skills");
 }
 
 async function setWorker(id, enabled) {

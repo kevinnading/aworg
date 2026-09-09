@@ -110,7 +110,8 @@ class Resident:
         #: the owner's -- and any the Resident writes for itself -- live
         #: under their home, where a name collision means theirs wins.
         self.skills = SkillLibrary(
-            installed=(paths.home / "skills") if paths is not None else None
+            installed=(paths.home / "skills") if paths is not None else None,
+            is_enabled=store.skill_enabled,
         )
         #: Observed at startup rather than at install, because a machine
         #: surveyed at install time is wrong the first time its owner

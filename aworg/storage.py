@@ -121,6 +121,12 @@ CREATE TABLE IF NOT EXISTS workers (
     updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS skill_state (
+    id         TEXT PRIMARY KEY,
+    enabled    INTEGER NOT NULL DEFAULT 1,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS capability_state (
     id         TEXT PRIMARY KEY,
     enabled    INTEGER NOT NULL DEFAULT 1,
@@ -1104,6 +1110,29 @@ class Store:
         return worker
 
     # -- capabilities ---------------------------------------------------
+
+    def skill_enabled(self, name: str) -> bool:
+        """Whether the owner has this skill switched on.
+
+        Absent means enabled, exactly as for capabilities: a skill that
+        appears because AWORG shipped it or the owner dropped it in should
+        work without anyone going to turn it on.
+        """
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT enabled FROM skill_state WHERE id = ?", (name,)
+            ).fetchone()
+        return True if row is None else bool(row["enabled"])
+
+    def set_skill_enabled(self, name: str, enabled: bool) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO skill_state (id, enabled, updated_at) "
+                "VALUES (?, ?, datetime('now')) "
+                "ON CONFLICT(id) DO UPDATE SET "
+                "enabled = excluded.enabled, updated_at = excluded.updated_at",
+                (name, int(bool(enabled))),
+            )
 
     def capability_enabled(self, identifier: str) -> bool:
         """Whether the owner has this Capability switched on.
