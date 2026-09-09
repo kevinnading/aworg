@@ -72,6 +72,7 @@ class Skill:
         #: discarded so the pane can show it and nothing is silently lost,
         #: and because the spec's own position on fields a runtime does not
         #: act on is to accept them.
+        self.extras = extras or {}
 
     @property
     def directory(self) -> Path:
