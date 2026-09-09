@@ -35,10 +35,17 @@ from .secrets import credential_ref
 from .tools import Registry, ToolContext
 
 
-#: A worker gets fewer rounds than the Resident. It has one bounded job and a
-#: small model; a 2B still going round eight times has lost the thread rather
-#: than closed in on something, and the Resident is waiting on it.
-WORKER_MAX_ROUNDS = 6
+#: Fewer than the Resident, but not by much, and for a different reason than
+#: it used to be. This was six, on the theory that a small model going round
+#: eight times has lost the thread. That theory was wrong in the same way the
+#: Resident's ten was: it stops a worker doing a genuinely long job, and a
+#: worker that has actually lost the thread is caught by the loop's
+#: repetition check rather than by a count.
+#:
+#: Lower than 200 only because the Resident is blocked while this runs, so a
+#: worker that somehow gets past the repetition check should give the turn
+#: back sooner than the Resident would give it back to the owner.
+WORKER_MAX_ROUNDS = 60
 
 
 class WorkerResult:

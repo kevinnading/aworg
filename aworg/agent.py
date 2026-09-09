@@ -28,15 +28,25 @@ from .models import Message, ModelError, ToolCall
 from .tools import Registry, ToolContext, ToolResult
 
 
-#: How many times round before giving up. A round is one reply plus whatever
-#: tools it asked for, so this is the number of *consecutive* tool-using
-#: replies allowed before the loop insists on stopping.
+#: A backstop, not a work limit, and the distinction was learned the hard
+#: way. This was ten, which stopped a Resident part-way through building a
+#: website -- it had written four pages, each round doing something different
+#: and useful, and the loop ended it because it had counted to ten.
 #:
-#: It exists for the small models this is built against, which get stuck: a
-#: 2B that reads the same file four times is not converging on anything, and
-#: without a ceiling it will keep going until the owner notices. Ten is
-#: comfortably more than real work needs and short of an afternoon's tokens.
-MAX_ROUNDS = 10
+#: A count cannot tell being stuck from being busy. What actually needed
+#: stopping was never "a lot of rounds"; it was a model repeating itself, and
+#: that is now detected directly (see _stuck_on). So this sits far enough out
+#: that real work never meets it, and exists only so a pathological case
+#: cannot run forever. An Aworg is meant to run for years.
+MAX_ROUNDS = 200
+
+#: How many identical calls in a row before the loop calls it a loop.
+#:
+#: Three, because two is a retry and a retry is often right -- a file that was
+#: not there yet, a server still starting. Three of exactly the same call with
+#: exactly the same arguments is not persistence, it is a model that has
+#: stopped taking the results in.
+REPEAT_LIMIT = 3
 
 
 class AgentLoop:
@@ -120,6 +130,10 @@ class AgentLoop:
         """
         tools = self.tools()
         working = list(history)
+        #: What has been called, in order, as name plus arguments. Compared
+        #: rather than counted, because the question is whether the Resident
+        #: is getting anywhere and not how long it has been going.
+        history_of_calls: list[str] = []
 
         for round_number in range(self.max_rounds):
             said: list[str] = []
@@ -176,6 +190,24 @@ class AgentLoop:
             # sees a request it made rather than prose about one.
             self._keep(record, working, text, calls)
 
+            history_of_calls.extend(_signature(c) for c in calls)
+            repeating = _stuck_on(history_of_calls)
+            if repeating:
+                # Stopped for the real reason rather than for running long,
+                # and told which call it was -- a model that knows it has
+                # asked the same thing three times can try something else,
+                # where "you have had enough turns" tells it nothing.
+                yield {
+                    "type": "error",
+                    "message": (
+                        f"Stopped: the same call has been made "
+                        f"{REPEAT_LIMIT} times in a row without anything "
+                        f"changing -- {repeating}. Something else is needed, "
+                        "not another attempt at that."
+                    ),
+                }
+                return
+
             results: list[dict[str, Any]] = []
             for index, call in enumerate(calls):
                 async for event in self._run_tool(call, results):
@@ -198,15 +230,18 @@ class AgentLoop:
                 yield {"type": "stopped", "partial": True}
                 return
 
-        # Out of rounds. Said plainly rather than silently returning whatever
-        # the last reply happened to be, because a loop that gave up is not
-        # the same as one that finished and the owner should not have to
-        # guess which they are looking at.
+        # The backstop, which should effectively never be reached: work
+        # that is going nowhere is caught by repetition long before this, and
+        # work that is going somewhere should not be stopped for taking a
+        # while. Reaching here means something got past both, so it says so
+        # plainly rather than pretending to have finished.
         yield {
             "type": "error",
             "message": (
-                f"Stopped after {self.max_rounds} rounds of tool use without "
-                "reaching an answer. The last thing tried is above."
+                f"Stopped after {self.max_rounds} rounds without finishing. "
+                "That is the backstop rather than a normal limit, so this is "
+                "worth looking at: the work was neither converging nor "
+                "obviously repeating itself."
             ),
         }
 
@@ -382,6 +417,33 @@ class AgentLoop:
         )
         record("tool", rendered, blocks=results)
         working.append(Message(role="tool", content=rendered, blocks=results))
+
+
+def _signature(call: ToolCall) -> str:
+    """A call reduced to what makes it the same call as another.
+
+    Arguments included, because `read_file` twice on different files is
+    progress and twice on the same file is not. Truncated, so that two
+    enormous writes differing only near the end are not treated as one --
+    the head is where a repeated call repeats.
+    """
+    return f"{call.name}({sorted(call.arguments.items())!r:.400})"
+
+
+def _stuck_on(signatures: list[str]) -> str | None:
+    """The call being repeated, if the last few are all the same one.
+
+    Only consecutive repeats count. A Resident that reads a file, writes it,
+    runs it, and reads it again is working; one that reads the same file
+    three times in a row with nothing in between has stopped reading the
+    results.
+    """
+    if len(signatures) < REPEAT_LIMIT:
+        return None
+    tail = signatures[-REPEAT_LIMIT:]
+    if len(set(tail)) == 1:
+        return tail[0][:120]
+    return None
 
 
 def _describe_arguments(arguments: dict[str, Any]) -> str:
