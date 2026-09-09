@@ -267,6 +267,49 @@
       </div>
       </section>
 
+      <section class="settings-section" data-section="reset" data-label="Reset">
+      <div class="panel danger">
+        <div class="panel-head">
+          <div>
+            <h2>Reset this Aworg</h2>
+            <p class="hint">Puts everything back the way it arrived. The
+              conversation, the plan, the workspace and every setting are
+              erased. A copy of the databases is saved to
+              <code>backups/</code> first, so this is recoverable if you
+              change your mind.</p>
+          </div>
+        </div>
+
+        <ul class="reset-list" id="reset-list"></ul>
+
+        <label class="check">
+          <input type="checkbox" id="reset-keep-connections" checked>
+          <span>Keep my model connections and credentials — otherwise you
+            will have to add them again before the Resident can speak.</span>
+        </label>
+
+        <div class="reset-confirm" id="reset-confirm" hidden>
+          <p>Type <code id="reset-code"></code> to confirm. This cannot be
+            undone from here.</p>
+          <div class="row">
+            <input type="text" id="reset-code-input" autocomplete="off"
+                   spellcheck="false" placeholder="Confirmation code">
+            <button type="button" id="reset-go" class="danger" disabled>
+              Reset this Aworg
+            </button>
+            <button type="button" class="ghost" id="reset-cancel">Cancel</button>
+          </div>
+          <span class="error" id="reset-error"></span>
+        </div>
+
+        <div class="row" id="reset-start-row">
+          <button type="button" class="danger" id="reset-start">
+            Reset this Aworg…
+          </button>
+        </div>
+      </div>
+      </section>
+
       </div>
     </div>
   </section>

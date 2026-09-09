@@ -70,6 +70,7 @@ async function boot() {
   // once the panes have been built.
   buildPanes();
   wireResizers();
+  wireReset();
 
   await refresh();
   wireEvents();
@@ -1698,6 +1699,109 @@ function renderLifecycle() {
  * pointer with no re-render in between. Only the release is written down.
  * Persisting every intermediate pixel would be a request per frame to record
  * sizes the owner was moving through rather than choosing. */
+
+/* ---------- Reset ---------- */
+
+/* Putting an Aworg back the way it arrived.
+ *
+ * Guarded by a code the server issues per dialog rather than a fixed word.
+ * "DELETE" typed three times becomes something the hands do without the eyes
+ * reading, which defeats the entire purpose of asking -- a confirmation that
+ * can be given absent-mindedly is not a confirmation.
+ *
+ * The counts are shown before the code, because "your conversation" is easy
+ * to agree to and "47 messages" is the thing actually being weighed. */
+async function startReset() {
+  const preview = await api("/api/reset/preview");
+  el("reset-code").textContent = preview.code;
+  el("reset-code-input").value = "";
+  el("reset-error").textContent = "";
+  el("reset-go").disabled = true;
+
+  const list = el("reset-list");
+  list.innerHTML = "";
+  for (const row of preview.erases) {
+    // A line for everything, including the zeroes. "0 tasks" tells the owner
+    // the plan is already empty, where an absent line leaves them wondering
+    // whether tasks are even covered by this.
+    const item = document.createElement("li");
+    const count = document.createElement("strong");
+    count.textContent = row.count;
+    item.append(count, document.createTextNode(` ${row.what.toLowerCase()}`));
+    if (row.what === "Model connections") item.classList.add("conditional");
+    list.appendChild(item);
+  }
+
+  el("reset-start-row").hidden = true;
+  el("reset-confirm").hidden = false;
+  el("reset-code-input").focus();
+  syncResetList();
+}
+
+/* Connections are struck through when they are being kept, so the list always
+ * describes what this particular reset will actually do. */
+function syncResetList() {
+  const keeping = el("reset-keep-connections").checked;
+  for (const item of document.querySelectorAll("#reset-list .conditional")) {
+    item.classList.toggle("kept", keeping);
+  }
+}
+
+function cancelReset() {
+  el("reset-confirm").hidden = true;
+  el("reset-start-row").hidden = false;
+  el("reset-error").textContent = "";
+}
+
+async function doReset() {
+  const button = el("reset-go");
+  button.disabled = true;
+  button.textContent = "Resetting…";
+  try {
+    const result = await api("/api/reset", {
+      method: "POST",
+      body: JSON.stringify({
+        confirm: el("reset-code-input").value.trim(),
+        keep_connections: el("reset-keep-connections").checked,
+      }),
+    });
+    // Reloaded rather than repainted. A reset changes the panes, the layout,
+    // the theme and the conversation at once, and every one of those is read
+    // at boot -- patching them all up in place would be a second, less
+    // tested, path to the same state.
+    sessionStorage.setItem("aworg-reset", JSON.stringify(result.backups || []));
+    location.reload();
+  } catch (error) {
+    el("reset-error").textContent = error.message;
+    button.textContent = "Reset this Aworg";
+    button.disabled = false;
+  }
+}
+
+function wireReset() {
+  el("reset-start").onclick = startReset;
+  el("reset-cancel").onclick = cancelReset;
+  el("reset-go").onclick = doReset;
+  el("reset-keep-connections").onchange = syncResetList;
+  el("reset-code-input").oninput = (event) => {
+    const typed = event.target.value.trim().toUpperCase();
+    el("reset-go").disabled = typed !== el("reset-code").textContent;
+  };
+
+  // Say what happened, once, on the far side of the reload -- in the panel
+  // the owner was standing in when they did it, rather than in a toast
+  // invented for one message.
+  const backups = sessionStorage.getItem("aworg-reset");
+  if (backups !== null) {
+    sessionStorage.removeItem("aworg-reset");
+    const saved = JSON.parse(backups);
+    const done = el("reset-error");
+    done.classList.add("ok");
+    done.textContent = saved.length
+      ? `Reset. Your previous state is in backups/ as ${saved.join(" and ")}.`
+      : "Reset.";
+  }
+}
 
 function wireResizers() {
   // One rule for every divider on the screen, whatever it separates.

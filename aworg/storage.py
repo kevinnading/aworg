@@ -679,6 +679,48 @@ class Store:
             out.append(record)
         return out
 
+    def factory_reset(self, keep_connections: bool = True) -> dict[str, int]:
+        """Put the database back the way a fresh Aworg starts.
+
+        Deliberately explicit about every table rather than dropping the file
+        and rebuilding. A reset that recreates the schema from scratch is a
+        reset that silently discards any migration an owner's database has
+        been through, and the failure would only show on the next upgrade.
+
+        The shipped workers come back, because a fresh Aworg has them. The
+        shipped prompt comes back too -- an owner who edited theirs asked for
+        a factory reset, and this is the one moment where overwriting it is
+        the thing they requested rather than a liberty.
+        """
+        removed: dict[str, int] = {}
+        with self._connect() as conn:
+            for table in ("messages", "conversations", "tasks", "workers",
+                          "capability_state"):
+                removed[table] = conn.execute(
+                    f"SELECT COUNT(*) c FROM {table}"
+                ).fetchone()["c"]
+                conn.execute(f"DELETE FROM {table}")
+
+            if not keep_connections:
+                removed["connections"] = conn.execute(
+                    "SELECT COUNT(*) c FROM connections"
+                ).fetchone()["c"]
+                conn.execute("DELETE FROM connections")
+
+            conn.execute(
+                "UPDATE resident SET system_prompt = ?, current_conversation_id = NULL"
+                + ("" if keep_connections
+                   else ", primary_connection_id = NULL, worker_connection_id = NULL")
+                + " WHERE id = 1",
+                (DEFAULT_SYSTEM_PROMPT,),
+            )
+            conn.execute("UPDATE layout SET sizes = '{}' WHERE id = 1")
+            conn.execute(
+                "UPDATE appearance SET preset = 'midnight', overrides = '{}' WHERE id = 1"
+            )
+            self._seed_workers(conn)
+        return removed
+
     # -- tasks ----------------------------------------------------------
 
     #: The states a task can be in. `blocked` is the one that earns its

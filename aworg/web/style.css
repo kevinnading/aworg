@@ -1742,3 +1742,81 @@ button.ghost.small {
   padding-right: 6px;
 }
 .pane-item.capability.off .capability-cost { opacity: 0.4; }
+
+/* Reset. Deliberately the only panel that looks like this: an owner who has
+   scrolled here by accident should be able to tell before reading. */
+.panel.danger { border-color: color-mix(in srgb, var(--danger) 35%, var(--line)); }
+
+button.danger {
+  background: transparent;
+  border-color: var(--danger);
+  color: var(--danger);
+}
+button.danger:hover:not(:disabled) { background: var(--danger); color: var(--bg); }
+button.danger:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.reset-list {
+  margin: 12px 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.9;
+}
+.reset-list strong { color: var(--text); font-variant-numeric: tabular-nums; }
+/* Struck through when this reset is keeping them, so the list always
+   describes what is actually about to happen. */
+.reset-list li.kept { opacity: 0.45; text-decoration: line-through; }
+
+.reset-confirm { margin-top: 12px; }
+.reset-confirm code {
+  font-size: 14px;
+  letter-spacing: 0.18em;
+  color: var(--danger);
+  background: var(--code-bg);
+  padding: 2px 8px;
+  border-radius: 3px;
+  user-select: all;
+}
+#reset-code-input { text-transform: uppercase; letter-spacing: 0.12em; max-width: 180px; }
+.error.ok { color: var(--ok); }
+
+/* [hidden] means hidden, whatever else a rule says.
+ *
+ * This has now caught three separate elements: a field note that kept
+ * showing a warning about a provider the owner had moved off, the composer's
+ * stop button, and the reset panel's start button sitting under the very
+ * confirmation it was supposed to be replaced by. Each was patched on its
+ * own, and each time the next one was already waiting.
+ *
+ * The cause is always the same. `[hidden]` is a plain attribute selector in
+ * the browser's own sheet, so any class rule carrying a `display` outranks
+ * it -- `.row { display: flex }` is enough. Every check reads the property,
+ * which is correctly true, and every check passes while the thing is plainly
+ * on screen.
+ *
+ * So it is settled here once for everything. Note that `!important` is
+ * exactly right in this one case: the whole point of the attribute is that
+ * it should not be overridable by a layout rule that knows nothing about it.
+ */
+[hidden] { display: none !important; }
+
+/* A checkbox and its explanation on one line, the box aligned to the first
+   line of text rather than floating beside the middle of a wrapped
+   paragraph. */
+/* Grid rather than flex, deliberately. Flex here gave the explanation a
+   width of first 64px and then 0 -- one word per line down the side of the
+   panel -- because something upstream is constraining how a flex child
+   resolves its basis. Two named columns cannot be argued with: the box takes
+   what it needs and the sentence takes everything else. */
+.check {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.5;
+  cursor: pointer;
+  max-width: 640px;
+}
+.check input { margin: 2px 0 0; }

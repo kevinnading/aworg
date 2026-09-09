@@ -72,6 +72,17 @@ class SecretStore:
         with self._connect() as conn:
             conn.execute("DELETE FROM secrets WHERE ref = ?", (ref,))
 
+    def clear(self) -> int:
+        """Forget every credential. Only a factory reset should call this.
+
+        Deliberately not reachable from anything the Resident can do. A
+        credential the owner typed once and cannot read back is the one piece
+        of state here that is genuinely irrecoverable from inside AWORG, so
+        the only path to it is a person typing a code they were shown.
+        """
+        with self._connect() as conn:
+            return conn.execute("DELETE FROM secrets").rowcount
+
 
 def credential_ref(connection_id: str) -> str:
     """The stable reference under which a connection's credential lives."""

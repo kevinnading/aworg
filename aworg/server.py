@@ -9,6 +9,9 @@ are allowed to talk to a Resident under far tighter restrictions.
 from __future__ import annotations
 
 import json
+import secrets as secrets_module
+import shutil
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -20,6 +23,7 @@ from pydantic import BaseModel
 
 from .models import CAPABILITY_TAGS, PROVIDER_LABELS, ModelError, build_adapter
 from .paths import Paths
+from .activities import ActivityManager
 from .resident import Busy, Resident
 from .secrets import SecretStore, credential_ref
 from . import layout as layout_settings
@@ -89,6 +93,14 @@ class AppearancePatch(BaseModel):
 
 class CapabilityPatch(BaseModel):
     enabled: bool
+
+
+class ResetBody(BaseModel):
+    confirm: str
+    #: Defaults to keeping them, because the alternative is an owner who
+    #: wanted a clean conversation and finds their Resident mute with no
+    #: model to think with.
+    keep_connections: bool = True
 
 
 class TaskPatch(BaseModel):
@@ -522,6 +534,83 @@ def create_app(paths: Paths) -> FastAPI:
             raise HTTPException(404, f"No capability called {capability_id!r}")
         store.set_capability_enabled(capability_id, body.enabled)
         return {"id": capability_id, "enabled": body.enabled}
+
+    # -- reset ----------------------------------------------------------
+
+    #: The code the owner must type, and the only copy of it. Issued per
+    #: dialog and thrown away on use, so it cannot become muscle memory --
+    #: which is the entire reason for asking. A fixed word like "DELETE" is
+    #: typed without reading by the third time.
+    pending_code: dict[str, str] = {}
+
+    @app.get("/api/reset/preview")
+    def reset_preview() -> dict[str, Any]:
+        """What a reset would erase, counted, plus a fresh confirmation code.
+
+        Counted rather than described. "Your conversation" is easy to agree
+        to; "47 messages" is the thing the owner actually has to weigh, and
+        they deserve the real number before they type anything.
+        """
+        code = secrets_module.token_hex(3).upper()
+        pending_code["code"] = code
+
+        counts = store.task_counts()
+        conversation = store.messages(store.current_conversation_id())
+        workspace = paths.workspace
+        files = sum(1 for _ in workspace.rglob("*")) if workspace.exists() else 0
+
+        return {
+            "code": code,
+            "erases": [
+                {"what": "Messages in the conversation", "count": len(conversation)},
+                {"what": "Tasks in the plan", "count": sum(counts.values())},
+                {"what": "Files in the Living Workspace", "count": files},
+                {"what": "Workers", "count": len(store.list_workers())},
+                {"what": "Model connections", "count": len(store.list_connections())},
+            ],
+        }
+
+    @app.post("/api/reset")
+    def reset_aworg(body: ResetBody) -> dict[str, Any]:
+        """Put this Aworg back the way it arrived.
+
+        The databases are copied to backups/ before anything is touched. A
+        reset the owner regrets is then a file copy away from being undone,
+        which is cheap to provide and impossible to add afterwards.
+        """
+        expected = pending_code.get("code")
+        if not expected or body.confirm.strip().upper() != expected:
+            raise HTTPException(400, "That confirmation code does not match.")
+        # Spent, whether or not the rest succeeds. A code that survives its
+        # use is a code a second click could reuse.
+        pending_code.pop("code", None)
+
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        backups = paths.home / "backups"
+        backups.mkdir(exist_ok=True)
+        saved = []
+        for name in ("state.db", "secrets.db"):
+            source = paths.home / name
+            if source.exists():
+                target = backups / f"{source.stem}-{stamp}.db"
+                shutil.copy2(source, target)
+                saved.append(target.name)
+
+        removed = store.factory_reset(keep_connections=body.keep_connections)
+        if not body.keep_connections:
+            secrets.clear()
+
+        for folder in (paths.workspace, paths.logs):
+            if folder.exists():
+                for item in folder.iterdir():
+                    shutil.rmtree(item, ignore_errors=True) if item.is_dir() else item.unlink()
+            folder.mkdir(exist_ok=True)
+
+        # Runtime state is not in the database and has to be dropped by hand.
+        resident.activities = ActivityManager()
+        resident.turn = None
+
+        return {"status": "reset", "backups": saved, "removed": removed}
 
     # -- tasks ----------------------------------------------------------
 
