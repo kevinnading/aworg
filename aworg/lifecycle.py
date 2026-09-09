@@ -65,20 +65,38 @@ STAGES: list[dict[str, str]] = [
 
 STAGE_IDS = [stage["id"] for stage in STAGES]
 
-#: The furthest stage the current milestone can produce evidence for. Stages
+#: The furthest stage anything can currently produce evidence for. Stages
 #: past this are shown as out of reach rather than merely not yet achieved --
 #: an owner should be able to tell "my application has not got there" apart
 #: from "nothing could have got there yet".
-REACHABLE_THROUGH = "building"
+#:
+#: This was "building" for as long as nothing observed a running process. It
+#: moves to "running" now that AWORG holds the processes the Resident starts
+#: and can see one is alive -- and no further, because "verified" needs a
+#: check that actually ran and nothing yet records those.
+REACHABLE_THROUGH = "running"
 
 
-def assess(workspace_has_files: bool) -> dict[str, Any]:
+def assess(
+    workspace_has_files: bool, serving: dict[str, Any] | None = None
+) -> dict[str, Any]:
     """Which stage the application is at, and why.
 
     Takes observations rather than consulting the world itself, so that the
     rule stays testable and the caller stays responsible for looking.
+
+    `serving` is a process AWORG started that is still alive and answering on
+    a port, or None. It is evidence rather than testimony -- the Resident
+    saying it started a server does not move this, and cannot, which is the
+    whole reason the stage is derived here instead of being reported.
     """
-    if workspace_has_files:
+    if serving:
+        current = "running"
+        reason = (
+            f"{serving.get('label') or 'A process'} has been up for "
+            f"{serving.get('uptime', 0):.0f}s on port {serving.get('port')}."
+        )
+    elif workspace_has_files:
         current = "building"
         reason = "There are files in the Living Workspace."
     else:

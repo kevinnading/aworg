@@ -9,6 +9,7 @@ are allowed to talk to a Resident under far tighter restrictions.
 from __future__ import annotations
 
 import json
+import re
 import secrets as secrets_module
 import shutil
 import time
@@ -502,7 +503,7 @@ def create_app(paths: Paths) -> FastAPI:
         Resident reports, because an owner who could audit the Resident's
         claims would not need AWORG in the first place.
         """
-        return lifecycle.assess(workspace_has_files())
+        return lifecycle.assess(workspace_has_files(), serving_now())
 
     @app.get("/api/panes")
     def status_panes() -> list[dict[str, Any]]:
@@ -792,19 +793,78 @@ def create_app(paths: Paths) -> FastAPI:
             "root": str(root),
         }
 
+    #: Ports a served application is most likely to be on. Guessing is
+    #: acceptable here in a way it is not elsewhere, because being wrong
+    #: costs a preview that does not appear rather than a false claim -- and
+    #: the alternative is asking the owner to type a port for something the
+    #: Resident chose.
+    PREVIEW_PORTS = (8000, 3000, 5173, 8080, 5000, 4200, 8888)
+
+    def serving_now() -> dict[str, Any] | None:
+        """A process AWORG started that is alive on a plausible port.
+
+        Shared by the preview and the Lifecycle stepper deliberately. Two
+        separate answers to "is it running" is two chances to disagree, and
+        the pane showing a page while the stepper says "being built" would
+        leave the owner with no idea which to believe.
+        """
+        for record in resident.processes.all():
+            if not record.alive:
+                continue
+            found = re.search(
+                r"(?<![\d])([\d]{4,5})(?![\d])",
+                record.command,
+            )
+            port = int(found.group(1)) if found else None
+            if port is None or port not in PREVIEW_PORTS:
+                continue
+            return {
+                "id": record.id,
+                "label": record.label,
+                "port": port,
+                "uptime": record.uptime,
+            }
+        return None
+
     @app.get("/api/preview")
     def preview() -> dict[str, Any]:
         """Where the owner watches the Resident's application run.
 
-        Nothing can be running yet -- the Resident gains the ability to build
-        and start software in Milestone 2. Saying so plainly is better than an
-        empty frame that looks broken.
+        Derived from what is actually running rather than from anything the
+        Resident said about it. A process the Resident started, still alive,
+        with a port in its command line, is evidence; "I started the server"
+        is not, and this pane showing a page is the owner's own confirmation
+        that it worked.
         """
+        for record in resident.processes.all():
+            if not record.alive:
+                continue
+            # Word-bounded, so a port is not found inside a longer
+            # number. The allowlist below would reject a spurious
+            # match anyway, but matching 1234 inside 123456 and then
+            # silently failing is a worse way to be right.
+            found = re.search(
+                r"(?<![\d])(\d{4,5})(?![\d])",
+                record.command,
+            )
+            port = int(found.group(1)) if found else None
+            if port is None or port not in PREVIEW_PORTS:
+                continue
+            return {
+                "available": True,
+                "url": f"http://127.0.0.1:{port}/",
+                "detail": record.label,
+                "hint": f"Served by {record.id}, running for {record.uptime:.0f}s.",
+            }
+
         return {
             "available": False,
             "url": None,
-            "detail": "No preview available",
-            "hint": "Your Resident cannot build or run applications yet.",
+            "detail": "Nothing running to show",
+            "hint": (
+                "When your Resident starts something that serves a page, it "
+                "appears here."
+            ),
         }
 
     # Mounted last so the API routes above take precedence.
