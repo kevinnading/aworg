@@ -243,9 +243,33 @@ class AgentLoop:
         # field added too -- the failure is invisible, because the tool just
         # finds the attribute missing and reports itself unwired.
         context = replace(self.context, activity=activity, source=self.source)
-        result: ToolResult = await self.registry.invoke(
-            call.name, call.arguments, context, self.scope
-        )
+
+        if call.truncated:
+            # The model ran out of room mid-call, so its arguments are a
+            # fragment. Running the tool on them is pointless, and the
+            # ordinary "missing required arguments" answer is worse than
+            # pointless: it invites the identical call again, which is
+            # exactly what happened -- six times, until the round limit.
+            #
+            # So say what actually went wrong and what would fix it. This is
+            # the one tool failure the model cannot diagnose from the result.
+            result = ToolResult(
+                text=(
+                    f"Your call to {call.name} was cut off before it finished: "
+                    "the arguments ran past what fits in this model's context "
+                    "window, so they arrived incomplete.\n\n"
+                    "Sending it again unchanged will fail the same way. Do "
+                    "less in one call -- write a smaller file, write it in "
+                    "several pieces, or hand the work to a worker, which gets "
+                    "a fresh context of its own."
+                ),
+                is_error=True,
+                summary="cut off mid-call",
+            )
+        else:
+            result = await self.registry.invoke(
+                call.name, call.arguments, context, self.scope
+            )
 
         if result.is_error:
             self.activities.failed(activity, result.summary or "failed", result.payload)

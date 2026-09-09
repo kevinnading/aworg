@@ -47,6 +47,12 @@ class ToolCall:
     id: str
     name: str
     arguments: dict[str, Any] = field(default_factory=dict)
+    #: The model ran out of room mid-call and its arguments arrived as a
+    #: fragment that will not parse. Emphatically not the same as a call with
+    #: no arguments, and telling the two apart is the difference between a
+    #: model that shortens its next attempt and one that repeats the same
+    #: impossible call until the round limit stops it.
+    truncated: bool = False
 
 
 @dataclass

@@ -21,7 +21,8 @@ NAME = "write_file"
 
 DESCRIPTION = (
     "Write text to a file, creating it and any parent directories if needed. "
-    "Replaces the whole file. Always writes UTF-8."
+    "Replaces the whole file unless append is true. Always writes UTF-8. For "
+    "anything long, write it in several appended pieces rather than one call."
 )
 
 INPUT_SCHEMA = {
@@ -36,14 +37,24 @@ INPUT_SCHEMA = {
         },
         "content": {
             "type": "string",
-            "description": "The complete contents to write.",
+            "description": "The text to write.",
+        },
+        "append": {
+            "type": "boolean",
+            "description": (
+                "Add to the end of the file instead of replacing it. Use this "
+                "to build a long file across several calls, which is the only "
+                "way to write something larger than fits in one reply."
+            ),
         },
     },
     "required": ["path", "content"],
 }
 
 
-async def run(context: ToolContext, path: str, content: str) -> ToolResult:
+async def run(
+    context: ToolContext, path: str, content: str, append: bool = False
+) -> ToolResult:
     target = resolve_path(context, path)
 
     if target.is_dir():
@@ -58,20 +69,32 @@ async def run(context: ToolContext, path: str, content: str) -> ToolResult:
         # given rather than having every \n rewritten to \r\n on Windows.
         # Both are decisions rather than defaults, which is the point of
         # writing files through a tool at all.
-        with open(target, "w", encoding="utf-8", newline="") as handle:
+        with open(target, "a" if append else "w", encoding="utf-8", newline="") as handle:
             handle.write(content)
     except OSError as exc:
         raise ToolError(f"{target} could not be written: {exc.strerror or exc}.") from None
 
     written = target.stat().st_size
     lines = content.count("\n") + (1 if content and not content.endswith("\n") else 0)
-    verb = "Replaced" if existed else "Created"
+    # Appending to a file that was not there is still creating it, and
+    # saying "replaced" to a model that appended would teach it the tool
+    # does the opposite of what it does.
+    verb = (
+        "Appended to" if (append and existed)
+        else "Replaced" if existed
+        else "Created"
+    )
 
     return ToolResult(
         text=(
-            f"{verb} {target} -- {lines} lines, {written:,} bytes, UTF-8."
+            f"{verb} {target} -- added {lines} lines, now {written:,} bytes, UTF-8."
+            if append and existed
+            else f"{verb} {target} -- {lines} lines, {written:,} bytes, UTF-8."
             + (f" It was {previous_size:,} bytes before." if existed else "")
         ),
         payload=content,
-        summary=f"{'replaced' if existed else 'created'} {target.name}",
+        summary=(
+            f"appended to {target.name}" if (append and existed)
+            else f"{'replaced' if existed else 'created'} {target.name}"
+        ),
     )

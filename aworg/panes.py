@@ -43,11 +43,12 @@ PANES: list[dict[str, Any]] = [
     {
         "id": "workers",
         "label": "Workers",
-        "hint": "Specialists the Resident can hand bounded work to.",
+        "hint": "Workers running right now. They appear when dispatched and go when done.",
         "available": True,
-        "empty": ("No workers configured.",
-                  "Without any, the Resident has nobody to delegate to and "
-                  "does everything itself."),
+        "empty": ("No workers running.",
+                  "Workers appear here while they are working and leave when "
+                  "they finish. What kinds of worker exist is set in "
+                  "Settings, under Model Pool."),
         "blocked": None,
     },
     {
@@ -245,25 +246,24 @@ def _machine_facts(facts: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def workers(crew: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """The configured workers, as the pane lists them.
+    """Deliberately empty at rest.
 
-    Each one shows the tools it is allowed to use, for the same reason a
-    Capability names its tools rather than counting them: the scope is the
-    interesting fact about a worker. Seeing that the checker cannot write
-    is what makes it worth trusting to check.
+    A worker is temporary: spawned for one bounded job, disposed when it
+    finishes. So this pane answers "who is working for me right now", not
+    "what kinds of worker exist" -- the second is configuration and belongs
+    in Settings beside the models, which is where a worker's connection and
+    prompt are chosen anyway.
+
+    Listing the configured kinds here made a permanent roster out of
+    something whose defining property is being temporary, and left an owner
+    unable to see the thing they actually wanted: that three workers are
+    running and one of them is stuck.
+
+    The rows come from the live Activity stream rather than from here, for
+    the same reason Activities does -- a pane painted from a snapshot cannot
+    show work arriving and leaving.
     """
-    return [
-        {
-            "kind": "worker",
-            "id": worker["id"],
-            "name": worker["name"],
-            "detail": worker["description"],
-            "state": "ok" if worker["enabled"] else "off",
-            "enabled": worker["enabled"],
-            "tools": [{"name": name} for name in worker["tools"]],
-        }
-        for worker in crew
-    ]
+    return []
 
 
 def tasks(plan: list[dict[str, Any]]) -> list[dict[str, Any]]:

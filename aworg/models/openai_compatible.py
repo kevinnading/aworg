@@ -337,6 +337,10 @@ class OpenAICompatibleAdapter(ModelAdapter):
         }
 
         splitter = _ThinkSplitter()
+        #: Why the model stopped. "length" means it was cut off rather than
+        #: finished, which is otherwise invisible -- the stream simply ends,
+        #: and a half-written tool call looks like a badly-formed one.
+        stopped_for: str | None = None
         #: Tool calls accumulate by index across many chunks. Unlike the
         #: Anthropic stream there is no per-call "stop" event, so these are
         #: held until the stream ends and flushed together.
@@ -366,6 +370,8 @@ class OpenAICompatibleAdapter(ModelAdapter):
                         choices = event.get("choices") or []
                         if not choices:
                             continue
+                        if choices[0].get("finish_reason"):
+                            stopped_for = choices[0]["finish_reason"]
                         delta = choices[0].get("delta") or {}
                         # Reasoning models send their thinking down the same
                         # stream under a different key. Reading only `content`
@@ -403,12 +409,20 @@ class OpenAICompatibleAdapter(ModelAdapter):
                     for _, slot in sorted(building.items()):
                         if not slot["name"]:
                             continue
+                        parsed = _arguments(slot["json"])
+                        # Arguments that were sent but will not parse mean the
+                        # reply was severed mid-object. So does the server
+                        # saying it stopped for length while a call was open.
+                        cut = (parsed is None) or (
+                            stopped_for == "length" and bool(slot["json"])
+                        )
                         yield Fragment(
                             "tool_use",
                             tool_call=ToolCall(
                                 id=slot["id"] or f"call_{slot['name']}",
                                 name=slot["name"],
-                                arguments=_arguments(slot["json"]),
+                                arguments=parsed or {},
+                                truncated=cut,
                             ),
                         )
         except httpx.RequestError as exc:
@@ -433,21 +447,27 @@ def _describe(status: int, body: str) -> str:
     return f"Provider returned {status}: {detail}"
 
 
-def _arguments(raw: str) -> dict[str, Any]:
-    """The arguments a tool call was streamed with.
+def _arguments(raw: str) -> dict[str, Any] | None:
+    """The arguments a tool call was streamed with, or None if they were cut.
 
-    Small models are the reason this is forgiving. One that emits nothing
-    sends an empty string rather than `{}`, and one cut off mid-object sends
-    something that will not parse. Both become an empty dict, because the
-    tool layer answers a missing argument by naming the schema -- which the
-    model can correct -- where raising here would end the turn.
+    The distinction is the whole point, and getting it wrong cost a real
+    session. A model writing a 6KB file into a tool call on an 8K window ran
+    out of room mid-object; the fragment would not parse, this returned an
+    empty dict, and the tool layer answered "missing required arguments" by
+    naming the schema. That is the correct answer to a call that sent
+    nothing, and useless advice to one that was severed -- so the model sent
+    the identical call six more times until the round limit stopped it.
+
+    An empty string is a model that genuinely sent no arguments: `{}`.
+    Anything that will not parse was interrupted: None, and the caller says
+    so plainly.
     """
     if not raw.strip():
         return {}
     try:
         parsed = json.loads(raw)
     except json.JSONDecodeError:
-        return {}
+        return None
     return parsed if isinstance(parsed, dict) else {}
 
 
