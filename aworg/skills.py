@@ -57,7 +57,6 @@ class Skill:
         description: str,
         path: Path,
         source: str,
-        always: bool = False,
         model_invocable: bool = True,
         extras: dict[str, str] | None = None,
     ):
@@ -73,11 +72,6 @@ class Skill:
         #: discarded so the pane can show it and nothing is silently lost,
         #: and because the spec's own position on fields a runtime does not
         #: act on is to accept them.
-        self.extras = extras or {}
-        #: Carried in full in every system prompt rather than waiting to be
-        #: read. See SkillLibrary.prompt_block for why this exists and when
-        #: it is the wrong choice.
-        self.always = always
 
     @property
     def directory(self) -> Path:
@@ -116,7 +110,6 @@ class Skill:
             "name": self.name,
             "description": self.description,
             "source": self.source,
-            "always": self.always,
             "model_invocable": self.model_invocable,
             "extras": self.extras,
             "path": str(self.path),
@@ -168,7 +161,6 @@ class SkillLibrary:
                     self.broken[folder.name] = str(exc)
                     continue
 
-                always = _flag(meta.get("always"))
                 invocable = not _flag(meta.get("disable-model-invocation"))
                 name = (meta.get("name") or folder.name).strip()
 
@@ -193,10 +185,10 @@ class SkillLibrary:
                     self.broken[folder.name] = "declares no description"
                     continue
                 self._skills[name] = Skill(
-                    name, description, found, source, always, invocable,
+                    name, description, found, source, invocable,
                     {k: v for k, v in meta.items()
                      if k not in ("name", "description", "when_to_use",
-                                  "always", "disable-model-invocation")},
+                                  "disable-model-invocation")},
                 )
 
     def all(self) -> list[Skill]:
@@ -248,69 +240,35 @@ class SkillLibrary:
     def prompt_block(self) -> str:
         """The skills, as the Resident is told about them every message.
 
-        Descriptions for most -- the cheap half, present so the Resident
-        knows what exists -- and the full body for any skill marked
-        `always: true`.
+        Names and descriptions only -- the cheap half, present so the
+        Resident knows what exists. Bodies are read on demand with
+        read_skill. That is the whole point of the convention and it is
+        followed exactly: a dozen skills cost a paragraph, not a book.
 
-        That second kind exists because of something measured rather than
-        assumed. Given a skill whose description read "use before creating
-        any new file, of any kind", and asked to write a file, a 9B wrote the
-        file its own way and never called read_skill: wrong folder, wrong
-        naming, missing the header the skill requires. Told explicitly to
-        read it first, it followed all three conventions exactly.
+        There was briefly an `always` field here that carried a skill's whole
+        body in the prompt, added because the 9B this is developed against
+        never calls read_skill -- one time in eighteen runs, across three
+        rewritten descriptions and with the instruction moved into the
+        standing prompt. It worked, and it was the wrong fix: a measurement
+        about a model became a permanent feature of the format.
 
-        So the machinery was right and the disposition was not. A model does
-        not consult a reference it does not feel it needs, and it cannot tell
-        from the inside that this machine's conventions differ from the ones
-        in its training. Progressive disclosure assumes a curiosity that
-        smaller models do not have.
-
-        Two obvious explanations were tested and neither holds. Moving the
-        instruction into the standing prompt, where "plan first" and
-        "delegate" live, changed nothing: still zero of four. And the
-        description was rewritten twice -- once front-loaded and naming
-        write_file, once stuffed with the surface words of the request
-        itself, "script", "python", "file" -- across eighteen runs in total.
-        One of those eighteen called read_skill, and a repeat of the same
-        experiment did not reproduce it. The wording is not the problem.
-
-        `always` is the escape hatch, and it is deliberately not the default.
-        It costs its whole length on every message, so it suits short
-        standing rules -- house conventions, hard-won local facts -- and not
-        long procedures, which is why web-project does not use it and
-        house-style does. The field is additive: any other implementation of
-        this format ignores it and the skill still works there.
+        The floor these models represent is meant to prove the loop holds,
+        not to be designed around. A model that will not consult a procedure
+        it has been told about is a model that cannot be trusted with an
+        Aworg's conventions, and the answer to that is a better model rather
+        than a bigger prompt.
         """
         skills = self.offered()
         if not skills:
             return ""
 
-        standing = [s for s in skills if s.always]
-        askable = [s for s in skills if not s.always]
-
-        parts: list[str] = []
-        if askable:
-            # Only these need describing. A skill carried in full does
-            # not also need a sentence saying when to read it -- the
-            # Resident has already read it, and the description was pure
-            # duplication sitting four lines above the thing it named.
-            listed = "\n".join(f"  {s.name}: {s.description}" for s in askable)
-            parts.append(
-                "SKILLS you can load. Call read_skill with the name when "
-                "the job matches, before planning or acting -- a skill is "
-                "how this machine does that job, which is not always how "
-                "you would.\n" + listed
-            )
-        if standing:
-            bodies = "\n\n".join(
-                f"### {s.name}\n{s.body()}" for s in standing
-            )
-            parts.append(
-                "SKILLS already loaded. These apply to everything you do "
-                "here, so they are given in full rather than waiting to "
-                "be asked for. Follow them.\n\n" + bodies
-            )
-        return "\n\n".join(parts)
+        listed = "\n".join(f"  {s.name}: {s.description}" for s in skills)
+        return (
+            "SKILLS you can load. Call read_skill with the name when the job "
+            "matches one of these, before planning or acting -- a skill is "
+            "how this machine does that job, which is not always how you "
+            f"would.\n" + listed
+        )
 
 
 def _flag(value: Any) -> bool:

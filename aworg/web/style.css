@@ -1864,8 +1864,6 @@ button.danger:disabled { opacity: 0.4; cursor: not-allowed; }
 .skill-source.installed { color: var(--accent); border-color: var(--accent); }
 .skill-refs { opacity: 0.7; font-style: italic; }
 
-/* A skill that is carried in full reads differently from one waiting to be
-   asked for: the first is already in the Resident's head, the second is a
-   thing it has to decide to fetch. */
-.skill-source.loaded { color: var(--accent); border-color: var(--accent); }
+/* A skill the owner has switched off, still listed so it can be switched
+   back on. */
 .pane-item.skill.off { opacity: 0.5; }

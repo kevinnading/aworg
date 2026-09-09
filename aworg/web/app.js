@@ -1722,15 +1722,11 @@ function skillRow(item) {
   // How it reaches the Resident, which is the fact that decides whether
   // switching it off changes anything today.
   const mode = document.createElement("span");
-  mode.className = `skill-source ${item.always ? "loaded" : item.source}`;
-  mode.textContent = item.always
-    ? "always"
-    : item.model_invocable ? "on demand" : "owner only";
-  mode.title = item.always
-    ? "Carried in full in every message. The Resident has already read it."
-    : item.model_invocable
-      ? "Described in every message; the Resident loads it with read_skill."
-      : "This skill asks not to be loaded by the Resident.";
+  mode.className = `skill-source ${item.source}`;
+  mode.textContent = item.model_invocable ? item.source : "owner only";
+  mode.title = item.model_invocable
+    ? "Described in every message; the Resident loads it with read_skill."
+    : "This skill asks not to be loaded by the Resident.";
 
   const toggle = document.createElement("button");
   toggle.type = "button";

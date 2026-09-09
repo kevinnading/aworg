@@ -1,6 +1,5 @@
 ---
 name: house-style
-always: true
 description: This Aworg's own conventions for any file it writes — where things go, how they are named, and what every file must contain. Use before creating any new file, of any kind. These rules are specific to this machine and are not what you would do by default.
 ---
 

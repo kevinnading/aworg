@@ -242,28 +242,28 @@ with a file in it, which is also how the Resident can write one for itself.
 
 Descriptions are in the system prompt on every message, so the Resident knows
 what exists; bodies are read on demand with `read_skill`. A dozen skills cost
-a paragraph rather than a book.
+a paragraph rather than a book. A skill may also declare
+`disable-model-invocation`, which keeps it out of the Resident's reach
+entirely — for procedures a person should run deliberately — and the owner
+can switch any skill off in the Skills pane.
 
-**Except when that does not work, and it often does not.** Given a skill whose
-description read *"use before creating any new file, of any kind"*, and asked
-to write a file, a 9B wrote it its own way and never opened the skill — wrong
-folder, wrong naming, missing the header the skill required. Told explicitly
-to read it first, it followed all three conventions exactly. The machinery was
-right; the disposition was not. A model does not consult a reference it does
-not feel it needs, and cannot tell from the inside that this machine's
-conventions differ from the ones in its training.
+**A caveat measured rather than assumed.** Progressive disclosure only works
+if the model consults a reference it has been told about, and the 9B this is
+developed against does not. Given a skill whose description reads *"use
+before creating any new file, of any kind"*, and asked to write a file, it
+wrote the file its own way: one `read_skill` call in eighteen runs, across
+three differently-worded descriptions and with the instruction moved into the
+standing prompt. Told explicitly to read it first, it complied exactly — so
+the machinery is right and the disposition is not.
 
-So a skill may declare `always: true` and be carried in full on every message
-instead of waiting to be asked for. It costs its whole length every time, so
-it suits short standing rules — house conventions, hard-won local facts — and
-not long procedures. The same request that had produced a root-level
-`random_tea.py` with no header then produced `bin/random-tea.py` with one,
-unprompted. The field is additive: any other implementation of the format
-ignores it and the skill still works there.
+That is a fact about the model, not the format, and it is deliberately not
+worked around. These small models are a floor for proving the loop holds, not
+a target to design for. A model that will not consult a procedure it has been
+told about cannot be trusted with an Aworg's conventions, and the answer is a
+better model rather than a bigger prompt.
 
-Two ship. `house-style` is the conventions this Aworg writes files by, marked
-`always`. `web-project` is how to build and serve a small site end to end,
-read when that kind of work comes up.
+Two ship. `house-style` is the conventions this Aworg writes files by;
+`web-project` is how to build and serve a small site end to end.
 
 ## Activities: what is happening right now
 

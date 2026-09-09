@@ -303,11 +303,9 @@ def skills(library: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "state": "ok" if skill.get("enabled", True) else "off",
             "enabled": skill.get("enabled", True),
             "source": skill["source"],
-            # Whether it is carried in every prompt or waits to be read, and
-            # whether the skill's own author allows the Resident to reach for
-            # it at all. Different facts, both worth seeing before switching
-            # anything.
-            "always": skill.get("always", False),
+            # Whether the skill's own author allows the Resident to reach
+            # for it, which is a different thing from the owner's switch and
+            # worth seeing before touching either.
             "model_invocable": skill.get("model_invocable", True),
             "references": len(skill["references"]),
         }
