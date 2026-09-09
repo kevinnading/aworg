@@ -243,6 +243,46 @@ Anything that wants to add behaviour to the Activity Manager should become a
 subscriber instead — including, when it arrives, the approval step described
 above.
 
+### Skills cannot be relied on at this size, and that is measured
+
+AWORG implements the Agent Skills convention properly: descriptions in the
+prompt, bodies fetched with read_skill. Whether a model *uses* it is a
+different question, and on everything that fits 8GB the answer is no.
+
+Measured on identical prompts, five runs each, with a skill whose description
+reads "use before creating any new file, of any kind":
+
+    model              reads a skill   follows it   routes correctly
+    qwen3.5-9b              0/5            0/5           3/5
+    qwen3.5-9b thinking     0/4            0/4           1/4
+    granite-4-micro         2/5            0/5           1/5
+    qwen3.5-2b              0/5            0/5           3/5
+
+Four explanations were tested and eliminated. The description was rewritten
+three ways including one stuffed with the surface words of the request --
+one read in eighteen runs. The instruction was moved into the standing
+prompt where "plan first" lives -- no change. Thinking was turned on, on the
+theory that consulting a reference needs a pause to wonder whether one
+exists -- it did not help and made routing worse. And a larger model was
+tried: the 9B scores identically to the 2B at three times the VRAM.
+
+**Nothing followed a skill it had read.** Granite read one twice and ignored
+it both times, which is worse than never looking: a model that consults a
+procedure and then does its own thing cannot be caught at it.
+
+The conclusion is about models rather than about AWORG. Consulting a
+reference before acting on a familiar request is not a tool-use skill; it is
+a disposition to suspect that this machine differs from the training data,
+and it is absent at this scale. Do not work around it -- an accommodation
+was built once, as an `always` field carrying skill bodies in the prompt, and
+removed for turning a measurement about one model into a permanent feature of
+a file format.
+
+What this means in practice: skills are built and correct, they matter on a
+capable model, and on a local floor model they are inert. That is the same
+shape as tool support varying by provider, and it is reported the same way
+rather than hidden.
+
 ## Authority Is The Account's, Not AWORG's
 
 Earlier drafts of this project described a boundary around the Living
