@@ -1846,3 +1846,20 @@ button.danger:disabled { opacity: 0.4; cursor: not-allowed; }
 /* A worker on its way out. Still legible, visibly done. */
 .activity-row.worker.leaving { opacity: 0.45; }
 .activity-row.worker.leaving .activity-dot { animation: none; }
+
+/* Skills. Where one came from matters: a shipped procedure and one the owner
+   or the Resident wrote are different things to trust and different things to
+   go and edit. */
+.skill-source {
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 1px 6px;
+  flex: none;
+  margin-left: auto;
+}
+.skill-source.installed { color: var(--accent); border-color: var(--accent); }
+.skill-refs { opacity: 0.7; font-style: italic; }

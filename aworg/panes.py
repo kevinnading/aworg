@@ -97,12 +97,12 @@ PANES: list[dict[str, Any]] = [
         "id": "skills",
         "label": "Skills",
         "hint": "Procedures the Resident knows how to carry out.",
-        "available": False,
-        "empty": ("No skills installed.", ""),
-        "blocked": ("No skills yet.",
-                    "A skill is a way of doing something well, kept so it can "
-                    "be reused. There is nothing to keep until the Resident "
-                    "can do things."),
+        "available": True,
+        "empty": ("No skills installed.",
+                  "A skill is a way of doing something well, written down so "
+                  "it can be reused. Put a folder with a SKILL.md in it under "
+                  "skills/ in this Aworg's home."),
+        "blocked": None,
     },
     {
         "id": "capabilities",
@@ -286,12 +286,35 @@ def tasks(plan: list[dict[str, Any]]) -> list[dict[str, Any]]:
     ]
 
 
+def skills(library: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The procedures this Aworg knows, as the pane lists them.
+
+    The description is shown rather than truncated to a label, because the
+    description is the whole of what makes a skill usable: it is what tells
+    the Resident when to reach for this one, and an owner reading the pane is
+    reading the same sentence the Resident reads.
+    """
+    return [
+        {
+            "kind": "skill",
+            "id": skill["name"],
+            "name": skill["name"],
+            "detail": skill["description"],
+            "state": "ok",
+            "source": skill["source"],
+            "references": len(skill["references"]),
+        }
+        for skill in library
+    ]
+
+
 def describe(
     facts: dict[str, Any] | None = None,
     registry: Any = None,
     enabled: Any = None,
     crew: list[dict[str, Any]] | None = None,
     plan: list[dict[str, Any]] | None = None,
+    known: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """The panes as the owner interface renders them.
 
@@ -314,6 +337,8 @@ def describe(
             items = workers(crew)
         elif pane["id"] == "tasks" and plan:
             items = tasks(plan)
+        elif pane["id"] == "skills" and known:
+            items = skills(known)
 
         described.append(
             {

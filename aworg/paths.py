@@ -69,10 +69,23 @@ class Paths:
     def logs(self) -> Path:
         return self.home / "logs"
 
+    @property
+    def skills(self) -> Path:
+        """Procedures this Aworg knows, beyond the ones it shipped with.
+
+        The owner's, and the Resident's own: a skill is a folder with a
+        SKILL.md in it, so a Resident that works out how to do something
+        well can write one here with the tools it already has. Nothing
+        special is needed to install a skill, which is the point of the
+        format being files rather than configuration.
+        """
+        return self.home / "skills"
+
     def ensure(self) -> "Paths":
         self.home.mkdir(parents=True, exist_ok=True)
         self.workspace.mkdir(exist_ok=True)
         self.logs.mkdir(exist_ok=True)
+        self.skills.mkdir(exist_ok=True)
         return self
 
     def __repr__(self) -> str:

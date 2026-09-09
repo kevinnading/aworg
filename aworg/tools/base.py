@@ -106,6 +106,9 @@ class ToolContext:
     #: Aworg rather than by a tool call, because they outlive the call that
     #: started them -- that being the entire point of them.
     processes: Any = None
+    #: The skills this Aworg knows, for read_skill. Handed in like the rest,
+    #: so a tool still cannot reach anything it was not given.
+    skills: Any = None
     #: Who is calling: "resident", or a worker id. Tools do not currently
     #: branch on it; it is here so that an audit of who ran what is possible
     #: without changing every signature later.

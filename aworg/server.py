@@ -536,6 +536,7 @@ def create_app(paths: Paths) -> FastAPI:
             store.capability_enabled,
             store.list_workers(),
             store.list_tasks(store.OPEN_STATES),
+            [s.snapshot() for s in resident.skills.all()],
         )
 
     @app.post("/api/capabilities/{capability_id}")
@@ -643,6 +644,18 @@ def create_app(paths: Paths) -> FastAPI:
             "backups": saved,
             "removed": removed,
             "processes_stopped": stopped,
+        }
+
+    @app.get("/api/skills")
+    def list_skills() -> dict[str, Any]:
+        """What this Aworg knows how to do, and anything that would not load."""
+        # Re-read on every request rather than at startup: a skill is a file,
+        # and an owner who drops one into skills/ should see it without
+        # restarting anything.
+        resident.skills.discover()
+        return {
+            "skills": [s.snapshot() for s in resident.skills.all()],
+            "broken": resident.skills.broken,
         }
 
     # -- tasks ----------------------------------------------------------

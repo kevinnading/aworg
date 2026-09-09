@@ -1529,6 +1529,7 @@ function paneItems(items) {
       item.kind === "capability" ? capabilityRow(item)
       : item.kind === "worker" ? workerRow(item)
       : item.kind === "task" ? taskRow(item)
+      : item.kind === "skill" ? skillRow(item)
       : factRow(item)
     );
   }
@@ -1695,6 +1696,46 @@ function taskRow(item) {
     detail.className = "pane-item-detail";
     detail.textContent = item.detail;
     row.appendChild(detail);
+  }
+  return row;
+}
+
+/* One procedure the Resident knows.
+ *
+ * The description is shown in full rather than clipped to a label, because it
+ * is the whole of what makes a skill usable -- it is what tells the Resident
+ * when to reach for this one, and the owner reading this pane is reading the
+ * same sentence the Resident reads every message. */
+function skillRow(item) {
+  const row = document.createElement("div");
+  row.className = "pane-item capability skill";
+
+  const head = document.createElement("div");
+  head.className = "capability-head";
+
+  const name = document.createElement("span");
+  name.className = "pane-item-name";
+  name.textContent = item.name;
+
+  // Where it came from. A shipped skill and one the owner (or the Resident)
+  // wrote are different things to trust and different things to edit.
+  const source = document.createElement("span");
+  source.className = `skill-source ${item.source}`;
+  source.textContent = item.source;
+  head.append(name, source);
+
+  const detail = document.createElement("span");
+  detail.className = "pane-item-detail";
+  detail.textContent = item.detail || "";
+
+  row.append(head, detail);
+
+  if (item.references) {
+    const refs = document.createElement("span");
+    refs.className = "pane-item-detail skill-refs";
+    refs.textContent =
+      `${item.references} reference file${item.references === 1 ? "" : "s"} alongside it`;
+    row.appendChild(refs);
   }
   return row;
 }

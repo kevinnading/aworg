@@ -28,6 +28,7 @@ from typing import Any, AsyncIterator
 from . import host
 from .activities import ActivityManager
 from .processes import ProcessTable, sweep_orphans
+from .skills import SkillLibrary
 from .agent import AgentLoop
 from .models import Message, ModelError, build_adapter
 from .tools import Registry, ToolContext
@@ -105,6 +106,12 @@ class Resident:
         #: owner turning one off takes effect on the next call instead of at
         #: the next restart.
         self.registry = Registry(is_enabled=store.capability_enabled)
+        #: Procedures the Aworg knows. Shipped ones live in the package;
+        #: the owner's -- and any the Resident writes for itself -- live
+        #: under their home, where a name collision means theirs wins.
+        self.skills = SkillLibrary(
+            installed=(paths.home / "skills") if paths is not None else None
+        )
         #: Observed at startup rather than at install, because a machine
         #: surveyed at install time is wrong the first time its owner
         #: installs anything -- and refreshed as it ages, because an Aworg
@@ -307,8 +314,13 @@ class Resident:
         instructions = self.store.get_resident()["system_prompt"]
         block = host.summary(self.host)
         plan = self.plan_block()
+        # Descriptions only, never bodies. The Resident cannot ask for a
+        # skill it does not know exists, so this half has to be on every
+        # message -- and it is the cheap half precisely so that it can be.
+        # read_skill fetches the rest when it is about to be used.
+        known = self.skills.prompt_block()
 
-        parts = [instructions, block] + ([plan] if plan else [])
+        parts = [instructions, block, known, plan]
         return "\n\n---\n\n".join(part for part in parts if part).strip()
 
     def _estimate(self, text: str) -> int:
@@ -731,6 +743,7 @@ class Resident:
                 workers=[w["name"] for w in crew],
                 store=self.store,
                 processes=self.processes,
+                skills=self.skills,
             ),
             activities=self.activities,
             live={"workers": crew},

@@ -226,6 +226,45 @@ wrote down itself, because without that there is no evidence it intended more
 than it did. The seam is drawn in the conversation, so you can see it happen
 rather than wonder whose idea it was.
 
+## Skills
+
+A **Skill** is procedure: how to go about a kind of job with the tools you
+already have. It adds no new ability — that is what a Capability is for — it
+adds knowing what to do.
+
+The format is the Agent Skills convention rather than anything invented here:
+a folder, a `SKILL.md` with frontmatter naming it and saying when to use it,
+and optional `references/` alongside for detail. A skill written for anything
+else works here, and one written here works elsewhere. Shipped skills live in
+the package; yours go in `skills/` under this Aworg's home, where a name
+collision means yours wins. Nothing needs registering — a skill is a folder
+with a file in it, which is also how the Resident can write one for itself.
+
+Descriptions are in the system prompt on every message, so the Resident knows
+what exists; bodies are read on demand with `read_skill`. A dozen skills cost
+a paragraph rather than a book.
+
+**Except when that does not work, and it often does not.** Given a skill whose
+description read *"use before creating any new file, of any kind"*, and asked
+to write a file, a 9B wrote it its own way and never opened the skill — wrong
+folder, wrong naming, missing the header the skill required. Told explicitly
+to read it first, it followed all three conventions exactly. The machinery was
+right; the disposition was not. A model does not consult a reference it does
+not feel it needs, and cannot tell from the inside that this machine's
+conventions differ from the ones in its training.
+
+So a skill may declare `always: true` and be carried in full on every message
+instead of waiting to be asked for. It costs its whole length every time, so
+it suits short standing rules — house conventions, hard-won local facts — and
+not long procedures. The same request that had produced a root-level
+`random_tea.py` with no header then produced `bin/random-tea.py` with one,
+unprompted. The field is additive: any other implementation of the format
+ignores it and the skill still works there.
+
+Two ship. `house-style` is the conventions this Aworg writes files by, marked
+`always`. `web-project` is how to build and serve a small site end to end,
+read when that kind of work comes up.
+
 ## Activities: what is happening right now
 
 Tool calls do not narrate themselves into the conversation. A Resident that
