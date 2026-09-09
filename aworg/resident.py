@@ -112,6 +112,11 @@ class Resident:
         self.skills = SkillLibrary(
             installed=(paths.home / "skills") if paths is not None else None,
             is_enabled=store.skill_enabled,
+            # Any task at all, in any state -- including done. A plan that
+            # has been worked through is still evidence the Resident
+            # understood the job, so advice about starting should not come
+            # back the moment the last task is finished.
+            has_plan=lambda: bool(sum(store.task_counts().values())),
         )
         #: Observed at startup rather than at install, because a machine
         #: surveyed at install time is wrong the first time its owner

@@ -307,6 +307,11 @@ def skills(library: list[dict[str, Any]]) -> list[dict[str, Any]]:
             # for it, which is a different thing from the owner's switch and
             # worth seeing before touching either.
             "model_invocable": skill.get("model_invocable", True),
+            # Whether it is reaching the Resident right now, and why not if
+            # it is not. A skill that has quietly retired would otherwise
+            # look identical to one that is working.
+            "offered": skill.get("offered", True),
+            "active_while": skill.get("active_while", "always"),
             "references": len(skill["references"]),
         }
         for skill in library

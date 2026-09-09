@@ -537,7 +537,11 @@ def create_app(paths: Paths) -> FastAPI:
             store.list_workers(),
             store.list_tasks(store.OPEN_STATES),
             [
-                {**s.snapshot(), "enabled": store.skill_enabled(s.name)}
+                {
+                    **s.snapshot(),
+                    "enabled": store.skill_enabled(s.name),
+                    "offered": s in resident.skills.offered(),
+                }
                 for s in resident.skills.all()
             ],
         )
@@ -656,9 +660,14 @@ def create_app(paths: Paths) -> FastAPI:
         # and an owner who drops one into skills/ should see it without
         # restarting anything.
         resident.skills.discover()
+        offered = resident.skills.offered()
         return {
             "skills": [
-                {**s.snapshot(), "enabled": store.skill_enabled(s.name)}
+                {
+                    **s.snapshot(),
+                    "enabled": store.skill_enabled(s.name),
+                    "offered": s in offered,
+                }
                 for s in resident.skills.all()
             ],
             "broken": resident.skills.broken,

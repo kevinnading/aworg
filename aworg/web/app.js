@@ -1722,11 +1722,21 @@ function skillRow(item) {
   // How it reaches the Resident, which is the fact that decides whether
   // switching it off changes anything today.
   const mode = document.createElement("span");
-  mode.className = `skill-source ${item.source}`;
-  mode.textContent = item.model_invocable ? item.source : "owner only";
-  mode.title = item.model_invocable
-    ? "Described in every message; the Resident loads it with read_skill."
-    : "This skill asks not to be loaded by the Resident.";
+  // Retired skills read differently from switched-off ones. A skill that
+  // has done its job and stepped back is working correctly; one the owner
+  // turned off is a decision. Showing both as simply absent would make the
+  // first look broken.
+  const retired = item.enabled && !item.offered && item.model_invocable;
+  mode.className = `skill-source ${retired ? "retired" : item.source}`;
+  mode.textContent = retired
+    ? "done"
+    : item.model_invocable ? item.source : "owner only";
+  mode.title = retired
+    ? "Not being offered: this skill applies only while there is no plan, "
+      + "and there is one now. It comes back on a fresh start."
+    : item.model_invocable
+      ? "Described in every message; the Resident loads it with read_skill."
+      : "This skill asks not to be loaded by the Resident.";
 
   const toggle = document.createElement("button");
   toggle.type = "button";

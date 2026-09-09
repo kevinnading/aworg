@@ -35,6 +35,25 @@ SKILL_FILE = "SKILL.md"
 SHIPPED = "shipped"
 INSTALLED = "installed"
 
+#: Conditions a skill may declare for when it is still worth offering.
+#:
+#: A getting-started skill is exactly right until the Resident has understood
+#: the job, and clutter afterwards. Rather than have AWORG reach in and flip
+#: the owner's switch -- which would leave nobody able to tell whether a skill
+#: was off because they said so or because something happened -- the skill
+#: says when it applies and that is evaluated fresh every turn.
+#:
+#: The owner's switch is still theirs and still wins. These narrow further;
+#: they never re-enable.
+#:
+#: `plan-is-empty` retires a skill once any task exists. That moment is
+#: chosen deliberately over the Lifecycle stage: a stage advances the instant
+#: a file appears in the workspace, which says nothing about whether the
+#: Resident understood what it was asked. A task existing means it asked
+#: enough to form a plan, which is precisely when advice about how to start
+#: has done its work.
+ACTIVE_WHILE = ("always", "plan-is-empty")
+
 #: The spec's cap on description plus when_to_use in a skill listing. Held
 #: to because the listing is the thing every message carries, and a skill
 #: that quietly ate a thousand tokens of prompt would be a skill nobody
@@ -58,6 +77,7 @@ class Skill:
         path: Path,
         source: str,
         model_invocable: bool = True,
+        active_while: str = "always",
         extras: dict[str, str] | None = None,
     ):
         self.name = name
@@ -68,6 +88,8 @@ class Skill:
         #: that way is not offered to the Resident at all -- it exists for
         #: the owner to run deliberately, which is the spec's meaning.
         self.model_invocable = model_invocable
+        #: When this skill still applies. See ACTIVE_WHILE.
+        self.active_while = active_while
         #: Everything else the frontmatter declared. Carried rather than
         #: discarded so the pane can show it and nothing is silently lost,
         #: and because the spec's own position on fields a runtime does not
@@ -112,6 +134,7 @@ class Skill:
             "description": self.description,
             "source": self.source,
             "model_invocable": self.model_invocable,
+            "active_while": self.active_while,
             "extras": self.extras,
             "path": str(self.path),
             "references": self.references(),
@@ -126,11 +149,17 @@ class SkillLibrary:
         shipped: Path | None = None,
         installed: Path | None = None,
         is_enabled: Any = None,
+        has_plan: Any = None,
     ):
         #: Asked per skill name, on every use rather than captured, so the
         #: owner turning one off takes effect on the next message instead of
         #: at the next restart -- the same rule capabilities follow.
         self.is_enabled = is_enabled or (lambda _name: True)
+        #: Whether the Resident has written any tasks down. Asked rather
+        #: than remembered, for the same reason the switch is: a plan made
+        #: this turn should retire a getting-started skill on the next
+        #: message, not at the next restart.
+        self.has_plan = has_plan or (lambda: False)
         #: Ships inside the package, beside the tools.
         self.shipped_root = shipped or (Path(__file__).parent / "skills")
         #: The owner's, under their Aworg home. This is also where a Resident
@@ -163,6 +192,15 @@ class SkillLibrary:
                     continue
 
                 invocable = not _flag(meta.get("disable-model-invocation"))
+                active = (meta.get("active-while") or "always").strip()
+                if active not in ACTIVE_WHILE:
+                    # An unknown condition is treated as no condition rather
+                    # than as false. A typo should not silently hide a skill.
+                    active = "always"
+                    self.broken[folder.name] = (
+                        f"unknown active-while {meta.get('active-while')!r}; "
+                        "offering it unconditionally"
+                    )
                 name = (meta.get("name") or folder.name).strip()
 
                 # when_to_use is appended to the description, which is what
@@ -186,10 +224,11 @@ class SkillLibrary:
                     self.broken[folder.name] = "declares no description"
                     continue
                 self._skills[name] = Skill(
-                    name, description, found, source, invocable,
+                    name, description, found, source, invocable, active,
                     {k: v for k, v in meta.items()
                      if k not in ("name", "description", "when_to_use",
-                                  "disable-model-invocation")},
+                                  "disable-model-invocation",
+                                  "active-while")},
                 )
 
     def all(self) -> list[Skill]:
@@ -203,15 +242,25 @@ class SkillLibrary:
     def offered(self) -> list[Skill]:
         """What the Resident actually gets.
 
-        Two ways to be left out, and they mean different things. The owner
-        switched it off, which is theirs to decide; or the skill's own
+        Three ways to be left out, and they mean different things. The
+        owner switched it off, which is theirs to decide; the skill's own
         frontmatter says disable-model-invocation, which is the author
-        saying this one is for a person to run deliberately.
+        saying this one is for a person to run deliberately; or the skill
+        declared a condition that no longer holds, like advice on starting
+        a project once a project has been started.
         """
         return [
             s for s in self.all()
-            if s.model_invocable and self.is_enabled(s.name)
+            if s.model_invocable
+            and self.is_enabled(s.name)
+            and self._still_applies(s)
         ]
+
+    def _still_applies(self, skill: Skill) -> bool:
+        """Whether a skill's own declared condition is still met."""
+        if skill.active_while == "plan-is-empty":
+            return not self.has_plan()
+        return True
 
     def get(self, name: str) -> Skill | None:
         """Find a skill the way the Resident names one, forgivingly.

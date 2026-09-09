@@ -35,7 +35,9 @@ DYNAMIC = True
 DESCRIPTION = (
     "Hand a bounded job to a worker instead of doing it yourself. Prefer this "
     "for work that is well described and self-contained, and for checking "
-    "work you have already done."
+    "work you have already done. A worker cannot see or speak to the owner, "
+    "so never delegate asking a question, gathering requirements, or "
+    "anything else that needs a person to answer -- those are yours."
 )
 
 INPUT_SCHEMA = {

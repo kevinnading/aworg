@@ -1867,3 +1867,7 @@ button.danger:disabled { opacity: 0.4; cursor: not-allowed; }
 /* A skill the owner has switched off, still listed so it can be switched
    back on. */
 .pane-item.skill.off { opacity: 0.5; }
+
+/* A skill that has retired because its own condition stopped holding. Not
+   an error and not the owner's doing -- it did its job and stepped back. */
+.skill-source.retired { color: var(--muted); font-style: italic; }
