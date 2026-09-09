@@ -22,16 +22,22 @@ the application area and Living Workspace on the left, the conversation down the
 right. Replies render with syntax highlighting, and the workspace listing
 follows along as it changes.
 
-It now has hands: five tools across three Capabilities, so it can read, write
-and search files, run commands, and make HTTP requests. What it is doing shows
-up in the **Activities** pane as it happens.
+It has hands: thirteen tools across five Capabilities. It reads, writes, edits
+and searches files, runs commands, starts and stops long-running programs like
+servers, and makes HTTP requests. What it is doing shows up in the
+**Activities** pane as it happens.
 
-It can also hand bounded work to **workers** — specialists with their own
-prompt and their own narrow set of tools — rather than doing everything
-itself.
+It writes down a **plan** before starting anything long, and works through it —
+carrying on by itself rather than needing to be told "continue" once per step.
+It hands bounded work to **workers**, specialists with their own prompt and
+their own narrow set of tools.
+
+Asked for a three-page website, it plans the work, delegates the writing,
+starts a server, checks the pages actually answer, and shows you the running
+site in the Application pane.
 
 What it does not have yet is the Living Log or the autonomous repair loop —
-the parts that would let it work with nobody watching.
+the parts that would let it notice trouble and respond with nobody watching.
 
 ## Running it
 
@@ -115,21 +121,29 @@ Three words that are easy to blur, kept apart here and in the code:
   off as a unit;
 - a **Skill** is knowing how to do something with the Tools you have.
 
-Three Capabilities ship, and they are prepackaged rather than special — they
-load by the same path anything downloaded later will:
+Five Capabilities. Three you can switch, and two that are part of the
+machinery rather than something you installed:
 
 ```
-Filesystem   read_file  write_file  search_files
-Shell        execute_command
+Filesystem   read_file  write_file  edit_file  search_files
+Shell        execute_command  start_process  list_processes  stop_process
 HTTP         http_request
+Delegation   delegate                                    (internal)
+Planning     add_tasks  update_task  list_tasks          (internal)
 ```
 
-Five tools, and the number is deliberate. Tool-selection accuracy falls away
-as the surface grows: on the models this is developed against — a 9B and a 2B
-— routing is reliable at around five and not at fifteen. Capability is the
-unit of enablement partly so that stays true as more arrive. `search_files`
-is one tool rather than three because listing a directory, matching filenames
-and searching contents are one question asked in three moods.
+`edit_file` exists because `write_file` replaces the whole file, which is
+right for creating one and wrong for changing one: a one-line fix in a
+500-line module would mean the model reproducing all 500 from memory, and
+every reproduced line is one it can quietly get wrong.
+
+`start_process` exists because `execute_command` waits for things to finish,
+which makes it exactly the wrong tool for a server. The Resident found that
+out the hard way before it existed.
+
+`search_files` is one tool rather than three because listing a directory,
+matching filenames and searching contents are one question asked in three
+moods.
 
 The **Capabilities** pane names the Tools inside each one rather than counting
 them, and each has a switch. "3 tools" tells you nothing you can act on;
@@ -186,6 +200,32 @@ is not fixed by a better model.
 Their work nests in the Activities pane, so you can see which worker did what
 rather than a flat list with no sign of who ran anything.
 
+## Tasks: a plan that outlives the conversation
+
+The context window is a hard edge and history only grows, so the oldest
+messages stop being sent. In a real session here, twenty-six of forty-five
+messages were already invisible to the model. Anything the Resident only
+remembers by having *said* it is therefore forgotten, and a plan made in
+message three is gone by message eighty.
+
+So the plan is not conversation. It is written down, it survives truncation
+and restarts, and the open items are rebuilt into every system prompt — which
+is the one thing that never gets trimmed. Verified: with 78 of 80 messages
+dropped, the plan was still fully present, for 93 tokens.
+
+Two states earn their place. **blocked** requires a reason and is refused
+without one, because a stuck task with no explanation tells the next reader
+nothing — and the next reader may be this Resident tomorrow. **abandoned** is
+kept distinct from done, since a plan that quietly drops what it could not
+manage lies about what it achieved.
+
+A turn carries itself on towards its own plan rather than waiting to be told
+"continue" once per task. It stops on an error, on Stop, or when nothing is
+left that is not blocked — and only ever continues towards tasks the Resident
+wrote down itself, because without that there is no evidence it intended more
+than it did. The seam is drawn in the conversation, so you can see it happen
+rather than wonder whose idea it was.
+
 ## Activities: what is happening right now
 
 Tool calls do not narrate themselves into the conversation. A Resident that
@@ -216,6 +256,35 @@ silently halved produces a Resident reasoning confidently about output it
 never saw. And the extract is always a deterministic head and tail, never a
 summary the model wrote — a summary of a tool result, written by the model
 about to be judged on it, is testimony rather than evidence.
+
+## When it stops
+
+A Resident working a plan can go round many times, and a count of rounds
+cannot tell being stuck from being busy. Ten rounds once ended one part-way
+through building a website — four pages written, every round doing something
+different and useful.
+
+So it stops on repetition rather than on volume: three identical calls in a
+row, same tool and same arguments, and it says which call it was so the model
+can try something else. Three, because two is a retry and a retry is often
+right. There is still a round cap, at 200, but it is a backstop for the
+pathological case rather than a work limit.
+
+Nothing accumulates across the life of an Aworg. Every limit is per turn —
+rounds reset each time a turn carries itself on, and that resets every time
+you speak. This is meant to run for years.
+
+## Putting it back
+
+**Settings → Reset** returns an Aworg to the way it arrived: the conversation,
+the plan, the workspace, the settings, and anything the Resident left running.
+It shows you what that means as counts before asking, and asks you to type a
+code it generates for that dialog — a fixed word becomes something the hands
+do without the eyes reading, which defeats the point of asking.
+
+Model connections are kept by default, because the alternative is a clean
+conversation and a Resident with nothing to think with. `state.db` and
+`secrets.db` are copied to `backups/` first.
 
 ## Nothing asks permission yet
 
@@ -406,6 +475,7 @@ aworg/
   resident.py    the Resident itself
   agent.py       the loop: reach for a tool, read what came back, carry on
   workers.py     spawning a specialist, and reporting what it actually did
+  processes.py   long-running programs, and not orphaning them
   activities.py  what is happening right now, and who is watching it
   server.py      the owner interface's backing service
   providers.py   the model providers an owner may choose from

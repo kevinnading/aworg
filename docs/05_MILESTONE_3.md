@@ -1,14 +1,23 @@
 # AWORG Milestone 3
 
-> **Status.** Most of this is built: the Resident has five tools across three
-> Capabilities, an agent loop that any role can run, and an Activities pane
-> showing work as it happens. What is not built is the part this document
-> calls the real work — nothing yet checks the Resident's account of what it
-> did with independent eyes, and the Lifecycle stepper still stops at "Being
-> built" because nothing observes a running process.
+> **Status: met.** Measured against the criterion at the foot of this file
+> rather than by feel. Asked for a three-page website, the Resident planned
+> it, delegated the writing, started a server, and dispatched a checker that
+> made three HTTP requests and got three 200s. The Application pane showed
+> the running site and the Lifecycle stepper read *Running* — derived from a
+> process AWORG could see, not from anything the Resident said. Separately,
+> given a script with a NameError planted in it, the checker ran it and
+> reported the failure with the right cause rather than rubber-stamping it.
 >
-> This file stays as written. It is a statement of intent, and rewriting it to
-> match what got built would destroy the only record of what was aimed at.
+> Three of the five things this file explicitly did **not** require are also
+> built, because the work needed them sooner than expected: delegation to
+> temporary workers, a plan the Resident keeps, and enough autonomy to work
+> that plan without being prompted per step. The two that remain are the
+> Living Log and self-directed repair — and those are the MVP's central
+> claim rather than a fourth milestone's worth of polish.
+>
+> This file stays as written. It is a statement of intent, and rewriting it
+> to match what got built would destroy the only record of what was aimed at.
 > Current state lives in the README; settled decisions live in
 > [06_ARCHITECTURE.md](06_ARCHITECTURE.md).
 
