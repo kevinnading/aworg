@@ -189,6 +189,15 @@ class SkillLibrary:
         in its training. Progressive disclosure assumes a curiosity that
         smaller models do not have.
 
+        Two obvious explanations were tested and neither holds. Moving the
+        instruction into the standing prompt, where "plan first" and
+        "delegate" live, changed nothing: still zero of four. And the
+        description was rewritten twice -- once front-loaded and naming
+        write_file, once stuffed with the surface words of the request
+        itself, "script", "python", "file" -- across eighteen runs in total.
+        One of those eighteen called read_skill, and a repeat of the same
+        experiment did not reproduce it. The wording is not the problem.
+
         `always` is the escape hatch, and it is deliberately not the default.
         It costs its whole length on every message, so it suits short
         standing rules -- house conventions, hard-won local facts -- and not
