@@ -450,13 +450,31 @@ def summary(facts: dict[str, Any]) -> str:
     if facts["tools"]:
         lines.append(f"On PATH: {', '.join(facts['tools'])}.")
     if facts.get("stubs"):
-        lines.append(
+        note = (
             f"On PATH but NOT usable: {', '.join(facts['stubs'])}. These are "
             "Windows Store placeholder aliases -- they are zero-byte stubs "
             "that fail with \"not found\" when run from a script, even though "
             "the real program may well be installed. Do not try to make them "
             "work; use a full path to a real installation instead."
         )
+        # Say what to do instead, in the same breath, naming the path.
+        #
+        # Both halves of this were already here and separately true: one line
+        # said python was a stub, another said AWORG runs on a real one at a
+        # known path. A Resident given both still ran `python`, watched it
+        # fail, and then spent ten tool calls hunting the disk for an
+        # interpreter it had already been told the location of.
+        #
+        # Stating two facts and leaving the inference to the model is not the
+        # same as stating the conclusion. On a small model it is not close.
+        interpreter = facts.get("python_executable")
+        if interpreter and any(s.startswith("python") for s in facts["stubs"]):
+            note += (
+                f" For python specifically, use {interpreter} -- that is a "
+                "working interpreter on this machine and it is the one to "
+                "run scripts with. Do not go looking for another."
+            )
+        lines.append(note)
     lines.append(
         "These are observed facts about this machine. Do not assume anything "
         "not listed is installed -- check before relying on it."
