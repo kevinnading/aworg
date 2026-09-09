@@ -9,6 +9,7 @@ are allowed to talk to a Resident under far tighter restrictions.
 from __future__ import annotations
 
 import json
+from contextlib import asynccontextmanager
 import re
 import secrets as secrets_module
 import shutil
@@ -150,7 +151,24 @@ def create_app(paths: Paths) -> FastAPI:
     secrets = SecretStore(paths.secrets_db)
     resident = Resident(store, secrets, paths)
 
-    app = FastAPI(title="AWORG", version="0.1.0")
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI):
+        """Take the Resident's running programs down with the Aworg.
+
+        A process table lives in this process, so an Aworg that exits without
+        stopping what it started leaves servers running that the next Aworg
+        cannot see, adopt, or stop -- it can only spawn its own. That is how a
+        python -m http.server survived ten hours and several restarts, still
+        holding port 8000 against every attempt to bind it.
+
+        Stopping them on the way out is the honest half of the bargain: AWORG
+        will not claim a process it did not start, so it must not abandon one
+        it did.
+        """
+        yield
+        await resident.processes.stop_all()
+
+    app = FastAPI(title="AWORG", version="0.1.0", lifespan=lifespan)
 
     def present(connection: dict[str, Any]) -> dict[str, Any]:
         """Shape a connection for the owner interface.
@@ -568,11 +586,15 @@ def create_app(paths: Paths) -> FastAPI:
                 {"what": "Files in the Living Workspace", "count": files},
                 {"what": "Workers", "count": len(store.list_workers())},
                 {"what": "Model connections", "count": len(store.list_connections())},
+                {
+                    "what": "Running programs (servers and the like)",
+                    "count": sum(1 for p in resident.processes.all() if p.alive),
+                },
             ],
         }
 
     @app.post("/api/reset")
-    def reset_aworg(body: ResetBody) -> dict[str, Any]:
+    async def reset_aworg(body: ResetBody) -> dict[str, Any]:
         """Put this Aworg back the way it arrived.
 
         The databases are copied to backups/ before anything is touched. A
@@ -607,11 +629,21 @@ def create_app(paths: Paths) -> FastAPI:
                     shutil.rmtree(item, ignore_errors=True) if item.is_dir() else item.unlink()
             folder.mkdir(exist_ok=True)
 
-        # Runtime state is not in the database and has to be dropped by hand.
+        # Runtime state is not in the database and has to be dropped by
+        # hand -- including, and this was missed, the programs the Resident
+        # started. A factory reset that leaves a web server running is not a
+        # factory reset: the preview kept showing a page from a server the
+        # Aworg no longer knew it owned.
+        stopped = await resident.processes.clear()
         resident.activities = ActivityManager()
         resident.turn = None
 
-        return {"status": "reset", "backups": saved, "removed": removed}
+        return {
+            "status": "reset",
+            "backups": saved,
+            "removed": removed,
+            "processes_stopped": stopped,
+        }
 
     # -- tasks ----------------------------------------------------------
 

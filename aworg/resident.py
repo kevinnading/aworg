@@ -27,7 +27,7 @@ from typing import Any, AsyncIterator
 
 from . import host
 from .activities import ActivityManager
-from .processes import ProcessTable
+from .processes import ProcessTable, sweep_orphans
 from .agent import AgentLoop
 from .models import Message, ModelError, build_adapter
 from .tools import Registry, ToolContext
@@ -86,7 +86,20 @@ class Resident:
         #: Long-running programs the Resident has started. Session-scoped:
         #: a restart cannot adopt processes it did not spawn, so nothing
         #: pretends otherwise.
-        self.processes = ProcessTable()
+        #: Anything a previous Aworg started and never stopped is cleared
+        #: before this one starts, which is the only point at which an
+        #: orphan from a hard kill can be reached.
+        if paths is not None:
+            swept = sweep_orphans(paths.home)
+            if swept:
+                # Flushed, because stdout is buffered when redirected to a
+                # file and this is precisely the message someone reads a
+                # log to find.
+                print(
+                    f"AWORG  stopped {swept} process(es) left by a previous run",
+                    flush=True,
+                )
+        self.processes = ProcessTable(paths.home if paths is not None else None)
         #: Discovered once at startup. Whether a capability is *enabled* is
         #: asked of the store on every use rather than captured here, so the
         #: owner turning one off takes effect on the next call instead of at

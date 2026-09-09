@@ -18,6 +18,11 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
+import os
+import pathlib
+import signal
+import subprocess
 import sys
 import time
 import uuid
@@ -34,6 +39,90 @@ KEEP_LINES = 400
 #: everything handles a terminate immediately; the ones that do not are
 #: usually mid-write and worth a moment.
 GRACE = 3.0
+
+
+#: Where the PIDs of started processes are written, under the Aworg's home.
+#: A ledger rather than a lock: it exists so the *next* Aworg can clean up
+#: after one that died badly.
+LEDGER = "processes.json"
+
+
+def _still_running(pid: int, marker: str) -> bool:
+    """Whether this pid is alive and is still the thing we started.
+
+    The marker check is the important half. PIDs are reused, and killing
+    whatever now holds a number we wrote down an hour ago would be far worse
+    than leaving an orphan -- so a process only counts if its command line
+    still contains a distinctive piece of what was launched.
+    """
+    if sys.platform == "win32":
+        query = (
+            "Get-CimInstance Win32_Process -Filter \"ProcessId=" + str(pid) + "\" "
+            "| Select-Object -ExpandProperty CommandLine"
+        )
+        try:
+            out = subprocess.run(
+                ["powershell", "-NoProfile", "-NonInteractive", "-Command", query],
+                capture_output=True, timeout=10, stdin=subprocess.DEVNULL,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return False
+        line = out.stdout.decode("utf-8", "replace")
+        return bool(line.strip()) and marker in line
+
+    try:
+        with open(f"/proc/{pid}/cmdline", "rb") as handle:
+            return marker in handle.read().decode("utf-8", "replace")
+    except OSError:
+        return False
+
+
+def _terminate(pid: int) -> None:
+    if sys.platform == "win32":
+        subprocess.run(
+            ["taskkill", "/PID", str(pid), "/T", "/F"],
+            capture_output=True, stdin=subprocess.DEVNULL,
+        )
+        return
+    with contextlib.suppress(OSError):
+        os.kill(pid, signal.SIGTERM)
+
+
+def sweep_orphans(home: pathlib.Path) -> int:
+    """Kill anything a previous Aworg started and never stopped.
+
+    This exists because a shutdown handler is not enough and a job object
+    cannot help. A handler only runs on a graceful exit, so a killed or
+    crashed Aworg leaves its servers running; and Windows had already placed
+    those children in a job of its own, so assigning them to ours was refused
+    outright with access denied.
+
+    What is left is a ledger. Each process is written down when it starts,
+    and the next Aworg reads the file and clears out whatever is still alive.
+    It is not instantaneous -- an orphan outlives its parent until the next
+    start -- but it is the only one of the three that survives the Aworg
+    being killed, which is the case that actually happened: a server held
+    port 8000 for ten hours across several restarts.
+    """
+    ledger = home / LEDGER
+    if not ledger.exists():
+        return 0
+    try:
+        entries = json.loads(ledger.read_text(encoding="utf-8"))
+    except (ValueError, OSError):
+        ledger.unlink(missing_ok=True)
+        return 0
+
+    killed = 0
+    for entry in entries if isinstance(entries, list) else []:
+        pid, marker = entry.get("pid"), entry.get("marker") or ""
+        if not pid or not marker:
+            continue
+        if _still_running(int(pid), marker):
+            _terminate(int(pid))
+            killed += 1
+    ledger.unlink(missing_ok=True)
+    return killed
 
 
 class Running:
@@ -82,15 +171,43 @@ class ProcessTable:
     silence about something that was there a minute ago.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, home: Any = None) -> None:
         self._processes: dict[str, Running] = {}
+        #: Where to write the ledger. None means not writing one, which is
+        #: what tests want and what a caller that has no home gets.
+        self._home = home
 
     def add(self, process: Any, command: str, label: str, cwd: str) -> Running:
         record = Running(process, command, label, cwd)
         self._processes[record.id] = record
+        self._write_ledger()
         # Started immediately, because the pipe begins filling immediately.
         record.pump = asyncio.create_task(self._drain(record))
         return record
+
+    def _write_ledger(self) -> None:
+        """Record what is running, for whoever starts next.
+
+        Rewritten whole on every change rather than appended to, so a
+        stopped process leaves no entry behind and the next Aworg is not
+        hunting pids that were tidied up properly.
+        """
+        if self._home is None:
+            return
+        alive = [
+            {
+                "pid": r.process.pid,
+                # Something distinctive enough to tell a reused pid from the
+                # real thing. The first two words are the interpreter and
+                # what it was told to run.
+                "marker": " ".join(r.command.split()[:2]),
+                "label": r.label,
+            }
+            for r in self.all()
+            if r.alive
+        ]
+        with contextlib.suppress(OSError):
+            (self._home / LEDGER).write_text(json.dumps(alive), encoding="utf-8")
 
     @staticmethod
     async def _drain(record: Running) -> None:
@@ -167,6 +284,7 @@ class ProcessTable:
             await killer.wait()
             with contextlib.suppress(asyncio.TimeoutError):
                 await asyncio.wait_for(record.process.wait(), timeout=GRACE)
+            self._write_ledger()
             return "stopped" if not record.alive else "would not stop"
 
         # Elsewhere the shell is a process group leader, so signalling the
@@ -181,7 +299,25 @@ class ProcessTable:
             return "killed"
 
     async def stop_all(self) -> None:
-        """Stop everything. For shutdown, so nothing is orphaned."""
+        """Stop everything. For shutdown and reset, so nothing is orphaned."""
         for record in self.all():
             if record.alive:
                 await self.stop(record.id)
+
+    async def clear(self) -> int:
+        """Stop everything and forget it ever happened.
+
+        For a factory reset, where "back the way it arrived" has to include
+        the things the Resident started. Stopping without forgetting would
+        leave dead rows claiming to be a previous life; forgetting without
+        stopping leaves a server running that nothing can now reach -- which
+        is what happened: a reset Aworg showed a directory listing from a
+        server it no longer knew it owned, still up after ten hours.
+        """
+        await self.stop_all()
+        count = len(self._processes)
+        for record in self.all():
+            if record.pump is not None:
+                record.pump.cancel()
+        self._processes.clear()
+        return count
