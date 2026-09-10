@@ -90,7 +90,7 @@ PANES: list[dict[str, Any]] = [
     {
         "id": "system",
         "label": "System",
-        "hint": "What was found on this machine at startup.",
+        "hint": "Where this Aworg is, and what is on this machine.",
         "available": True,
         "empty": ("Nothing observed.", ""),
         "blocked": None,
@@ -176,8 +176,10 @@ def capabilities(
     return items
 
 
-def system(facts: dict[str, Any]) -> list[dict[str, Any]]:
-    """What was observed about this machine at startup.
+def system(
+    facts: dict[str, Any], workspace: Any = None
+) -> list[dict[str, Any]]:
+    """Where this Aworg is, and what was found around it at startup.
 
     Its own pane now rather than the tail of Capabilities. These are facts
     the owner *learns*, where a Capability is a decision the owner *makes*,
@@ -186,9 +188,29 @@ def system(facts: dict[str, Any]) -> list[dict[str, Any]]:
     An owner about to ask for postgres needs to know whether this Aworg could
     install anything at all before they ask rather than after it fails, which
     is why this is on screen instead of only in the Resident's prompt.
-    Privilege comes first because it decides most of the rest.
+
+    The workspace comes first, and it is the one item here that was chosen
+    rather than observed. It earns the place because it answers the question
+    an owner asks before any of the others: where does the thing being built
+    actually end up on my disk. It was in nothing the owner could see, and
+    the Resident could not see it either -- which is how Residents came to
+    treat AWORG's own source directory as the project and write into it.
+    Fixing the prompt without putting the same fact on screen would have left
+    the owner unable to check the answer the Resident was now being given.
+
+    Only the location. What is *in* it is the Living Workspace pane's
+    question, and two panes counting the same files is two panes that can
+    disagree.
     """
-    return _machine_facts(facts)
+    items: list[dict[str, Any]] = []
+    if workspace:
+        items.append({
+            "kind": "fact",
+            "name": "Living Workspace",
+            "detail": str(workspace),
+            "state": "ok",
+        })
+    return items + _machine_facts(facts)
 
 
 #: Characters per token, matching Resident.CHARS_PER_TOKEN. Duplicated
@@ -353,6 +375,7 @@ def describe(
     plan: list[dict[str, Any]] | None = None,
     known: list[dict[str, Any]] | None = None,
     happened: list[dict[str, Any]] | None = None,
+    workspace: Any = None,
 ) -> list[dict[str, Any]]:
     """The panes as the owner interface renders them.
 
@@ -370,7 +393,7 @@ def describe(
         if pane["id"] == "capabilities":
             items = capabilities(facts or {}, registry, enabled)
         elif pane["id"] == "system" and facts:
-            items = system(facts)
+            items = system(facts, workspace=workspace)
         elif pane["id"] == "workers" and crew:
             items = workers(crew)
         elif pane["id"] == "tasks" and plan:

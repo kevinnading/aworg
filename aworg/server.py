@@ -635,6 +635,7 @@ def create_app(paths: Paths) -> FastAPI:
                 for s in resident.skills.all()
             ],
             resident.journal.entries(limit=100),
+            workspace=paths.workspace,
         )
 
     @app.post("/api/capabilities/{capability_id}")

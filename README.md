@@ -563,8 +563,8 @@ can be dragged to whatever size it deserves.
 
 ```
 +-------------+--------------------------+-----------+
-| Application | Tasks     |   Workers    | Capabil.  |
-| Lifecycle   +--------------------------+           |
+| Application | Tasks     |   Workers    | System    |
+| Lifecycle   +--------------------------+ Capabil.  |
 | Workspace   |                          | Skills    |
 |             |     Conversation         |           |
 +-------------+--------------------------+-----------+
@@ -574,7 +574,11 @@ can be dragged to whatever size it deserves.
 
 The workspace and the conversation hold the middle, because that is where the
 work happens. What the Resident *can* do is held at the right edge — it
-changes least and is glanced at rather than worked in. What it *is* doing sits
+changes least and is glanced at rather than worked in. **System** is at the
+top of that column and opens with the Living Workspace path, because where
+the built thing lands on your disk is the question you ask before any of the
+others — and because the Resident is told the same path, so this is where you
+check the answer it was given. What it *is* doing sits
 directly above the conversation, because that is what the owner is talking to
 it about. The console runs the whole width underneath, split between the Living Log
 and Activities — what has happened, and what is happening — because those are
