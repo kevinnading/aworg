@@ -514,6 +514,11 @@ class Store:
         ("connections", "context", "INTEGER"),
         ("messages", "blocks", "TEXT"),
         ("workers", "skills", "TEXT NOT NULL DEFAULT '[]'"),
+        # Which persona the Resident is wearing. On the resident row rather
+        # than in a table of its own because there is exactly one Resident
+        # and it wears exactly one at a time -- and because putting it here
+        # is what makes it survive everything a reset does to the rest.
+        ("resident", "persona", "TEXT"),
     ]
 
     def _init(self) -> None:
@@ -763,6 +768,9 @@ class Store:
             "worker_connection_id": row["worker_connection_id"],
             "system_prompt": row["system_prompt"],
             "current_conversation_id": row["current_conversation_id"],
+            # Absent on a database that predates personas, which reads as
+            # no persona rather than as an error.
+            "persona": (row["persona"] if "persona" in row.keys() else None),
         }
 
     def update_resident(self, **fields: Any) -> dict[str, Any]:
@@ -771,6 +779,7 @@ class Store:
             "worker_connection_id",
             "system_prompt",
             "current_conversation_id",
+            "persona",
         }
         sets, values = [], []
         for key, value in fields.items():
@@ -972,7 +981,8 @@ class Store:
                 conn.execute("DELETE FROM connections")
 
             conn.execute(
-                "UPDATE resident SET system_prompt = ?, current_conversation_id = NULL"
+                "UPDATE resident SET system_prompt = ?, current_conversation_id = NULL,"
+                " persona = NULL"
                 + ("" if keep_connections
                    else ", primary_connection_id = NULL, worker_connection_id = NULL")
                 + " WHERE id = 1",

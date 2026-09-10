@@ -28,6 +28,7 @@ from typing import Any, AsyncIterator
 from . import host
 from .activities import ActivityManager
 from .journal import Journal
+from .personas import PersonaLibrary
 from .processes import ProcessTable, sweep_orphans
 from .skills import SkillLibrary
 from .agent import AgentLoop
@@ -130,6 +131,14 @@ class Resident:
             # understood the job, so advice about starting should not come
             # back the moment the last task is finished.
             has_plan=lambda: bool(sum(store.task_counts().values())),
+        )
+        #: Who this Resident is, and how its chat looks. Deliberately not
+        #: part of the standing instructions: those say what it is
+        #: responsible for, and a persona says who is doing it. Keeping them
+        #: apart in the prompt is what keeps a persona change from quietly
+        #: changing the job.
+        self.personas = PersonaLibrary(
+            installed=(paths.home / "personas") if paths is not None else None,
         )
         #: Observed at startup rather than at install, because a machine
         #: surveyed at install time is wrong the first time its owner
@@ -341,8 +350,20 @@ class Resident:
         # message -- and it is the cheap half precisely so that it can be.
         # read_skill fetches the rest when it is about to be used.
         known = self.skills.prompt_block()
+        # Who is doing the job, immediately after what the job is and before
+        # any facts about the machine. Character belongs next to role: a
+        # model that reads its instructions, then a page of disk sizes, then
+        # is told its name has been given the name as an afterthought.
+        #
+        # After the instructions rather than before them, and that order is
+        # load-bearing. The standing instructions are the owner's and carry
+        # the mission; a persona may be a stranger's and carries none. What
+        # comes second qualifies what came first.
+        who = self.personas.prompt_block(
+            self.store.get_resident().get("persona")
+        )
 
-        parts = [instructions, block, known, plan]
+        parts = [instructions, who, block, known, plan]
         return "\n\n---\n\n".join(part for part in parts if part).strip()
 
     def _estimate(self, text: str) -> int:

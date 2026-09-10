@@ -81,11 +81,22 @@ class Paths:
         """
         return self.home / "skills"
 
+    @property
+    def personas(self) -> Path:
+        """Personas the owner installed, beyond the ones that shipped.
+
+        Alongside skills/ and for the same reason: a persona is a folder of
+        ordinary files, so installing one is copying it here and nothing
+        else. That is what makes them exchangeable.
+        """
+        return self.home / "personas"
+
     def ensure(self) -> "Paths":
         self.home.mkdir(parents=True, exist_ok=True)
         self.workspace.mkdir(exist_ok=True)
         self.logs.mkdir(exist_ok=True)
         self.skills.mkdir(exist_ok=True)
+        self.personas.mkdir(exist_ok=True)
         return self
 
     def __repr__(self) -> str:

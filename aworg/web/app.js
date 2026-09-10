@@ -51,14 +51,16 @@ async function api(path, options = {}) {
 /* ---------- boot ---------- */
 
 async function boot() {
-  const [meta, panes, layout] = await Promise.all([
+  const [meta, panes, layout, personas] = await Promise.all([
     api("/api/meta"),
     api("/api/panes"),
     api("/api/layout"),
+    api("/api/personas"),
   ]);
   app.meta = meta;
   app.panes = panes;
   app.layout = layout;
+  setPersonas(personas);
 
   el("home-note").textContent = `This Aworg lives at ${app.meta.home}`;
   buildProviderOptions();
@@ -86,6 +88,98 @@ async function boot() {
   // waiting on it would mean boot never finishing.
   startActivities();
   startLivingLog();
+}
+
+/* Who the Resident is, as far as the interface is concerned.
+ *
+ * Held apart from the list because every message asks for it and almost
+ * nothing asks for the list. The colours and the background are already in
+ * the stylesheet by the time this runs -- they load before first paint, so
+ * the chat is the Resident's room from the very first frame rather than
+ * becoming it a moment later. What is left for here is the avatar, which
+ * belongs to messages rather than to the surface. */
+function setPersonas(payload) {
+  app.personas = payload.personas || [];
+  app.persona =
+    app.personas.find((p) => p.name === payload.active) || null;
+  paintPersonas();
+}
+
+/* The picker: who your Resident could be.
+ *
+ * Shown as cards rather than a dropdown, because a persona is chosen by
+ * reading what it is like. A name in a select list tells an owner nothing
+ * about whether they want to talk to it. */
+function paintPersonas() {
+  const host = el("persona-list");
+  if (!host) return;
+  host.innerHTML = "";
+
+  for (const persona of app.personas) {
+    const active = app.persona && app.persona.name === persona.name;
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = `persona-card${active ? " active" : ""}`;
+    card.setAttribute("aria-pressed", String(!!active));
+    card.onclick = () => wearPersona(persona.name);
+
+    if (persona.has_avatar) {
+      const face = document.createElement("img");
+      face.className = "persona-face";
+      face.src = `/api/personas/${encodeURIComponent(persona.name)}/avatar`;
+      face.alt = "";
+      card.appendChild(face);
+    }
+
+    const text = document.createElement("span");
+    text.className = "persona-text";
+
+    const name = document.createElement("strong");
+    name.textContent = persona.name;
+    const detail = document.createElement("span");
+    detail.textContent = persona.description || "";
+    text.append(name, detail);
+    card.appendChild(text);
+
+    // The accent is the one thing about a persona you cannot read, so it is
+    // shown rather than described.
+    if (persona.accent) {
+      const swatch = document.createElement("span");
+      swatch.className = "persona-accent";
+      swatch.style.background = persona.accent;
+      swatch.title = `Chat accent ${persona.accent}`;
+      card.appendChild(swatch);
+    }
+    host.appendChild(card);
+  }
+}
+
+async function wearPersona(name) {
+  try {
+    await api("/api/personas", {
+      method: "POST",
+      body: JSON.stringify({ name }),
+    });
+  } catch (error) {
+    return;
+  }
+  setPersonas(await api("/api/personas"));
+  // The colours and any background live in the stylesheet, which was fetched
+  // once at load. Re-fetching it is what makes the change visible now rather
+  // than at the next reload -- and it is a whole stylesheet swap rather than
+  // patched properties so that the old persona's room leaves nothing behind.
+  reloadInterfaceCss();
+  // Already-drawn replies were painted with the previous face.
+  renderChat();
+}
+
+/* Swap the stylesheet that carries the owner's colours and the persona's
+ * room. Cache-busted, because it is served no-store but a browser that has
+ * it in memory for this page will not ask again on its own. */
+function reloadInterfaceCss() {
+  const link = document.querySelector('link[href^="/api/interface.css"]');
+  if (!link) return;
+  link.href = `/api/interface.css?v=${Date.now()}`;
 }
 
 /* Keep the Living Log current.
@@ -421,6 +515,28 @@ function renderChat() {
 function messageNode(role, content, label) {
   const wrapper = document.createElement("div");
   wrapper.className = `msg ${role}`;
+
+  // The Resident's face, on the Resident's messages.
+  //
+  // This is most of what makes Forever Chat feel like somebody's room rather
+  // than a model interface, and it is why it goes on every reply instead of
+  // only the first of a run: a conversation scrolled back through should
+  // show who was speaking at any point in it, not only at the top.
+  //
+  // The owner gets none. They know who they are, and a second avatar would
+  // make the pane a transcript of two strangers rather than the Resident's
+  // own space.
+  if (role === "resident" && app.persona && app.persona.has_avatar) {
+    const face = document.createElement("img");
+    face.className = "avatar";
+    face.src = `/api/personas/${encodeURIComponent(app.persona.name)}/avatar`;
+    face.alt = "";
+    wrapper.appendChild(face);
+    // The column only exists when something is standing in it. Without this
+    // a persona with no avatar would indent every reply by the width of a
+    // face that is not there.
+    wrapper.classList.add("faced");
+  }
 
   const body = document.createElement("div");
   body.className = "body";

@@ -28,6 +28,7 @@ from pydantic import BaseModel
 from .models import CAPABILITY_TAGS, PROVIDER_LABELS, ModelError, build_adapter
 from .paths import Paths
 from .journal import Journal
+from . import personas as personas_module
 from .resident import Busy, Resident
 from .secrets import SecretStore, credential_ref
 from . import layout as layout_settings
@@ -44,6 +45,18 @@ from .theme import (
 
 
 WEB_DIR = Path(__file__).parent / "web"
+
+#: What a persona's image assets are served as. A short table rather than
+#: mimetypes.guess_type, because the set of things a persona may carry is
+#: deliberately short and guessing would widen it.
+MEDIA_TYPES = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
+    ".gif": "image/gif",
+    ".svg": "image/svg+xml",
+}
 
 
 #: Table names as an owner would say them. A reset entry reading "4 journal,
@@ -181,6 +194,12 @@ class WorkerPatch(BaseModel):
     tools: list[str] | None = None
     skills: list[str] | None = None
     enabled: bool | None = None
+
+
+class PersonaBody(BaseModel):
+    #: The persona to wear. Empty or null means the shipped default, which
+    #: is how "I have not chosen" is expressed -- see personas.DEFAULT_PERSONA.
+    name: str | None = None
 
 
 class LayoutPatch(BaseModel):
@@ -587,8 +606,16 @@ def create_app(paths: Paths) -> FastAPI:
         appearance = store.get_appearance()
         colors = declarations(resolve(appearance["preset"], appearance["overrides"]))
         sizes = layout_settings.to_css(layout_settings.resolve(store.get_layout()))
+        # The persona's own room, and only its own room.
+        #
+        # Scoped to the chat rather than joining the tokens above, because the
+        # owner chose the interface's colours and a persona is a guest in
+        # them. It rides in the same stylesheet for the same reason colour and
+        # layout do -- they arrive together, and a second request would be a
+        # second chance to paint the interface without the Resident in it.
+        room = resident.personas.css(store.get_resident().get("persona"))
         return Response(
-            content=":root {\n" + colors + sizes + "}\n",
+            content=":root {\n" + colors + sizes + "}\n" + room,
             media_type="text/css",
             # Both change the moment the owner drags or picks, and a cached
             # copy would outlive the choice.
@@ -778,6 +805,77 @@ def create_app(paths: Paths) -> FastAPI:
             "removed": removed,
             "processes_stopped": stopped,
         }
+
+    # -- personas ---------------------------------------------------------
+
+    @app.get("/api/personas")
+    def list_personas() -> dict[str, Any]:
+        """Who this Resident could be, and who it currently is."""
+        # Re-read every request, like skills: a persona is a folder, and an
+        # owner who drops one in should see it without restarting anything.
+        resident.personas.discover()
+        active = resident.personas.active(store.get_resident().get("persona"))
+        return {
+            "personas": [p.snapshot() for p in resident.personas.all()],
+            "active": active.name if active else None,
+            "broken": resident.personas.broken,
+        }
+
+    @app.post("/api/personas")
+    def set_persona(body: PersonaBody) -> dict[str, Any]:
+        """Wear a different persona.
+
+        **This does not make a new Resident.** Nothing is cleared: the
+        conversation, the plan, the Living Log, the workers, the tool
+        permissions and every credential are exactly where they were a moment
+        ago. Only the voice changes, and the room it speaks in.
+
+        That is the whole reason this is one column on the resident row
+        rather than an operation with steps. An implementation that had to
+        remember to preserve things would eventually forget one.
+        """
+        resident.personas.discover()
+        name = (body.name or "").strip()
+        if name and resident.personas.get(name) is None:
+            raise HTTPException(404, f"No persona called {name!r}")
+        store.update_resident(persona=name or None)
+        active = resident.personas.active(name)
+        resident.journal.record(
+            f"Persona changed to {active.name}" if active else "Persona cleared",
+            kind="persona",
+            source="owner",
+            detail=(
+                "Voice and appearance only. The conversation, plan, memory "
+                "and permissions are unchanged."
+            ),
+        )
+        return {"active": active.name if active else None}
+
+    @app.get("/api/personas/{name}/{asset}")
+    def persona_asset(name: str, asset: str) -> Response:
+        """An avatar or background, served from the persona's own folder.
+
+        The path is resolved and then checked to be inside that folder rather
+        than trusted, because theme.json arrives with the package and these
+        are meant to be downloaded from strangers. See Persona.asset.
+        """
+        kinds = {"avatar": personas_module.AVATAR,
+                 "background": personas_module.BACKGROUND}
+        if asset not in kinds:
+            raise HTTPException(404, "No such asset")
+        persona = resident.personas.get(name)
+        if persona is None:
+            raise HTTPException(404, f"No persona called {name!r}")
+        path = persona.asset(kinds[asset])
+        if path is None:
+            raise HTTPException(404, "This persona has no such asset")
+        return Response(
+            content=path.read_bytes(),
+            media_type=MEDIA_TYPES.get(path.suffix.lower(), "application/octet-stream"),
+            # Personas are edited in place, and a cached avatar would outlive
+            # the edit. They are small; the request is cheap.
+            headers={"Cache-Control": "no-store"},
+        )
 
     # -- the Living Log -------------------------------------------------
 
