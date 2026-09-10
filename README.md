@@ -362,10 +362,17 @@ reports it with the last dozen lines the program printed on its way out:
   OSError: [WinError 10048] Only one usage of each socket address
 ```
 
-A deliberate stop is a note, not an alarm, and telling those apart is more
-delicate than it looks: both arrive as a closed pipe, and the flag saying
-"this one is on purpose" has to be set *before* anything is signalled or it
-races with the death it is meant to explain.
+There are four ways a program can end and they do not mean the same thing.
+One that ran and exited cleanly finished. One that someone stopped was
+stopped. One that died unasked after running is an outage. And one that was
+gone within two seconds never started at all — calling that an outage sends
+its reader hunting for a cause in the wrong place, when the answer is a bad
+command line or a port already taken.
+
+Telling a deliberate stop from a death is more delicate than it looks: both
+arrive as a closed pipe, and the flag saying "this one is on purpose" has to
+be set *before* anything is signalled, or it races with the death it exists
+to explain.
 
 Entries carry a little of the real output rather than only a link to it. The
 link opens the whole of what came back, but Activities are runtime state and

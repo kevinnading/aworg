@@ -35,6 +35,12 @@ from typing import Any
 #: it bound its port -- and the recent end, which says what it is doing now.
 KEEP_LINES = 400
 
+#: Under this many seconds, a program that ended did not stop running -- it
+#: never got going. Two seconds is generous for the cases this separates: a
+#: bad command line, a port already taken, a missing import. A server that
+#: genuinely ran and then fell over has almost always managed longer.
+BARELY_RAN = 2.0
+
 #: How many of a program's last lines to carry into the Living Log when it
 #: dies. Enough to hold a traceback or a bind error, which is what the last
 #: words of a server that fell over usually are.
@@ -313,17 +319,30 @@ class ProcessTable:
             )
             return
 
+        # A program that was gone before it could have done anything did not
+        # stop -- it never started, and calling that an outage sends its
+        # reader looking for a cause in the wrong place. The distinction is
+        # worth making because the two have different fixes: one is a thing
+        # that broke, the other is a thing that was never going to run.
+        born_dead = record.uptime < BARELY_RAN
+        opening = (
+            f"{record.label} would not start" if born_dead
+            else f"{record.label} stopped on its own"
+        )
+        reason = (
+            f"It exited with code {code} almost immediately."
+            if born_dead else
+            f"Nobody asked it to stop. Exit code {code} after "
+            f"{round(record.uptime)}s."
+        )
         self._say(
-            f"{record.label} stopped on its own",
+            opening,
             level="alarm",
             kind="process",
             source=f"process:{record.id}",
             detail=(
-                f"Nobody asked it to stop. Exit code {code} after "
-                f"{round(record.uptime)}s.\n\nWhat it last said:\n{tail}"
-                if tail else
-                f"Nobody asked it to stop. Exit code {code} after "
-                f"{round(record.uptime)}s, and it printed nothing."
+                f"{reason}\n\nWhat it last said:\n{tail}" if tail
+                else f"{reason} It printed nothing."
             ),
         )
 

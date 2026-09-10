@@ -272,7 +272,7 @@ class Journal:
         # least present -- they asked the Resident, the Resident asked someone
         # else, and what came back was a summary. So the fact that it happened
         # at all is worth keeping even when it went fine.
-        if kind == "worker" and state == "completed" and event.endswith("completed"):
+        if kind == "worker" and state == "completed" and event == "completed":
             return {
                 "summary": f"{label} finished",
                 "detail": activity.get("summary") or "",
