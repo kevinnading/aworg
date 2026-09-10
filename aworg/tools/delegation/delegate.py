@@ -121,7 +121,27 @@ def describe_for(workers: list[dict] | None = None, **_: object) -> dict:
     if not workers:
         return {}
 
-    lines = "\n".join(f"- {w['name']}: {w['description']}" for w in workers)
+    # What each worker knows, alongside what it does.
+    #
+    # This is how the Resident tells a worker which skill to use: not by
+    # naming one at dispatch, but by choosing the worker that already has it.
+    # Routing is the thing these models do reliably -- picking a name out of
+    # a described list -- and consulting a procedure unprompted is the thing
+    # they do not. Putting the skills in the routing decision means the
+    # reliable act carries the unreliable one.
+    #
+    # So a worker's skills belong in its entry for the same reason its
+    # description does: they are part of what distinguishes it. "builder
+    # knows house-style" is what turns "write this file" into a file written
+    # the way this machine writes files.
+    lines = "\n".join(
+        f"- {w['name']}: {w['description']}"
+        + (
+            f" Knows: {', '.join(w['skills'])}."
+            if w.get("skills") else ""
+        )
+        for w in workers
+    )
     schema = {
         "type": "object",
         "properties": {

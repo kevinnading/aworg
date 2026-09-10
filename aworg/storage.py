@@ -116,6 +116,12 @@ CREATE TABLE IF NOT EXISTS workers (
     -- that cannot write cannot damage the workspace however badly it
     -- misreads its job.
     tools         TEXT NOT NULL DEFAULT '[]',
+    -- JSON list of skill names this worker is given. Scoped exactly like
+    -- tools and for the same reason: what a worker knows how to do is the
+    -- owner's decision, not something the Resident can widen at dispatch.
+    -- Unlike the Resident's skills these are not offered to be read -- they
+    -- are put in front of the worker, which is why the list should be short.
+    skills        TEXT NOT NULL DEFAULT '[]',
     enabled       INTEGER NOT NULL DEFAULT 1,
     created_at    TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
@@ -420,6 +426,10 @@ DEFAULT_WORKERS = [
             "and where it goes. Cannot run anything."
         ),
         "tools": ["read_file", "write_file", "search_files"],
+        # The one worker that creates files, so the one that has to know how
+        # this Aworg names and places them. Given rather than offered: see
+        # workers._system.
+        "skills": ["house-style"],
         "system_prompt": (
             "You write files. Do exactly what the task asks and nothing more.\n\n"
             "Write the file, then say in one or two sentences what you wrote "
@@ -437,6 +447,10 @@ DEFAULT_WORKERS = [
             "execute_command", "start_process", "list_processes",
             "stop_process", "read_file",
         ],
+        # None. A runner types what it is told to type; conventions about
+        # how files are written are not its business, and context spent on
+        # them is context it does not have.
+        "skills": [],
         "system_prompt": (
             "You run commands. Run what the task asks, then report exactly "
             "what came back.\n\n"
@@ -459,6 +473,10 @@ DEFAULT_WORKERS = [
             "read_file", "search_files", "execute_command",
             "http_request", "list_processes",
         ],
+        # A checker needs the conventions for the opposite reason to the
+        # builder: it is checking whether they were followed, and it cannot
+        # find a missing provenance line it was never told to look for.
+        "skills": ["house-style"],
         "system_prompt": (
             "You check whether something actually works. You did not do the "
             "work and you have no stake in it having gone well.\n\n"
@@ -495,6 +513,7 @@ class Store:
         ("connections", "reasoning", "TEXT NOT NULL DEFAULT 'auto'"),
         ("connections", "context", "INTEGER"),
         ("messages", "blocks", "TEXT"),
+        ("workers", "skills", "TEXT NOT NULL DEFAULT '[]'"),
     ]
 
     def _init(self) -> None:
@@ -555,14 +574,16 @@ class Store:
             return
         for spec in DEFAULT_WORKERS:
             conn.execute(
-                "INSERT INTO workers (id, name, description, system_prompt, tools) "
-                "VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO workers "
+                "(id, name, description, system_prompt, tools, skills) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
                 (
                     uuid.uuid4().hex[:12],
                     spec["name"],
                     spec["description"],
                     spec["system_prompt"],
                     json.dumps(spec["tools"]),
+                    json.dumps(spec.get("skills") or []),
                 ),
             )
 
@@ -600,6 +621,29 @@ class Store:
             existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
             if column not in existing:
                 conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
+                cls._on_column_added(conn, table, column)
+
+    @staticmethod
+    def _on_column_added(conn, table: str, column: str) -> None:
+        """Fill in a new column for the shipped rows, once, as it appears.
+
+        Here rather than in a refresh that runs at every start, and the
+        difference matters. A refresh cannot tell an owner who cleared a
+        setting from a database that never had it, so it would keep handing
+        back something they deliberately removed. This runs exactly once, in
+        the same step that creates the column, when empty provably means
+        "this database predates the idea" rather than "no thanks".
+        """
+        if (table, column) != ("workers", "skills"):
+            return
+        wanted = {w["name"]: w.get("skills") or [] for w in DEFAULT_WORKERS}
+        for row in conn.execute("SELECT id, name FROM workers").fetchall():
+            target = wanted.get(row["name"])
+            if target:
+                conn.execute(
+                    "UPDATE workers SET skills = ? WHERE id = ?",
+                    (json.dumps(target), row["id"]),
+                )
 
     # -- connections ----------------------------------------------------
 
@@ -1132,12 +1176,14 @@ class Store:
         system_prompt: str = "",
         tools: list[str] | None = None,
         enabled: bool = True,
+        skills: list[str] | None = None,
     ) -> dict[str, Any]:
         worker_id = uuid.uuid4().hex[:12]
         with self._connect() as conn:
             conn.execute(
                 "INSERT INTO workers (id, name, description, connection_id, "
-                "system_prompt, tools, enabled) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "system_prompt, tools, skills, enabled) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     worker_id,
                     name,
@@ -1145,6 +1191,7 @@ class Store:
                     connection_id,
                     system_prompt,
                     json.dumps(tools or []),
+                    json.dumps(skills or []),
                     1 if enabled else 0,
                 ),
             )
@@ -1152,13 +1199,14 @@ class Store:
 
     def update_worker(self, worker_id: str, **fields: Any) -> dict[str, Any] | None:
         allowed = {
-            "name", "description", "connection_id", "system_prompt", "tools", "enabled",
+            "name", "description", "connection_id", "system_prompt", "tools",
+            "skills", "enabled",
         }
         sets, values = [], []
         for key, value in fields.items():
             if key not in allowed:
                 continue
-            if key == "tools":
+            if key in ("tools", "skills"):
                 value = json.dumps(value or [])
             elif key == "enabled":
                 value = 1 if value else 0
@@ -1181,10 +1229,11 @@ class Store:
     @staticmethod
     def _worker_row(row: sqlite3.Row) -> dict[str, Any]:
         worker = dict(row)
-        try:
-            worker["tools"] = json.loads(worker["tools"] or "[]")
-        except (TypeError, ValueError):
-            worker["tools"] = []
+        for column in ("tools", "skills"):
+            try:
+                worker[column] = json.loads(worker.get(column) or "[]")
+            except (TypeError, ValueError):
+                worker[column] = []
         worker["enabled"] = bool(worker["enabled"])
         return worker
 

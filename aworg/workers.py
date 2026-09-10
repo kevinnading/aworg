@@ -125,6 +125,7 @@ async def run_worker(
     host_facts: dict[str, Any],
     processes: Any = None,
     parent_id: str | None = None,
+    skills: Any = None,
 ) -> WorkerResult:
     """Run one worker on one task and come back with what happened.
 
@@ -191,8 +192,12 @@ async def run_worker(
     try:
         async for event in loop.run(
             [Message("owner", task)],
-            _system(worker, host_facts,
-                    workspace=paths.workspace if paths is not None else None),
+            _system(
+                worker,
+                host_facts,
+                workspace=paths.workspace if paths is not None else None,
+                library=skills,
+            ),
             record,
         ):
             kind = event["type"]
@@ -252,6 +257,7 @@ def _system(
     worker: dict[str, Any],
     facts: dict[str, Any] | None = None,
     workspace: Any = None,
+    library: Any = None,
 ) -> str:
     """What the worker is told about itself, and the little it needs about here.
 
@@ -281,6 +287,7 @@ def _system(
         "You are a worker. Do exactly what the task asks, then report what "
         "you did and whether it worked."
     )
+    prompt += _skills_block(worker, library)
     if not facts:
         return prompt
 
@@ -314,4 +321,52 @@ def _system(
         notes = host.shell_notes(facts)
         if notes:
             block += "\n\n" + "\n".join(notes)
+
     return block
+
+
+def _skills_block(worker: dict[str, Any], library: Any) -> str:
+    """The worker's skills, in full, in front of it.
+
+    **Given, not offered.** The Resident gets descriptions and fetches a body
+    with read_skill when it judges one applies; a worker gets the body
+    outright. That is a deliberate departure from progressive disclosure, and
+    it is the right one here for two separate reasons.
+
+    The first is that progressive disclosure solves a problem a worker does
+    not have. It exists so a Resident carrying a dozen skills across an
+    open-ended conversation pays for a paragraph rather than a book. A worker
+    is a fresh context for one bounded job, holding the two or three skills
+    its owner scoped it to. There is nothing to defer, and deferring would
+    cost it a round trip out of the few it has.
+
+    The second is measured. Asked plainly, a local model reaches for a
+    matching skill about one time in six; told to read a named one, it does
+    so four times out of four, on two unrelated model families. The reliable
+    half of that is being told. So the Resident's judgement -- which worker
+    should do this -- is what routes a skill to where it is needed, and by
+    the time the worker sees it there is no decision left to get wrong.
+
+    A named skill that no longer exists is skipped rather than raised on. An
+    owner who deletes a skill file should not find three workers refusing to
+    start.
+    """
+    names = worker.get("skills") or []
+    if not names or library is None:
+        return ""
+
+    bodies = []
+    for name in names:
+        skill = library.get_any(name)
+        if skill is None:
+            continue
+        bodies.append(f"## {skill.name}\n\n{skill.body().strip()}")
+    if not bodies:
+        return ""
+
+    return (
+        "\n\nThese are this machine's own conventions for the kind of work "
+        "you do. They are not general good practice and you could not have "
+        "guessed them. Follow them exactly, in preference to how you would "
+        "normally do it.\n\n" + "\n\n".join(bodies)
+    )

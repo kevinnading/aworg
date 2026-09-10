@@ -168,6 +168,9 @@ class WorkerBody(BaseModel):
     #: deliberately not "all of them", because a worker's scope is the thing
     #: that makes it safe to hand work to.
     tools: list[str] = []
+    #: Skill names this worker is given in full. Scoped like tools; unlike
+    #: the Resident's, these are put in front of it rather than offered.
+    skills: list[str] = []
     enabled: bool = True
 
 
@@ -177,6 +180,7 @@ class WorkerPatch(BaseModel):
     connection_id: str | None = None
     system_prompt: str | None = None
     tools: list[str] | None = None
+    skills: list[str] | None = None
     enabled: bool | None = None
 
 
@@ -884,6 +888,7 @@ def create_app(paths: Paths) -> FastAPI:
             connection_id=body.connection_id,
             system_prompt=body.system_prompt,
             tools=body.tools,
+            skills=body.skills,
             enabled=body.enabled,
         )
 

@@ -761,6 +761,10 @@ class Resident:
                 host_facts=self.host,
                 processes=self.processes,
                 parent_id=None,
+                # So a worker's scoped skills can be resolved to their
+                # bodies. The Resident holds the library; the worker is
+                # handed only what it was scoped to.
+                skills=self.skills,
             )
 
         loop = AgentLoop(
