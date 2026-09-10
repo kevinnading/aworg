@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Pilot">
+  <rect width="64" height="64" rx="16" fill="#0b2439"/>
+  <!-- An attitude indicator: the one instrument that tells you which way is
+       up when nothing else will. -->
+  <circle cx="32" cy="32" r="17" fill="#123c5c"/>
+  <path d="M15 32 A17 17 0 0 1 49 32 Z" fill="#38bdf8" opacity="0.55"/>
+  <path d="M15 32 H49" stroke="#e0f2fe" stroke-width="2"/>
+  <path d="M24 32 h6 M34 32 h6 M32 27 v-4" stroke="#e0f2fe" stroke-width="2.4"
+        stroke-linecap="round"/>
+  <circle cx="32" cy="32" r="17" fill="none" stroke="#38bdf8" stroke-width="2.5"/>
+</svg>

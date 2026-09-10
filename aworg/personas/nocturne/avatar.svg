@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Nocturne">
+  <defs>
+    <linearGradient id="n" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#312e81"/>
+      <stop offset="1" stop-color="#0f0d29"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="16" fill="url(#n)"/>
+  <!-- A crescent, cut rather than drawn: one circle with another taken out
+       of it, which is how the moon actually does it. -->
+  <path d="M40 14 A18 18 0 1 0 40 50 A15 15 0 1 1 40 14 Z" fill="#a78bfa"/>
+  <circle cx="19" cy="20" r="1.4" fill="#ddd6fe"/>
+  <circle cx="47" cy="27" r="1.1" fill="#ddd6fe" opacity="0.8"/>
+  <circle cx="44" cy="45" r="1.6" fill="#ddd6fe" opacity="0.6"/>
+</svg>

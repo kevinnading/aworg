@@ -60,6 +60,21 @@ ACCENT = "accent"
 AVATAR = "avatar"
 BACKGROUND = "chat_background"
 
+#: How much of the chat's own ground to lay over a persona's background.
+#:
+#: Not a taste. It is the loosest value at which the conversation still
+#: clears WCAG AA against the worst background anybody could ship -- a pure
+#: white image, under this scheme's light text, comes out at 5.05:1 here and
+#: at 4.35:1 one step looser. AWORG guarantees the words stay readable
+#: whatever a downloaded persona puts behind them, so the number is computed
+#: rather than chosen by eye against artwork that happens to be dark.
+#:
+#: The consequence is that a persona's background has to be bright enough to
+#: survive with a third of its luminance reaching the eye. That is the right
+#: place for the constraint to land: on the picture, whose author can change
+#: it, rather than on the text, which the owner cannot.
+SCRIM = 0.66
+
 #: How much of PERSONA.md to put in the prompt. Generous, because a persona
 #: is a paragraph or two by nature, and bounded because it is untrusted text
 #: sent on every single message and a runaway file should cost a corner of
@@ -175,8 +190,22 @@ class PersonaLibrary:
         self.discover()
 
     def discover(self) -> None:
-        self._personas = {}
-        self.broken = {}
+        """Re-read the personas on disk, without ever being half-read.
+
+        Built into locals and swapped in at the end rather than cleared and
+        refilled in place. The interface re-reads the library on every
+        request for the list, and a sync endpoint runs in a threadpool -- so
+        a browser asking for a background image while that was happening
+        looked the persona up in a dictionary that had been emptied a
+        microsecond earlier and got a 404. Observed exactly that: a chat
+        background that never painted, with the stylesheet's request failing
+        and an identical one moments later succeeding.
+
+        A single rebind is atomic, so a reader sees either the old library or
+        the new one and never the gap between them.
+        """
+        found: dict[str, Persona] = {}
+        broken: dict[str, str] = {}
         for root, source in ((self.shipped_root, SHIPPED),
                              (self.installed_root, INSTALLED)):
             if root is None or not root.is_dir():
@@ -184,14 +213,14 @@ class PersonaLibrary:
             for folder in sorted(root.iterdir()):
                 if not folder.is_dir() or folder.name.startswith((".", "_")):
                     continue
-                found = folder / PERSONA_FILE
-                if not found.is_file():
-                    self.broken[folder.name] = f"has no {PERSONA_FILE}"
+                manifest = folder / PERSONA_FILE
+                if not manifest.is_file():
+                    broken[folder.name] = f"has no {PERSONA_FILE}"
                     continue
                 try:
-                    text = found.read_text(encoding="utf-8")
+                    text = manifest.read_text(encoding="utf-8")
                 except OSError as exc:
-                    self.broken[folder.name] = str(exc)
+                    broken[folder.name] = str(exc)
                     continue
 
                 meta = _frontmatter(text)
@@ -205,13 +234,15 @@ class PersonaLibrary:
                     # would make that example fail to load.
                     description = _first_line(_without_frontmatter(text))
 
-                self._personas[name] = Persona(
+                found[name] = Persona(
                     name=name,
                     description=description,
-                    path=found,
+                    path=manifest,
                     source=source,
-                    theme=_theme(folder / THEME_FILE, self.broken, folder.name),
+                    theme=_theme(folder / THEME_FILE, broken, folder.name),
                 )
+
+        self._personas, self.broken = found, broken
 
     # -- reading --------------------------------------------------------
 
@@ -332,7 +363,7 @@ class PersonaLibrary:
                 "  position: absolute;\n"
                 "  inset: 0;\n"
                 "  background: var(--bg);\n"
-                "  opacity: 0.82;\n"
+                f"  opacity: {SCRIM};\n"
                 "  pointer-events: none;\n"
                 "}\n"
             )

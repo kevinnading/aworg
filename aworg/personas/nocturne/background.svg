@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000"
+     width="1600" height="1000" role="img" aria-label="">
+  <!-- Built to survive the scrim rather than to look right on its own.
+       The chat lays its own ground over any background at the opacity that
+       keeps text at WCAG AA, so roughly a third of this reaches the eye. A
+       picture composed for full brightness arrives as a black rectangle, so
+       everything here is lighter and larger than it would be as art. -->
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0.15" y2="1">
+      <stop offset="0" stop-color="#4c3f9e"/>
+      <stop offset="0.5" stop-color="#5b4bc4"/>
+      <stop offset="1" stop-color="#241d52"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#f5f3ff" stop-opacity="0.95"/>
+      <stop offset="0.45" stop-color="#c4b5fd" stop-opacity="0.45"/>
+      <stop offset="1" stop-color="#a78bfa" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="ridge" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2e2668"/>
+      <stop offset="1" stop-color="#140f33"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1600" height="1000" fill="url(#sky)"/>
+  <circle cx="1210" cy="250" r="440" fill="url(#glow)"/>
+  <circle cx="1210" cy="250" r="96" fill="#ffffff"/>
+
+  <g fill="#ffffff">
+    <circle cx="180" cy="130" r="6"/>
+    <circle cx="420" cy="86" r="4.5" opacity="0.9"/>
+    <circle cx="700" cy="190" r="5" opacity="0.8"/>
+    <circle cx="300" cy="330" r="4" opacity="0.75"/>
+    <circle cx="900" cy="110" r="6.5"/>
+    <circle cx="1500" cy="430" r="4.5" opacity="0.8"/>
+    <circle cx="560" cy="430" r="4" opacity="0.7"/>
+    <circle cx="1040" cy="370" r="4.5" opacity="0.75"/>
+    <circle cx="120" cy="540" r="5" opacity="0.7"/>
+    <circle cx="820" cy="300" r="3.5" opacity="0.6"/>
+  </g>
+
+  <!-- A low horizon, so the conversation sits in the sky and not on the
+       ground. -->
+  <path d="M0 780 C 260 720, 420 826, 700 792 C 980 758, 1180 832, 1600 762
+           L1600 1000 L0 1000 Z" fill="url(#ridge)"/>
+  <path d="M0 848 C 300 804, 520 898, 820 862 C 1120 826, 1340 900, 1600 842
+           L1600 1000 L0 1000 Z" fill="#0d0925" opacity="0.9"/>
+</svg>

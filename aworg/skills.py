@@ -171,8 +171,26 @@ class SkillLibrary:
         self.discover()
 
     def discover(self) -> None:
-        self._skills = {}
-        self.broken = {}
+        """Re-read the skills on disk, without ever being half-read.
+
+        Built into locals and swapped in at the end rather than cleared and
+        refilled in place. The interface re-reads the library on every
+        request for the list, sync endpoints run in a threadpool, and a
+        read_skill arriving inside that window would look its name up in a
+        dictionary that had just been emptied -- reporting a skill that does
+        not exist, and listing the ones that had not been read back in yet as
+        the alternatives.
+
+        The identical bug in personas.py was caught in the act: a chat
+        background whose stylesheet request 404'd while a manual request a
+        moment later succeeded. Nothing had gone looking for it here, which
+        is not the same as it not being there.
+
+        A single rebind is atomic, so a reader sees either the old library or
+        the new one and never the gap between them.
+        """
+        found: dict[str, Skill] = {}
+        broken: dict[str, str] = {}
         # Shipped first, so an installed skill of the same name replaces it.
         for root, source in ((self.shipped_root, SHIPPED),
                              (self.installed_root, INSTALLED)):
@@ -181,14 +199,14 @@ class SkillLibrary:
             for folder in sorted(root.iterdir()):
                 if not folder.is_dir() or folder.name.startswith((".", "_")):
                     continue
-                found = folder / SKILL_FILE
-                if not found.is_file():
-                    self.broken[folder.name] = f"has no {SKILL_FILE}"
+                manifest = folder / SKILL_FILE
+                if not manifest.is_file():
+                    broken[folder.name] = f"has no {SKILL_FILE}"
                     continue
                 try:
-                    meta = _frontmatter(found.read_text(encoding="utf-8"))
+                    meta = _frontmatter(manifest.read_text(encoding="utf-8"))
                 except OSError as exc:
-                    self.broken[folder.name] = str(exc)
+                    broken[folder.name] = str(exc)
                     continue
 
                 invocable = not _flag(meta.get("disable-model-invocation"))
@@ -197,7 +215,7 @@ class SkillLibrary:
                     # An unknown condition is treated as no condition rather
                     # than as false. A typo should not silently hide a skill.
                     active = "always"
-                    self.broken[folder.name] = (
+                    broken[folder.name] = (
                         f"unknown active-while {meta.get('active-while')!r}; "
                         "offering it unconditionally"
                     )
@@ -221,15 +239,17 @@ class SkillLibrary:
                     # Named rather than silently skipped. A skill with no
                     # description is invisible to the Resident, which looks
                     # exactly like the skill not being installed.
-                    self.broken[folder.name] = "declares no description"
+                    broken[folder.name] = "declares no description"
                     continue
-                self._skills[name] = Skill(
-                    name, description, found, source, invocable, active,
+                found[name] = Skill(
+                    name, description, manifest, source, invocable, active,
                     {k: v for k, v in meta.items()
                      if k not in ("name", "description", "when_to_use",
                                   "disable-model-invocation",
                                   "active-while")},
                 )
+
+        self._skills, self.broken = found, broken
 
     def all(self) -> list[Skill]:
         """Every discovered skill, switched on or off.
