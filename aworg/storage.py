@@ -136,6 +136,35 @@ CREATE TABLE IF NOT EXISTS capability_state (
 CREATE INDEX IF NOT EXISTS idx_messages_conversation
     ON messages (conversation_id, id);
 
+-- The Living Log: what happened, and mattered.
+--
+-- On disk rather than in memory, which is the whole difference between this
+-- and Activities. An owner coming back in the morning to find out what
+-- happened overnight is the case this table exists for, and runtime state
+-- answers that question with silence.
+CREATE TABLE IF NOT EXISTS journal (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    -- note, concern or alarm. Separate levels rather than one "bad" flag,
+    -- because the autonomous loop will need to tell "something failed and
+    -- was handled" from "something is wrong now"; see aworg/journal.py.
+    level       TEXT NOT NULL DEFAULT 'note',
+    -- What sort of thing this was: tool, worker, process, task, capability,
+    -- skill, aworg. The interface groups on it; nothing branches on it.
+    kind        TEXT NOT NULL DEFAULT 'aworg',
+    -- Who is reporting: the Resident, a worker, a running program, or AWORG
+    -- itself for the things the owner did.
+    source      TEXT NOT NULL DEFAULT 'aworg',
+    summary     TEXT NOT NULL,
+    detail      TEXT NOT NULL DEFAULT '',
+    -- The evidence, when there is any. Activities are runtime state and are
+    -- forgotten in time, so this is a link that may go dead -- which is why
+    -- the entry has to stand on its own without it.
+    activity_id TEXT,
+    at          TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_journal_at ON journal (id DESC);
+
 """
 
 
@@ -886,7 +915,7 @@ class Store:
         removed: dict[str, int] = {}
         with self._connect() as conn:
             for table in ("messages", "conversations", "tasks", "workers",
-                          "capability_state"):
+                          "capability_state", "journal"):
                 removed[table] = conn.execute(
                     f"SELECT COUNT(*) c FROM {table}"
                 ).fetchone()["c"]
@@ -941,6 +970,56 @@ class Store:
             params.append(limit)
         with self._connect() as conn:
             return [dict(r) for r in conn.execute(query, params).fetchall()]
+
+    # -- the Living Log -------------------------------------------------
+
+    def add_journal_entry(
+        self,
+        summary: str,
+        level: str = "note",
+        kind: str = "aworg",
+        source: str = "aworg",
+        detail: str = "",
+        activity_id: str | None = None,
+        keep: int = 500,
+    ) -> dict[str, Any]:
+        """Write one Living Log entry, and drop the oldest past the cap.
+
+        Pruned here rather than on a timer, because the only moment the table
+        can grow is this one and a sweep that runs on a schedule is a sweep
+        that has not run yet when the owner looks.
+        """
+        with self._connect() as conn:
+            cursor = conn.execute(
+                "INSERT INTO journal (level, kind, source, summary, detail, activity_id)"
+                " VALUES (?, ?, ?, ?, ?, ?)",
+                (level, kind, source, summary, detail, activity_id),
+            )
+            conn.execute(
+                "DELETE FROM journal WHERE id <= ("
+                "  SELECT id FROM journal ORDER BY id DESC LIMIT 1 OFFSET ?)",
+                (keep,),
+            )
+            row = conn.execute(
+                "SELECT * FROM journal WHERE id = ?", (cursor.lastrowid,)
+            ).fetchone()
+        return dict(row) if row else {}
+
+    def list_journal(self, limit: int = 100) -> list[dict[str, Any]]:
+        """Newest first, because the answer to "what happened" starts at the end."""
+        with self._connect() as conn:
+            return [
+                dict(r)
+                for r in conn.execute(
+                    "SELECT * FROM journal ORDER BY id DESC LIMIT ?", (limit,)
+                ).fetchall()
+            ]
+
+    def clear_journal(self) -> int:
+        with self._connect() as conn:
+            count = conn.execute("SELECT COUNT(*) c FROM journal").fetchone()["c"]
+            conn.execute("DELETE FROM journal")
+        return count
 
     def get_task(self, task_id: str) -> dict[str, Any] | None:
         with self._connect() as conn:

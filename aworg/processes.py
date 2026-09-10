@@ -35,6 +35,11 @@ from typing import Any
 #: it bound its port -- and the recent end, which says what it is doing now.
 KEEP_LINES = 400
 
+#: How many of a program's last lines to carry into the Living Log when it
+#: dies. Enough to hold a traceback or a bind error, which is what the last
+#: words of a server that fell over usually are.
+TAIL_ON_DEATH = 12
+
 #: How long to wait for a stopped process to go before insisting. Almost
 #: everything handles a terminate immediately; the ones that do not are
 #: usually mid-write and worth a moment.
@@ -139,6 +144,12 @@ class Running:
         #: printed is a memory leak with a friendly name.
         self.lines: deque[str] = deque(maxlen=KEEP_LINES)
         self.pump: asyncio.Task | None = None
+        #: Set the moment someone asks for this to stop, and read when the
+        #: pipe closes. It is the whole difference between "the Resident
+        #: stopped the server" and "the server died" -- two events that look
+        #: identical from inside the drain, and that mean opposite things to
+        #: an owner reading the Living Log at three in the morning.
+        self.stopping = False
 
     @property
     def alive(self) -> bool:
@@ -171,16 +182,33 @@ class ProcessTable:
     silence about something that was there a minute ago.
     """
 
-    def __init__(self, home: Any = None) -> None:
+    def __init__(self, home: Any = None, report: Any = None) -> None:
         self._processes: dict[str, Running] = {}
         #: Where to write the ledger. None means not writing one, which is
         #: what tests want and what a caller that has no home gets.
         self._home = home
+        #: Somewhere to say what happened -- the Living Log, in the running
+        #: product. Optional and called defensively, because a process table
+        #: that fell over because its logger did would take down the draining
+        #: that keeps every running program from blocking on a full pipe.
+        self._report = report
+
+    def _say(self, summary: str, **fields: Any) -> None:
+        if self._report is None:
+            return
+        with contextlib.suppress(Exception):
+            self._report(summary, **fields)
 
     def add(self, process: Any, command: str, label: str, cwd: str) -> Running:
         record = Running(process, command, label, cwd)
         self._processes[record.id] = record
         self._write_ledger()
+        self._say(
+            f"Started {record.label}",
+            kind="process",
+            source=f"process:{record.id}",
+            detail=f"{command} (in {cwd})",
+        )
         # Started immediately, because the pipe begins filling immediately.
         record.pump = asyncio.create_task(self._drain(record))
         return record
@@ -209,15 +237,20 @@ class ProcessTable:
         with contextlib.suppress(OSError):
             (self._home / LEDGER).write_text(json.dumps(alive), encoding="utf-8")
 
-    @staticmethod
-    async def _drain(record: Running) -> None:
-        """Read a process's output for as long as it runs.
+    async def _drain(self, record: Running) -> None:
+        """Read a process's output for as long as it runs, and notice when it stops.
 
         Not for our benefit -- for its. An OS pipe holds a few kilobytes, and
         a process whose stdout is full blocks on its next write and stops
         doing whatever it was doing. Nothing about that looks like an error:
         the server is up, the port is open, and it has simply stopped
         answering. Reading continuously is what stops that happening.
+
+        The other half is new. This coroutine ends at exactly the moment a
+        program stops existing, which makes it the only place in AWORG that
+        learns a server has gone without anyone asking. That is the Living
+        Log's founding case -- the site was up, nobody touched it, and it is
+        down now -- so the death is reported from here.
         """
         stream = record.process.stdout
         if stream is None:
@@ -239,6 +272,60 @@ class ProcessTable:
             # going and the exit code becomes readable.
             with contextlib.suppress(Exception):
                 await record.process.wait()
+            self._died(record)
+
+    def _died(self, record: Running) -> None:
+        """Say that a program ended, and how much that should worry anyone.
+
+        Three different endings, and flattening them would make the pane
+        useless. A program someone stopped is a note. A program that ran to
+        completion and exited zero is a note -- a build finished. A program
+        that nobody stopped and that left with a non-zero code is the one
+        thing in this Aworg that raises an alarm, because it is the only
+        event that means something is wrong *now* and nobody asked for it.
+
+        The last few lines it printed go in with it. An alarm that says a
+        server died and not what it said on the way out is an alarm that
+        sends its reader hunting through a process table that may already
+        have been cleared.
+        """
+        code = record.process.returncode
+        tail = "\n".join(list(record.lines)[-TAIL_ON_DEATH:])
+
+        if record.stopping:
+            self._say(
+                f"Stopped {record.label}",
+                kind="process",
+                source=f"process:{record.id}",
+                detail=f"Ran for {round(record.uptime)}s.",
+            )
+            return
+
+        if code == 0:
+            self._say(
+                f"{record.label} finished",
+                kind="process",
+                source=f"process:{record.id}",
+                detail=(
+                    f"Exit 0 after {round(record.uptime)}s."
+                    + (f"\n{tail}" if tail else "")
+                ),
+            )
+            return
+
+        self._say(
+            f"{record.label} stopped on its own",
+            level="alarm",
+            kind="process",
+            source=f"process:{record.id}",
+            detail=(
+                f"Nobody asked it to stop. Exit code {code} after "
+                f"{round(record.uptime)}s.\n\nWhat it last said:\n{tail}"
+                if tail else
+                f"Nobody asked it to stop. Exit code {code} after "
+                f"{round(record.uptime)}s, and it printed nothing."
+            ),
+        )
 
     def get(self, process_id: str) -> Running | None:
         return self._processes.get(process_id)
@@ -265,6 +352,12 @@ class ProcessTable:
             return "unknown"
         if not record.alive:
             return "already stopped"
+
+        # Before anything is signalled, not after. The drain can finish the
+        # instant the pipe closes, and a flag set afterwards would race with
+        # it -- reporting a deliberate stop as an unexplained death, which is
+        # the one false alarm this pane cannot afford.
+        record.stopping = True
 
         # Every command goes through a shell, so what we hold is the shell
         # and the interesting process is its child. Terminating the parent

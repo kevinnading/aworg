@@ -243,6 +243,47 @@ Anything that wants to add behaviour to the Activity Manager should become a
 subscriber instead — including, when it arrives, the approval step described
 above.
 
+The Living Log is the first subscriber to take that seriously rather than
+theoretically. It watches the same stream the interface does and decides for
+itself what is worth keeping; the manager was not changed to add it, and does
+not know it exists.
+
+### The Living Log judges; nothing else does
+
+`aworg/journal.py` is the only place in AWORG that holds an opinion about what
+deserves remembering, and that concentration is deliberate. Spreading the
+decision across the tools would mean every tool carrying a second, quieter
+responsibility — and a rule you could only find by reading all of them.
+
+Two things follow from the split.
+
+Failure is judged centrally, from the Activity stream, so a tool does not
+need to know the Living Log exists in order to be reported when it breaks.
+The few tools that write entries directly are the ones whose *effect outlives
+the call* — a plan being made, a task ending — which the Activity stream
+cannot see, because from outside they are ordinary successful tool calls.
+
+And the durability is the point. Activities are runtime state, capped and
+gone on restart; the journal is a table. An owner asking what happened
+overnight is the case this exists for, and runtime state answers that
+question with silence. That is also why an entry copies a bounded tail of the
+real output rather than only linking to the Activity holding it: the link
+goes dead, and an entry that is only a dead link records nothing.
+
+Three levels rather than a `bad` flag, because the autonomous repair loop
+will have to tell "something failed and was handled" from "something is wrong
+now" — a loop that cannot separate those either wakes for everything or
+sleeps through the outage. Today exactly one event raises `alarm`: a program
+that stopped without being asked to.
+
+That event is also the one thing in AWORG no model and no tool can report.
+Every started program has its output drained continuously, because a process
+whose stdout fills blocks on its next write and silently stops serving. That
+drain ends precisely when the program stops existing, which makes it the only
+observer of a death nobody asked for. Distinguishing it from a deliberate
+stop requires the intent to be recorded *before* the process is signalled;
+set afterwards, it races with the death it exists to explain.
+
 ### Skills cannot be relied on at this size, and that is measured
 
 AWORG implements the Agent Skills convention properly: descriptions in the

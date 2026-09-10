@@ -1506,6 +1506,51 @@ body.resizing.row * { cursor: row-resize !important; }
 .pane-item-name { font-size: 12.5px; color: var(--text); }
 .pane-item-detail { font-size: 11.5px; line-height: 1.4; color: var(--muted); }
 
+/* ---- the Living Log: what happened, and mattered ---- */
+
+/* Three levels, and only one of them is allowed to shout.
+   `alarm` means something is wrong now and nobody asked for it, and it is
+   the single thing in this pane worth catching an eye crossing the screen.
+   `concern` is something that failed and is over. `note` is something that
+   merely happened. Colouring all three would train an owner to stop
+   looking, which costs the alarm its only job. */
+.pane-item.log-entry { gap: 3px; }
+.pane-item.log-entry::before { background: var(--muted); opacity: 0.55; }
+.pane-item.log-entry.concern::before { background: var(--warn); opacity: 1; }
+.pane-item.log-entry.alarm::before { background: var(--danger); opacity: 1; }
+
+.log-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+/* The time never wraps and never competes: it is how an owner finds the
+   moment something happened, not something to read on the way past. */
+.log-when {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  flex: none;
+  opacity: 0.75;
+}
+.pane-item.log-entry.alarm .pane-item-name { color: var(--danger); }
+
+/* Kept as a pre, because what a dying program last printed is a traceback
+   or a bind error, and reflowing either of those is throwing away the shape
+   that makes it readable. It scrolls sideways rather than making the pane
+   do it. */
+.log-detail {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--muted);
+  white-space: pre-wrap;
+  overflow-x: auto;
+  max-height: 8.5em;
+  overflow-y: auto;
+}
+
 /* ---- capabilities: what the Resident has been granted ---- */
 
 /* A Capability is a heavier thing than an observed fact -- it has a switch

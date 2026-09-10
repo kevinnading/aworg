@@ -102,6 +102,17 @@ async def run(context: ToolContext, tasks: list | None = None) -> ToolResult:
     created = store.add_tasks(prepared)
     lines = "\n".join(f"  {t['id']}  {t['title']}" for t in created)
 
+    # A plan is one of the few tool calls whose effect outlives the call.
+    # The owner who was not watching should be able to find out that the
+    # Resident decided on a course, and what it was.
+    if getattr(context, "journal", None) is not None:
+        context.journal.record(
+            f"Planned {len(created)} task{'s' if len(created) != 1 else ''}",
+            kind="task",
+            source=context.source,
+            detail="\n".join(t["title"] for t in created),
+        )
+
     note = ""
     if len(created) > MANY_AT_ONCE:
         note = (

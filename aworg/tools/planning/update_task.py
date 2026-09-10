@@ -48,6 +48,11 @@ INPUT_SCHEMA = {
 #: what it achieved.
 NEEDS_REASON = ("blocked", "abandoned")
 
+#: The states worth a Living Log entry. Endings only -- a task becoming
+#: `active` is the Resident picking up the next thing, which is what
+#: Activities is for.
+ENDINGS = ("done", "blocked", "abandoned")
+
 
 async def run(
     context: ToolContext,
@@ -85,6 +90,21 @@ async def run(
         existing["id"], state=state, note=note or None, detail=detail or None
     )
     remaining = len(store.list_tasks(store.OPEN_STATES))
+
+    # Only the endings. A task moving to `active` is the Resident picking up
+    # the next thing and belongs in Activities, not here; a task that ended
+    # -- and especially one that ended badly -- is what an owner reading
+    # back wants to find. `blocked` and `abandoned` carry a reason by the
+    # rule above, so the entry always says why.
+    if getattr(context, "journal", None) is not None and state in ENDINGS:
+        context.journal.record(
+            f"{updated['title']} is {state}",
+            level="note" if state == "done" else "concern",
+            kind="task",
+            source=context.source,
+            detail=updated["note"] or "",
+        )
+
     return ToolResult(
         text=(
             f"{updated['title']} is now {state}."

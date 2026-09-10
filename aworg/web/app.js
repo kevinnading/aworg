@@ -85,6 +85,68 @@ async function boot() {
   // Not awaited: it holds a connection open for the life of the page, and
   // waiting on it would mean boot never finishing.
   startActivities();
+  startLivingLog();
+}
+
+/* Keep the Living Log current.
+ *
+ * Polled rather than streamed, and the reason is the entry that matters
+ * most. A program dying on its own produces no Activity event at all --
+ * nothing started, nothing failed, a pipe simply closed -- so a Living Log
+ * that only woke when the Activity stream did would be deaf to exactly the
+ * thing it exists to report. Something has to ask.
+ *
+ * Slowly, because this is the pane about what happened rather than what is
+ * happening. Twenty seconds is far too slow for Activities and about right
+ * here, and it is one small query against a table capped at a few hundred
+ * rows. */
+const LIVING_LOG_EVERY = 20000;
+
+async function startLivingLog() {
+  await refreshLivingLog();
+  setInterval(refreshLivingLog, LIVING_LOG_EVERY);
+}
+
+/* Ask again shortly, however many times you are told to.
+ *
+ * A busy turn ends twenty tool calls in a second or two. Refreshing on each
+ * would be twenty requests for one answer, so they collapse into one that
+ * lands just after the last of them -- and after the follower on the server
+ * has had a moment to write anything down, which is the reason for the delay
+ * rather than firing immediately. */
+let livingLogSoon = null;
+
+function nudgeLivingLog() {
+  if (livingLogSoon) clearTimeout(livingLogSoon);
+  livingLogSoon = setTimeout(() => {
+    livingLogSoon = null;
+    refreshLivingLog();
+  }, 600);
+}
+
+async function refreshLivingLog() {
+  let entries;
+  try {
+    ({ entries } = await api("/api/journal"));
+  } catch (_) {
+    // A failed poll leaves the last good picture up. An empty pane would
+    // claim nothing has happened, which is a different and untrue thing.
+    return;
+  }
+  const pane = app.panes.find((candidate) => candidate.id === "log");
+  if (!pane) return;
+  pane.items = entries.map((entry) => ({
+    kind: "entry",
+    id: String(entry.id),
+    level: entry.level || "note",
+    category: entry.kind || "aworg",
+    source: entry.source || "aworg",
+    name: entry.summary || "",
+    detail: entry.detail || "",
+    at: entry.at || "",
+    activity_id: entry.activity_id,
+  }));
+  repaintPane("log");
 }
 
 async function refresh() {
@@ -1144,6 +1206,11 @@ async function followActivities() {
         } else if (event.activity) {
           activityState.known.set(event.activity.id, event.activity);
           trimFinishedActivities();
+          // Anything that ended may have been judged worth keeping. Asking
+          // then, rather than waiting out the poll, is what stops a failure
+          // sitting invisible for twenty seconds while the owner is looking
+          // straight at the pane it should be in.
+          if (isActivityFinished(event.activity)) nudgeLivingLog();
         }
         paintActivities();
         paintWorkers();
@@ -1530,10 +1597,67 @@ function paneItems(items) {
       : item.kind === "worker" ? workerRow(item)
       : item.kind === "task" ? taskRow(item)
       : item.kind === "skill" ? skillRow(item)
+      : item.kind === "entry" ? logRow(item)
       : factRow(item)
     );
   }
   return list;
+}
+
+/* One line of the Living Log.
+ *
+ * The level is the whole design of this row. `alarm` means something is
+ * wrong now and nobody asked for it, and it is the only thing here that
+ * should catch an eye crossing the screen -- so it is the only one that
+ * gets colour. `concern` is something that failed and is over; `note` is
+ * something that merely happened. A pane that shouted about all three would
+ * be a pane whose owner learns to stop looking at it.
+ *
+ * The detail is always shown rather than hidden behind a click. An alarm
+ * whose last words are one expand away is an alarm that gets read as "the
+ * server died" and no further, and the last twelve lines a dying server
+ * printed are usually the entire reason it died. */
+function logRow(item) {
+  const row = document.createElement("div");
+  row.className = `pane-item log-entry ${item.level || "note"}`;
+
+  const head = document.createElement("div");
+  head.className = "log-head";
+
+  const name = document.createElement("span");
+  name.className = "pane-item-name";
+  name.textContent = item.name;
+
+  const when = document.createElement("span");
+  when.className = "log-when";
+  when.textContent = logTime(item.at);
+  // The full stamp on hover: the short form drops the date, which is the
+  // right default and the wrong thing to be stuck with when reading back
+  // across a night.
+  when.title = item.at || "";
+
+  head.append(name, when);
+  row.appendChild(head);
+
+  if (item.detail) {
+    const detail = document.createElement("pre");
+    detail.className = "log-detail";
+    detail.textContent = item.detail;
+    row.appendChild(detail);
+  }
+  return row;
+}
+
+/* Time of day, in the reader's own zone.
+ *
+ * Stored as UTC by SQLite's datetime('now') and shown local, because an
+ * owner asking when the site went down means their own clock. Falls back to
+ * the raw string rather than showing "Invalid Date" if anything is off. */
+function logTime(stamp) {
+  if (!stamp) return "";
+  const parsed = new Date(stamp.replace(" ", "T") + "Z");
+  if (Number.isNaN(parsed.getTime())) return stamp;
+  return parsed.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
 function factRow(item) {

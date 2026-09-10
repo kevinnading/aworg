@@ -36,8 +36,13 @@ Asked for a three-page website, it plans the work, delegates the writing,
 starts a server, checks the pages actually answer, and shows you the running
 site in the Application pane.
 
-What it does not have yet is the Living Log or the autonomous repair loop —
-the parts that would let it notice trouble and respond with nobody watching.
+It keeps a **Living Log** of what happened and mattered, which survives the
+restart that clears everything else — including the one entry nothing else in
+AWORG can produce: a program that stopped on its own, with what it last said
+before it went.
+
+What it does not have yet is the autonomous repair loop — the part that would
+have it read that log at three in the morning and do something about it.
 
 ## Running it
 
@@ -273,7 +278,9 @@ reasoning, the decisions, what it concluded — under machinery.
 
 So the machinery goes to the **Activities** pane, beside the Living Log. Those
 two answer different questions and the pairing is the point: Activities is
-what is happening, the Living Log is what happened and mattered. A row per
+what is happening, the Living Log is what happened and mattered. See
+[The Living Log](#the-living-log-what-happened-and-mattered) for the other
+half. A row per
 call, with a live dot while it runs, what it was called with, and what came
 back. Failures are marked. Finished work fades but lingers a moment, because a
 tool that takes 200ms would otherwise flash past and leave the pane looking
@@ -295,6 +302,76 @@ silently halved produces a Resident reasoning confidently about output it
 never saw. And the extract is always a deterministic head and tail, never a
 summary the model wrote — a summary of a tool result, written by the model
 about to be judged on it, is testimony rather than evidence.
+
+## The Living Log: what happened, and mattered
+
+Activities is a window. It shows work while it runs, it is runtime state, and
+it is gone on restart — which is right, because "what is happening right now"
+has no meaning for a moment that has passed.
+
+The Living Log is the opposite in every respect. It is on disk, it is short,
+and nothing reaches it because it occurred. It reaches it because something
+judged that it mattered.
+
+That judging is a real piece of code rather than a filter setting, and it
+lives in one file. The Activity Manager deliberately has no opinions — it
+tracks work and announces it, and it will not decide that something deserves
+remembering. So the Living Log subscribes like anything else and makes the
+call itself. Teaching AWORG to remember a new kind of thing is a rule added
+in `aworg/journal.py`, not a change to the thing being remembered.
+
+The bar is high on purpose. A log that records every successful tool call is
+a second Activities pane with worse latency, and an owner learns within a day
+to stop reading it. What earns an entry is a change of state you would want
+to find tomorrow, or something going wrong:
+
+- a program you started, and the moment it finished or died
+- anything that failed, timed out, or was stopped part way
+- a worker finishing, since delegated work is where you were least present
+- a plan being made, and any task that ended — done, blocked or abandoned
+- a Capability or Skill you switched off, which is invisible afterwards
+- the Aworg itself starting, stopping, or being reset
+
+Three levels, and only one of them is allowed to shout:
+
+| level | means |
+|---|---|
+| `note` | something happened that is worth remembering |
+| `concern` | something went wrong, and is over |
+| `alarm` | something is wrong **now**, and nobody asked for it |
+
+Only `alarm` gets colour. An alarm that fires for ordinary failure is an
+alarm nobody answers, so exactly one thing raises one today: a program that
+stopped without being asked to.
+
+That entry is the reason the pane exists, and AWORG is the only thing in a
+position to write it. Every program the Resident starts has its output read
+continuously — not for our benefit but for its, since a process whose stdout
+fills up blocks on its next write and quietly stops serving. That reading
+ends at exactly the moment the program stops existing. So the place that
+keeps servers alive is also the only place that learns one has died, and it
+reports it with the last dozen lines the program printed on its way out:
+
+```
+● serve_site stopped on its own                             11:01 PM
+  Nobody asked it to stop. Exit code 1 after 37s.
+
+  What it last said:
+  Traceback (most recent call last):
+    ...
+  OSError: [WinError 10048] Only one usage of each socket address
+```
+
+A deliberate stop is a note, not an alarm, and telling those apart is more
+delicate than it looks: both arrive as a closed pipe, and the flag saying
+"this one is on purpose" has to be set *before* anything is signalled or it
+races with the death it is meant to explain.
+
+Entries carry a little of the real output rather than only a link to it. The
+link opens the whole of what came back, but Activities are runtime state and
+are forgotten in time, and a log whose entire content is a dead link is a
+record of nothing. So a bounded tail comes across when the entry is written —
+enough that the line still means something in the morning.
 
 ## When it stops
 

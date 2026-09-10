@@ -8,6 +8,8 @@ are allowed to talk to a Resident under far tighter restrictions.
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import json
 from contextlib import asynccontextmanager
 import re
@@ -26,6 +28,7 @@ from pydantic import BaseModel
 from .models import CAPABILITY_TAGS, PROVIDER_LABELS, ModelError, build_adapter
 from .paths import Paths
 from .activities import ActivityManager
+from .journal import Journal
 from .resident import Busy, Resident
 from .secrets import SecretStore, credential_ref
 from . import layout as layout_settings
@@ -42,6 +45,49 @@ from .theme import (
 
 
 WEB_DIR = Path(__file__).parent / "web"
+
+
+#: Table names as an owner would say them. A reset entry reading "4 journal,
+#: 1 capability_state" is the schema leaking into the one record of the
+#: largest thing that can happen to an Aworg.
+RESET_NAMES = {
+    "messages": "messages",
+    "conversations": "conversations",
+    "tasks": "tasks",
+    "workers": "workers",
+    "capability_state": "capability settings",
+    "journal": "Living Log entries",
+    "connections": "model connections",
+}
+
+
+def _reset_detail(
+    removed: dict[str, int], stopped: int, saved: list[str]
+) -> str:
+    """What a reset actually took, in a sentence.
+
+    Assembled rather than formatted inline because the two facts are
+    independent: what was erased, and whether it can be got back. An earlier
+    version joined them with a conditional that swallowed the counts whenever
+    there was no backup -- which is exactly the case where knowing what went
+    matters most.
+    """
+    gone = ", ".join(
+        f"{count} {RESET_NAMES.get(table, table)}"
+        for table, count in removed.items()
+        if count
+    )
+    parts = [f"Erased {gone}." if gone else "There was nothing to erase."]
+    if stopped:
+        parts.append(
+            f"{stopped} running program(s) were stopped."
+        )
+    parts.append(
+        f"The databases were copied to backups/ first, as {', '.join(saved)}."
+        if saved else
+        "Nothing was backed up -- there was no database to copy."
+    )
+    return " ".join(parts)
 
 
 class ConnectionBody(BaseModel):
@@ -164,9 +210,50 @@ def create_app(paths: Paths) -> FastAPI:
         Stopping them on the way out is the honest half of the bargain: AWORG
         will not claim a process it did not start, so it must not abandon one
         it did.
+
+        This is also where the Living Log's follower runs. It has to be
+        started against a running loop and stopped with the app, and doing it
+        here means an Aworg cannot end up serving pages with nothing reading
+        the Activity stream -- which would leave the pane looking calm rather
+        than deaf.
         """
+        follower = asyncio.create_task(resident.journal.follow(resident.activities))
+        resident.journal.record(
+            "AWORG started",
+            kind="aworg",
+            detail=host_started_detail(),
+        )
         yield
+        follower.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await follower
+        # Recorded before the processes go, so the count is what was actually
+        # running rather than zero.
+        running = sum(1 for p in resident.processes.all() if p.alive)
+        resident.journal.record(
+            "AWORG stopped",
+            kind="aworg",
+            detail=(
+                f"{running} running program(s) were stopped with it."
+                if running else ""
+            ),
+        )
         await resident.processes.stop_all()
+
+    def host_started_detail() -> str:
+        """One line about what this Aworg woke up as.
+
+        The Living Log's first entry after a restart should say enough that
+        the gap in the log is explained -- an owner reading back through the
+        night wants to know the Aworg went away and came back, and on what.
+        """
+        facts = resident.host or {}
+        machine = " ".join(
+            part for part in (facts.get("os"), facts.get("release")) if part
+        ) or "this machine"
+        connection = resident.primary_connection()
+        model = (connection or {}).get("model") or "no model connected"
+        return f"On {machine}, with {model}."
 
     app = FastAPI(title="AWORG", version="0.1.0", lifespan=lifespan)
 
@@ -544,6 +631,7 @@ def create_app(paths: Paths) -> FastAPI:
                 }
                 for s in resident.skills.all()
             ],
+            resident.journal.entries(limit=100),
         )
 
     @app.post("/api/capabilities/{capability_id}")
@@ -560,6 +648,22 @@ def create_app(paths: Paths) -> FastAPI:
         if resident.registry.get_capability(capability_id) is None:
             raise HTTPException(404, f"No capability called {capability_id!r}")
         store.set_capability_enabled(capability_id, body.enabled)
+        # An owner decision that changes what the Resident can do. Worth
+        # keeping precisely because it is invisible afterwards: a Resident
+        # that cannot run commands behaves like one that will not, and the
+        # log is where the difference is written down.
+        capability = resident.registry.get_capability(capability_id)
+        resident.journal.record(
+            f"{getattr(capability, 'label', None) or capability_id} was "
+            f"{'enabled' if body.enabled else 'disabled'}",
+            kind="capability",
+            source="owner",
+            detail=(
+                "" if body.enabled else
+                "Its tools are no longer offered to the Resident or to any "
+                "worker, whatever tool scope that worker was given."
+            ),
+        )
         return {"id": capability_id, "enabled": body.enabled}
 
     # -- reset ----------------------------------------------------------
@@ -593,6 +697,10 @@ def create_app(paths: Paths) -> FastAPI:
                 {"what": "Tasks in the plan", "count": sum(counts.values())},
                 {"what": "Files in the Living Workspace", "count": files},
                 {"what": "Workers", "count": len(store.list_workers())},
+                {
+                    "what": "Living Log entries",
+                    "count": len(store.list_journal(limit=Journal.KEEP)),
+                },
                 {"what": "Model connections", "count": len(store.list_connections())},
                 {
                     "what": "Running programs (servers and the like)",
@@ -646,12 +754,40 @@ def create_app(paths: Paths) -> FastAPI:
         resident.activities = ActivityManager()
         resident.turn = None
 
+        # Written after the wipe, not before, so it survives it. A reset is
+        # the largest thing that can happen to an Aworg and a Living Log that
+        # came back from one with no explanation for the silence above it
+        # would be the pane failing at its only job.
+        resident.journal.record(
+            "This Aworg was reset",
+            kind="aworg",
+            source="owner",
+            detail=_reset_detail(removed, stopped, saved),
+        )
+
         return {
             "status": "reset",
             "backups": saved,
             "removed": removed,
             "processes_stopped": stopped,
         }
+
+    # -- the Living Log -------------------------------------------------
+
+    @app.get("/api/journal")
+    def living_log(limit: int = 100) -> dict[str, Any]:
+        """What happened, and mattered.
+
+        Read whole rather than streamed. The Living Log is short by design and
+        changes rarely; an owner opening it wants the last hundred lines, not
+        a socket. Activities is the pane with a stream, because that is the
+        pane about now.
+        """
+        return {"entries": resident.journal.entries(limit=limit)}
+
+    @app.delete("/api/journal")
+    def clear_living_log() -> dict[str, int]:
+        return {"removed": resident.journal.clear()}
 
     @app.get("/api/skills")
     def list_skills() -> dict[str, Any]:
@@ -683,6 +819,11 @@ def create_app(paths: Paths) -> FastAPI:
         if resident.skills.get_any(name) is None:
             raise HTTPException(404, "No such skill")
         store.set_skill_enabled(name, body.enabled)
+        resident.journal.record(
+            f"Skill {name} was {'enabled' if body.enabled else 'disabled'}",
+            kind="skill",
+            source="owner",
+        )
         return {"name": name, "enabled": body.enabled}
 
     # -- tasks ----------------------------------------------------------

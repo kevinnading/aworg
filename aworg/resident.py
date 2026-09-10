@@ -27,6 +27,7 @@ from typing import Any, AsyncIterator
 
 from . import host
 from .activities import ActivityManager
+from .journal import Journal
 from .processes import ProcessTable, sweep_orphans
 from .skills import SkillLibrary
 from .agent import AgentLoop
@@ -84,6 +85,12 @@ class Resident:
         #: work; it belongs to the Aworg rather than to the Resident, and
         #: moves out when workers need to share one.
         self.activities = ActivityManager()
+        #: What happened, and mattered. A subscriber to the Activity stream
+        #: rather than something the manager knows about -- the manager
+        #: tracks and emits, and every judgement about what deserves keeping
+        #: is made in journal.py. Its follower is started with the app; see
+        #: server.create_app.
+        self.journal = Journal(store)
         #: Long-running programs the Resident has started. Session-scoped:
         #: a restart cannot adopt processes it did not spawn, so nothing
         #: pretends otherwise.
@@ -100,7 +107,13 @@ class Resident:
                     f"AWORG  stopped {swept} process(es) left by a previous run",
                     flush=True,
                 )
-        self.processes = ProcessTable(paths.home if paths is not None else None)
+        self.processes = ProcessTable(
+            paths.home if paths is not None else None,
+            # A program appearing, finishing or dying is the Living Log's
+            # founding case, and the process table is the only thing in AWORG
+            # that can see the last of those happen.
+            report=self.journal.record,
+        )
         #: Discovered once at startup. Whether a capability is *enabled* is
         #: asked of the store on every use rather than captured here, so the
         #: owner turning one off takes effect on the next call instead of at
@@ -760,6 +773,7 @@ class Resident:
                 store=self.store,
                 processes=self.processes,
                 skills=self.skills,
+                journal=self.journal,
             ),
             activities=self.activities,
             live={"workers": crew},

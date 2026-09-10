@@ -109,6 +109,14 @@ class ToolContext:
     #: The skills this Aworg knows, for read_skill. Handed in like the rest,
     #: so a tool still cannot reach anything it was not given.
     skills: Any = None
+    #: The Living Log, for the few tools whose effect outlives their call.
+    #: Most tools should not touch this: a tool call that succeeded is
+    #: Activities' business, and a log that records every one of them is a
+    #: worse Activities pane. What belongs here is a change of state the
+    #: owner would want to find tomorrow -- a plan being made, a plan being
+    #: finished. Failure is written from journal.matters instead, which sees
+    #: every tool without any of them knowing about it.
+    journal: Any = None
     #: Who is calling: "resident", or a worker id. Tools do not currently
     #: branch on it; it is here so that an audit of who ran what is possible
     #: without changing every signature later.

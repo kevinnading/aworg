@@ -65,12 +65,14 @@ PANES: list[dict[str, Any]] = [
     {
         "id": "log",
         "label": "Living Log",
-        "hint": "What the running application reports about itself.",
-        "available": False,
-        "empty": ("Nothing reported.", ""),
-        "blocked": ("Nothing reported.",
-                    "The Living Log is the channel an application uses to tell "
-                    "the Resident it is in trouble. Nothing is running to use it."),
+        "hint": "What happened, and mattered.",
+        "available": True,
+        "empty": ("Nothing has happened yet.",
+                  "Work that is worth remembering is written here and stays "
+                  "-- a program that stopped on its own, something that "
+                  "failed, a plan finished, a Capability you switched off. "
+                  "What is happening right now is in Activities instead."),
+        "blocked": None,
     },
     {
         # Sits beside the Living Log, and the pairing is the point: one says
@@ -318,6 +320,31 @@ def skills(library: list[dict[str, Any]]) -> list[dict[str, Any]]:
     ]
 
 
+def log(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The Living Log, as rows.
+
+    Passed through nearly unchanged, which is deliberate. The judging already
+    happened in journal.py; anything summarised, merged or reworded here
+    would be a second opinion layered over the first, and an owner reading
+    this pane is reading it precisely because they want the record rather
+    than an account of it.
+    """
+    return [
+        {
+            "kind": "entry",
+            "id": str(entry.get("id")),
+            "level": entry.get("level") or "note",
+            "category": entry.get("kind") or "aworg",
+            "source": entry.get("source") or "aworg",
+            "name": entry.get("summary") or "",
+            "detail": entry.get("detail") or "",
+            "at": entry.get("at") or "",
+            "activity_id": entry.get("activity_id"),
+        }
+        for entry in entries
+    ]
+
+
 def describe(
     facts: dict[str, Any] | None = None,
     registry: Any = None,
@@ -325,6 +352,7 @@ def describe(
     crew: list[dict[str, Any]] | None = None,
     plan: list[dict[str, Any]] | None = None,
     known: list[dict[str, Any]] | None = None,
+    happened: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """The panes as the owner interface renders them.
 
@@ -349,6 +377,8 @@ def describe(
             items = tasks(plan)
         elif pane["id"] == "skills" and known:
             items = skills(known)
+        elif pane["id"] == "log" and happened:
+            items = log(happened)
 
         described.append(
             {
