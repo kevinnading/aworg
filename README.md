@@ -29,8 +29,9 @@ servers, and makes HTTP requests. What it is doing shows up in the
 
 It writes down a **plan** before starting anything long, and works through it —
 carrying on by itself rather than needing to be told "continue" once per step.
-It hands bounded work to **workers**, specialists with their own prompt and
-their own narrow set of tools.
+It hands bounded work to **workers**, specialists with their own prompt, their
+own narrow set of tools, and their own **skills** — this machine's conventions
+put in front of them rather than left to be asked for.
 
 Asked for a three-page website, it plans the work, delegates the writing,
 starts a server, checks the pages actually answer, and shows you the running
@@ -41,8 +42,15 @@ restart that clears everything else — including the one entry nothing else in
 AWORG can produce: a program that stopped on its own, with what it last said
 before it went.
 
-What it does not have yet is the autonomous repair loop — the part that would
-have it read that log at three in the morning and do something about it.
+It has a **Persona** — a name, a manner, and a chat that looks like its own
+room. Changing it does not make a new Resident: the conversation, the plan,
+the log and every permission carry straight on.
+
+What it does not have yet is the other half of the Living Log and the loop
+that would use it. Applications cannot yet report their own events *in*;
+nothing inspects the log on a schedule; and the autonomous repair loop — read
+the log at three in the morning and do something about it — is unbuilt, as is
+History and Reversibility. See [docs/02_MVP_SPEC.md](docs/02_MVP_SPEC.md).
 
 ## Running it
 
