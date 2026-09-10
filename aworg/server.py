@@ -27,7 +27,6 @@ from pydantic import BaseModel
 
 from .models import CAPABILITY_TAGS, PROVIDER_LABELS, ModelError, build_adapter
 from .paths import Paths
-from .activities import ActivityManager
 from .journal import Journal
 from .resident import Busy, Resident
 from .secrets import SecretStore, credential_ref
@@ -755,7 +754,10 @@ def create_app(paths: Paths) -> FastAPI:
         # factory reset: the preview kept showing a page from a server the
         # Aworg no longer knew it owned.
         stopped = await resident.processes.clear()
-        resident.activities = ActivityManager()
+        # Cleared, not replaced. A new manager would leave the Living Log's
+        # follower subscribed to the old one, and an Aworg that had been
+        # reset would stop recording anything at all -- see forget_all.
+        resident.activities.forget_all()
         resident.turn = None
 
         # Written after the wipe, not before, so it survives it. A reset is

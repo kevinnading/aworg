@@ -253,6 +253,27 @@ class ActivityManager:
             if self._activities[i].parent_id == parent_id
         ]
 
+    def forget_all(self) -> None:
+        """Drop every Activity, keeping every subscriber.
+
+        For a reset, and the distinction is the whole point of the method
+        existing. Replacing the manager wholesale is the obvious way to clear
+        it and it is silently wrong: everything already subscribed keeps
+        holding a queue on the old object and never hears from the new one.
+
+        That happened. A reset left the Living Log's follower watching a
+        manager nothing would ever emit on again, so an Aworg went quiet the
+        moment it was reset -- workers ran, tools failed, and none of it was
+        written down. The interface survived only because its stream
+        reconnects on its own and re-subscribes to whatever is there now.
+
+        Subscribers are deliberately not told. A cleared manager has no
+        events to describe, and an invented one would put a lifecycle
+        transition on the wire for work that no longer exists.
+        """
+        self._activities.clear()
+        self._order.clear()
+
     def _prune(self) -> None:
         """Forget the oldest finished Activities once there are too many.
 

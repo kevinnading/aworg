@@ -270,6 +270,43 @@ better model rather than a bigger prompt.
 Two ship. `house-style` is the conventions this Aworg writes files by;
 `web-project` is how to build and serve a small site end to end.
 
+### Workers are given skills, not offered them
+
+A worker has a skill scope the way it has a tool scope — the owner decides
+what it knows, and the Resident cannot widen it at dispatch. The builder and
+the checker ship with `house-style`; the runner with none, since it types
+what it is told to type.
+
+But a worker does not get descriptions to choose from. It gets the skill
+itself, in full, in its prompt, with no decision left to make. Progressive
+disclosure solves a problem a worker does not have: it exists so a Resident
+carrying a dozen skills across an open-ended conversation pays a paragraph
+rather than a book, and a worker is a fresh context for one bounded job
+holding the two skills it was scoped to.
+
+The rest is measured. Asked plainly, a local model reaches for a matching
+skill about one time in six. Told to read a named one, four times out of
+four. The reliable half is *being told* — so the Resident's part is moved to
+the thing it is good at, which is routing. `delegate` names what each worker
+knows alongside what it does, and choosing the worker that has `house-style`
+is a decision from a described list rather than an unprompted act of
+initiative.
+
+It is a partial win and worth saying so plainly. On granite-4-tiny, five
+runs: putting scripts in `bin/` went from 0/5 to 4/5. Hyphens instead of
+underscores went to 1/5, and the provenance line stayed at 0/5. The skill
+text is verbatim in the worker's prompt, so those two are the model rather
+than the plumbing — `random_tea.py` is what a python file is called in
+essentially all training data, and the house rule loses to the prior.
+
+The checker is the answer to that, and it is this project's own argument
+applied one level down: a check performed by the thing being checked is
+decoration. Given the same skill, the checker caught the missing provenance
+line 4 times out of 4 on a file the builder had just written without one. It
+cannot judge the naming rule — it recites it and then calls `random_tea.py`
+compliant — so it reliably notices something *absent* and cannot evaluate a
+property of a string in front of it.
+
 ## Activities: what is happening right now
 
 Tool calls do not narrate themselves into the conversation. A Resident that
