@@ -403,13 +403,18 @@ def shell_notes(facts: dict[str, Any]) -> list[str]:
     return _shell_notes(facts.get("shell", ""), facts.get("shell_version"))
 
 
-def summary(facts: dict[str, Any]) -> str:
+def summary(facts: dict[str, Any], workspace: Any = None) -> str:
     """The host, compactly enough to send with every message.
 
     About 140 tokens -- under two per cent of even a small window, and the
     difference between a Resident that proposes `apt install` on Windows and
     one that does not. Sent every turn, because a fact the Resident has to
     ask for is a fact it will forget to ask for.
+
+    The workspace is passed in rather than observed, because it is a fact
+    about this Aworg and not about the machine. It belongs in this block all
+    the same: this is the block that answers "where am I", and leaving the
+    most important location out of it had consequences -- see below.
     """
     elevated = facts["elevated"]
     privilege = (
@@ -421,9 +426,32 @@ def summary(facts: dict[str, Any]) -> str:
         else "Whether you are elevated could not be determined."
     )
 
-    lines = [
+    lines = []
+    # First, because it is the one location that decides where work lands.
+    #
+    # It was missing entirely, and the omission was not neutral. The only
+    # absolute path the Resident was ever shown is AWORG's own interpreter,
+    # which lives inside the source checkout -- so the only directory it had
+    # evidence for was that checkout, and it concluded that was "the
+    # project". Residents then wrote files into the source tree and ran
+    # commands with cwd set to it. Three of them ended up in a commit.
+    #
+    # Nothing was wrong with the tools: a relative path already resolves to
+    # the workspace. The failure was that the Resident had no idea the
+    # workspace existed, so it never used a relative path.
+    if workspace:
+        lines.append(
+            f"Your Living Workspace is {workspace}. That is where you build, "
+            "and it is where a relative path goes -- write `notes.md` and it "
+            "lands there. Work there unless the owner names somewhere else. "
+            "You are not confined to it, but nothing should end up outside "
+            "it by accident."
+        )
+    lines.append(
         f"You are running on {facts['os']} {facts['release']} ({facts['arch']}), "
         f"host {facts['hostname']}, as {facts['user']}.",
+    )
+    lines += [
         f"{facts['cpus']} CPUs, {_gb(facts['memory_total'])} memory, "
         f"{_gb(facts['disk_free'])} free disk.",
         privilege,
@@ -445,6 +473,11 @@ def summary(facts: dict[str, Any]) -> str:
     # entirely. A path is a fact the Resident can act on.
     lines.append(
         f"AWORG runs on Python {facts['python']} at {facts['python_executable']}."
+        + (
+            " That path is AWORG's own installation, not a place to work -- "
+            "use the interpreter, leave the directory alone."
+            if workspace else ""
+        )
     )
     lines.extend(_shell_notes(shell, version))
     if facts["tools"]:

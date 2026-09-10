@@ -190,7 +190,10 @@ async def run_worker(
 
     try:
         async for event in loop.run(
-            [Message("owner", task)], _system(worker, host_facts), record
+            [Message("owner", task)],
+            _system(worker, host_facts,
+                    workspace=paths.workspace if paths is not None else None),
+            record,
         ):
             kind = event["type"]
             if kind == "delta":
@@ -245,7 +248,11 @@ def _connection_for(worker: dict[str, Any], store: Any) -> dict[str, Any] | None
     return None
 
 
-def _system(worker: dict[str, Any], facts: dict[str, Any] | None = None) -> str:
+def _system(
+    worker: dict[str, Any],
+    facts: dict[str, Any] | None = None,
+    workspace: Any = None,
+) -> str:
     """What the worker is told about itself, and the little it needs about here.
 
     Not the Resident's full host block. That runs to several hundred tokens
@@ -259,9 +266,16 @@ def _system(worker: dict[str, Any], facts: dict[str, Any] | None = None) -> str:
     It recovered, which is the behaviour wanted, but it spent a round doing
     it. Two lines prevent that.
 
-    So: which shell commands go through, and where a working interpreter is.
-    Both are things a worker acts on directly. Everything else stays with the
-    Resident, whose job is to put what matters into the task.
+    So: which shell commands go through, where a working interpreter is, and
+    where its own work is supposed to land. All three are things a worker
+    acts on directly. Everything else stays with the Resident, whose job is
+    to put what matters into the task.
+
+    The workspace earns its line for the same reason the interpreter did. A
+    worker never told where it is picks an absolute path out of the air --
+    observed repeatedly, and the paths it picked were inside AWORG's own
+    source tree, because that was the only directory anything had named to
+    it.
     """
     prompt = (worker.get("system_prompt") or "").strip() or (
         "You are a worker. Do exactly what the task asks, then report what "
@@ -270,7 +284,13 @@ def _system(worker: dict[str, Any], facts: dict[str, Any] | None = None) -> str:
     if not facts:
         return prompt
 
-    lines = [f"Commands run through {facts.get('shell', 'the system shell')}."]
+    lines = []
+    if workspace:
+        lines.append(
+            f"Work in {workspace} unless the task names somewhere else -- a "
+            "relative path goes there. Do not invent a directory."
+        )
+    lines.append(f"Commands run through {facts.get('shell', 'the system shell')}.")
     if facts.get("python_executable"):
         lines.append(
             f"A working Python is at {facts['python_executable']} -- use that "

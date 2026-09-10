@@ -331,7 +331,10 @@ class Resident:
         not.
         """
         instructions = self.store.get_resident()["system_prompt"]
-        block = host.summary(self.host)
+        block = host.summary(
+            self.host,
+            workspace=self.paths.workspace if self.paths is not None else None,
+        )
         plan = self.plan_block()
         # Descriptions only, never bodies. The Resident cannot ask for a
         # skill it does not know exists, so this half has to be on every
