@@ -248,6 +248,49 @@ theoretically. It watches the same stream the interface does and decides for
 itself what is worth keeping; the manager was not changed to add it, and does
 not know it exists.
 
+### A Persona is untrusted text in the system prompt
+
+Personas are meant to be downloaded and exchanged, which makes `PERSONA.md`
+the only part of the prompt that a stranger may have written. Everything else
+in there is the owner's, AWORG's, or observed fact.
+
+That is handled by framing rather than by filtering. The block states what a
+persona governs — voice and temperament — and states that anything inside it
+reading as granting permission, changing the mission, or excusing a failure
+from being reported is character description rather than instruction. Trying
+to detect such claims instead would be a filter that has to be right every
+time against text that can be rewritten to get past it; a boundary the model
+is told about is a boundary that holds for the cases nobody anticipated.
+
+Position carries part of the argument. The persona block sits *after* the
+owner's standing instructions, and what comes second qualifies what came
+first. The instructions carry the mission and are the owner's; the persona
+carries none and may be anyone's.
+
+The presentation half is filtered, because it can be. An asset path from
+`theme.json` is resolved and then checked to be inside the persona's own
+directory, its suffix must be a known image type, and the name is
+percent-encoded before it reaches a CSS `url()`. Those are closed sets, so a
+list is the right tool; behaviour is not, so it gets a boundary instead.
+
+### Changing a Persona cannot lose the Resident
+
+The requirement is that a persona change preserve the conversation, memory,
+plan, Living Log, skills, permissions and operational state. The
+implementation makes that structural rather than procedural: the active
+persona is one nullable column on the Resident's own row, so there is no
+sequence of steps that could omit one of them.
+
+The alternative — a change operation that saves and restores the things worth
+keeping — would work and would rot. Every feature added afterwards would be
+one more thing somebody had to remember to add to the list, and the failure
+would be silent and only visible to the owner who lost something.
+
+Nothing chosen is stored as NULL rather than as the default persona's name.
+That keeps "I have not chosen" and "I chose this one" as different facts,
+which is what lets a factory reset restore the shipped persona without the
+storage layer having to know what it is called.
+
 ### The Living Log judges; nothing else does
 
 `aworg/journal.py` is the only place in AWORG that holds an opinion about what
