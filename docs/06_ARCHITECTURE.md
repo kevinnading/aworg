@@ -266,6 +266,19 @@ theory that consulting a reference needs a pause to wonder whether one
 exists -- it did not help and made routing worse. And a larger model was
 tried: the 9B scores identically to the 2B at three times the VRAM.
 
+A fifth explanation was tested and *partly* held, which qualifies all of the
+above. Every one of those runs asked for one small script -- the least
+favourable case, since a model with no felt difficulty has nothing to prompt
+it to check anything. Asked instead for a four-page site with a server,
+granite-4-tiny read the skill in one run of three and planned in that same
+run.
+
+But it read it *after* writing five files. A procedure consulted once the
+work is done has not been followed; it has been noticed, and the conventions
+it describes were already broken. So the qualified finding is: these models
+never consult a skill for small work, and consult one late for large work,
+and neither is something behaviour can be built on.
+
 **Nothing followed a skill it had read.** Granite read one twice and ignored
 it both times, which is worse than never looking: a model that consults a
 procedure and then does its own thing cannot be caught at it.

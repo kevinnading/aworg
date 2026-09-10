@@ -14,6 +14,7 @@ argument is recorded in commit 75fd687 and it is why this file is short.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import sys
 
 from ... import host
@@ -91,12 +92,23 @@ async def run(
     try:
         stdout, _ = await asyncio.wait_for(process.communicate(), timeout=seconds)
     except asyncio.TimeoutError:
-        process.kill()
-        await process.wait()
+        # Kill the tree, not the shell.
+        #
+        # Every command runs through a shell, so `process` is the shell and
+        # the interesting thing is its child. Killing the parent orphans the
+        # child, which keeps holding the pipe -- so `await process.wait()`
+        # never returns and the tool hangs past the very timeout that fired.
+        # Observed: a command with a 600-second ceiling still running at 947
+        # seconds, with the python it had started alive and serving.
+        #
+        # Exactly the bug already fixed in ProcessTable.stop, and not
+        # applied here at the time. The lesson is that on Windows there is no
+        # such thing as killing a command -- only killing a tree.
+        await _kill_tree(process)
         raise ToolError(
             f"The command was still running after {seconds} seconds and was "
-            "stopped. If it is meant to run for a long time, start it in the "
-            "background instead of waiting for it."
+            "stopped, along with anything it had started. If it is meant to "
+            "keep running, use start_process instead -- this tool waits."
         ) from None
 
     output = stdout.decode("utf-8", errors="replace").strip()
@@ -139,6 +151,28 @@ async def run(
 #: not meant to be -- it catches the shapes a model actually reaches for when
 #: it wants a server, which is what the warning is for.
 DETACHING = ("start-process", "start /b", "nohup", "&disown", "disown")
+
+#: How long to wait for a killed tree before giving up on it. The kill is
+#: already forceful; this only bounds how long the tool waits to confirm.
+KILL_GRACE = 5.0
+
+
+async def _kill_tree(process: "asyncio.subprocess.Process") -> None:
+    """Stop a command and everything it started."""
+    if sys.platform == "win32":
+        killer = await asyncio.create_subprocess_exec(
+            "taskkill", "/PID", str(process.pid), "/T", "/F",
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        await killer.wait()
+    else:
+        process.kill()
+    # Bounded, because the whole point is that waiting unbounded is what
+    # went wrong. A process that survives taskkill /T /F is not going to be
+    # persuaded by waiting longer.
+    with contextlib.suppress(asyncio.TimeoutError):
+        await asyncio.wait_for(process.wait(), timeout=KILL_GRACE)
 
 
 def _looks_detached(command: str) -> bool:
