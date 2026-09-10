@@ -105,13 +105,18 @@ async def run(context: ToolContext, worker: str = "", task: str = "") -> ToolRes
     )
 
 
-def describe_for(workers: list[dict]) -> dict:
+def describe_for(workers: list[dict] | None = None, **_: object) -> dict:
     """This tool's MCP descriptor, with the actual workers written into it.
 
     The enumeration has to carry the real names *and* their descriptions,
     because the model is choosing a specialist and the description is the
     only thing distinguishing them. A bare list of names would be a routing
     decision made with no information.
+
+    Unknown live state is swallowed rather than raised on. The registry hands
+    every dynamic tool the same bundle, and a tool that rejects a key meant
+    for a different one would remove itself from the turn -- silently, since
+    the registry treats a failed descriptor as a tool to skip.
     """
     if not workers:
         return {}

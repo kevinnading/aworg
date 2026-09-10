@@ -340,7 +340,17 @@ class Resident:
         """
         if not getattr(adapter, "supports_tools", False):
             return []
-        return self.registry.descriptors(None, workers=crew)
+        return self.registry.descriptors(
+            None,
+            workers=crew,
+            # Skills go to the tool that reads them, not only into the prose
+            # above -- see read_skill.describe_for for why that turned out to
+            # matter more than any wording of the prose did.
+            skills=[
+                {"name": s.name, "description": s.description}
+                for s in self.skills.offered()
+            ],
+        )
 
     def _tools_cost(self, offered: list[dict[str, Any]]) -> int:
         """What the tool schemas cost, in tokens, on every request.

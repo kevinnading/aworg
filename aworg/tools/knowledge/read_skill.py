@@ -13,6 +13,12 @@ from ..base import ToolContext, ToolError, ToolResult, size_for_model
 
 NAME = "read_skill"
 
+#: This tool describes itself at discovery rather than from the constants
+#: below, because its enumeration is the skill library and that changes
+#: without any code changing. See describe_for at the foot of this file, and
+#: the argument for it, which is measured rather than aesthetic.
+DYNAMIC = True
+
 DESCRIPTION = (
     "Read one of your skills in full. A skill tells you how to go about a "
     "kind of job. Read the relevant one before starting that kind of work, "
@@ -60,3 +66,53 @@ async def run(context: ToolContext, skill: str = "") -> ToolResult:
         payload=body,
         summary=f"read {found.name}",
     )
+
+
+def describe_for(skills: list[dict] | None = None, **_: object) -> dict:
+    """This tool's MCP descriptor, with the actual skills written into it.
+
+    **The names and descriptions go in the schema, not only in the prose.**
+
+    Every skill's description was already on every message, in a block near
+    the top of the system prompt, and no local model tested would act on it:
+    six configurations, and read_skill called about once in eighteen runs.
+    Four explanations were tested and eliminated -- the wording, the
+    placement, thinking, model size -- and the one asymmetry left was this
+    file.
+
+    `delegate` faces the identical decision: pick one name out of a list of
+    specialists, each distinguished only by a sentence. It writes that list
+    into its own schema as an enum, and routing to workers is the one thing
+    these models do reliably. `read_skill` asked instead for a free-text
+    name "as listed in your skills", which requires the model to recall prose
+    from the top of a long prompt at the moment it is scanning tool schemas.
+    Small models decide by reading the schemas.
+
+    So the enumeration comes here, where the choice is actually made. This
+    costs nothing extra in the general case: it is the same descriptions, and
+    if it works the prompt block can carry fewer of them.
+
+    A tool with no skills to offer returns nothing and is dropped, which is
+    the right outcome -- an Aworg with an empty library should not advertise
+    a way to read from it.
+    """
+    if not skills:
+        return {}
+
+    lines = "\n".join(f"- {s['name']}: {s['description']}" for s in skills)
+    schema = {
+        "type": "object",
+        "properties": {
+            "skill": {
+                "type": "string",
+                "enum": [s["name"] for s in skills],
+                "description": "Which skill to read.",
+            },
+        },
+        "required": ["skill"],
+    }
+    return {
+        "name": NAME,
+        "description": f"{DESCRIPTION}\n\nYour skills:\n{lines}",
+        "inputSchema": schema,
+    }
