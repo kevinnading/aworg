@@ -126,6 +126,7 @@ async def run_worker(
     processes: Any = None,
     parent_id: str | None = None,
     skills: Any = None,
+    journal: Any = None,
 ) -> WorkerResult:
     """Run one worker on one task and come back with what happened.
 
@@ -138,10 +139,34 @@ async def run_worker(
     connection = _connection_for(worker, store)
     if connection is None:
         result.error = (
-            "No model is connected for workers. Set a worker connection in "
-            "Settings, or give this worker a connection of its own."
+            "No model is connected at all. Connect one in Settings, and "
+            "optionally give workers a cheaper one of their own."
         )
         return result
+
+    # Running on the Resident's own model because nothing cheaper was set.
+    #
+    # Said out loud rather than discovered on a bill. The fall-through is
+    # what makes delegation work on an Aworg nobody has configured, and the
+    # whole objection to it was the cost -- so the cost is reported. The
+    # Living Log is where a state of affairs the owner would want to find
+    # later belongs.
+    config = store.get_resident()
+    if (
+        journal is not None
+        and not worker.get("connection_id")
+        and not config.get("worker_connection_id")
+    ):
+        journal.note_once(
+            f"Workers are running on {connection['name']}",
+            kind="worker",
+            detail=(
+                "No separate worker connection is set, so delegated work goes "
+                "to the same model the Resident thinks with. That works, and "
+                "on a hosted model it is charged like any other request. "
+                "Settings can point workers at something cheaper."
+            ),
+        )
 
     api_key = secrets.get(credential_ref(connection["id"]))
     if not api_key:
@@ -168,6 +193,11 @@ async def run_worker(
             # server on its own private table would leave something running
             # that nothing could later find or stop.
             processes=processes,
+            # From its own connection, which may be a far smaller model than
+            # the Resident's. A worker on an 8k window and a Resident on a
+            # million should not be handed the same ceiling, and neither
+            # should be handed a constant.
+            result_limit=_result_limit(connection),
         ),
         activities=activities,
         # The whole point. An empty scope would mean every enabled tool,
@@ -232,20 +262,62 @@ async def run_worker(
     return result
 
 
+#: Characters per token, generously. Matches Resident.CHARS_PER_TOKEN_GENEROUS
+#: and is duplicated for the same reason panes.py duplicates its own: this
+#: module has no business importing the Resident, and the number belongs to
+#: the tokenizer rather than to either of them.
+CHARS_PER_TOKEN_GENEROUS = 4.2
+
+#: What a worker keeps back for its own reply, as a share of its window.
+#: A result that filled the whole window would leave nothing to answer with.
+REPLY_SHARE = 4
+
+
+def _result_limit(connection: dict[str, Any]) -> int | None:
+    """The largest tool result this worker's model could carry.
+
+    None where the window is unknown, which is the ordinary case for a
+    hosted model and means nothing is cut. A worker on a small local model
+    gets a real ceiling, because there the edge is real.
+    """
+    window = connection.get("context")
+    if not window or window <= 0:
+        return None
+    return int((window - window // REPLY_SHARE) * CHARS_PER_TOKEN_GENEROUS)
+
+
 def _connection_for(worker: dict[str, Any], store: Any) -> dict[str, Any] | None:
     """Which model this worker thinks with.
 
-    Its own if it names one, otherwise the Aworg's worker connection. Falling
-    back to the *Resident's* connection would be wrong in the expensive
-    direction: a hosted frontier model answering fifteen delegated jobs an
-    owner thought were going to the 2B on their own card.
+    Its own if it names one, then the Aworg's worker connection, then the
+    Resident's own.
+
+    That last fall-through was deliberately absent, on the argument that it
+    was wrong in the expensive direction -- a hosted frontier model answering
+    fifteen delegated jobs the owner thought were going to the 2B on their
+    own card. The argument was sound and the conclusion was not, because the
+    alternative it produced is worse in every case: an Aworg where nobody
+    has set a worker connection has no workers at all, and the Resident
+    discovers this by trying to delegate and being told to go and configure
+    something.
+
+    That is what happened. A Resident planned four tasks, handed the first to
+    the builder, got "No model is connected for workers", and did the whole
+    job itself -- one wasted round trip, and a division of labour silently
+    abandoned on an Aworg whose owner had changed nothing.
+
+    Spending the owner's money without being asked is a real cost, so it is
+    reported rather than hidden: a worker running on the Resident's own
+    connection says so in the Living Log the first time it happens. Cheap
+    workers stay one setting away, and the setting is now an optimisation
+    rather than a precondition for delegation working at all.
     """
     if worker.get("connection_id"):
         found = store.get_connection(worker["connection_id"])
         if found:
             return found
     config = store.get_resident()
-    for key in ("worker_connection_id",):
+    for key in ("worker_connection_id", "primary_connection_id"):
         if config.get(key):
             found = store.get_connection(config[key])
             if found:

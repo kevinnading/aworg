@@ -62,7 +62,7 @@ async def run(context: ToolContext, skill: str = "") -> ToolResult:
         )
 
     return ToolResult(
-        text=size_for_model(f"# Skill: {found.name}\n\n{body}", limit=20000) + note,
+        text=size_for_model(f"# Skill: {found.name}\n\n{body}", context.result_limit) + note,
         payload=body,
         summary=f"read {found.name}",
     )

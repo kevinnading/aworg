@@ -375,6 +375,29 @@ class Resident:
         parts = [instructions, who, block, known, plan]
         return "\n\n---\n\n".join(part for part in parts if part).strip()
 
+    def _result_limit(self, budget: int | None) -> int | None:
+        """The largest tool result this turn could actually carry.
+
+        There was a constant here instead -- 4,000 characters, set when every
+        model available was local and small, and still 4,000 when they were
+        not. On a million-token window it removed 11,453 characters across
+        three results in one session, one of them the request with which the
+        Resident was checking its own work.
+
+        So the number comes from the connection now. A result under this is
+        not touched at all, which on a large window means no result is ever
+        touched; a result over it could not have reached the model whole in
+        any case, and an announced extract beats a refused request.
+
+        Generous on purpose, and slightly optimistic: the same characters-
+        per-token figure the interface uses for what an owner may paste. A
+        result that overshoots by a little is caught by the same overflow
+        reporting that catches an over-long message.
+        """
+        if not budget or budget <= 0:
+            return None
+        return int(budget * self.CHARS_PER_TOKEN_GENEROUS)
+
     def _estimate(self, text: str) -> int:
         return int(len(text) / self.CHARS_PER_TOKEN)
 
@@ -795,6 +818,7 @@ class Resident:
                 # bodies. The Resident holds the library; the worker is
                 # handed only what it was scoped to.
                 skills=self.skills,
+                journal=self.journal,
             )
 
         loop = AgentLoop(
@@ -812,6 +836,11 @@ class Resident:
                 skills=self.skills,
                 journal=self.journal,
                 reporting=self.reporting,
+                # The only ceiling a result has: what this connection could
+                # actually carry. None on a window nobody has declared, which
+                # means nothing is cut and the provider objects if it must --
+                # the same stance _fit already takes about history.
+                result_limit=self._result_limit(plan.get("budget")),
             ),
             activities=self.activities,
             live={"workers": crew},

@@ -122,7 +122,7 @@ async def run(
     note = f"\n\n[Stopped at {MAX_HITS} results. Narrow the search to see more.]" if truncated else ""
 
     return ToolResult(
-        text=size_for_model(f"In {root}:\n{body}") + note,
+        text=size_for_model(f"In {root}:\n{body}", context.result_limit) + note,
         payload=body,
         summary=f"{len(found)} result{'s' if len(found) != 1 else ''}",
     )

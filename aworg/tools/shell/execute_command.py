@@ -140,7 +140,7 @@ async def run(
         )
 
     return ToolResult(
-        text=size_for_model(body),
+        text=size_for_model(body, context.result_limit),
         payload=output,
         is_error=code != 0,
         summary=f"exit {code}" + (" (detached)" if detached else ""),

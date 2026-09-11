@@ -103,7 +103,7 @@ async def run(
     body_text = text.strip() or "(empty response body)"
 
     return ToolResult(
-        text=size_for_model(f"{head}\n\n{body_text}"),
+        text=size_for_model(f"{head}\n\n{body_text}", context.result_limit),
         payload=text,
         is_error=response.status_code >= 400,
         summary=head,

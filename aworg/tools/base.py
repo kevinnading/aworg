@@ -25,14 +25,20 @@ from typing import Any, Awaitable, Callable, Protocol
 from ..activities import Activity, ActivityManager
 
 
-#: How much of a result the model is shown. A tool that returns a 40,000-line
-#: build log would otherwise spend a small model's entire context on one call
-#: and leave no room to act on it.
+#: No fixed ceiling. A tool result is cut only when it could not be
+#: sent at all, and that edge belongs to the connection rather than to this
+#: file -- see ToolContext.result_limit.
 #:
-#: Deliberately modest, because this is developed against a 9B whose window
-#: may be 8k: 4,000 characters is roughly 1,100 tokens. Generous limits are a
-#: setting for whoever runs something larger, not the default.
-MAX_RESULT_CHARS = 4000
+#: The constant that was here was 4,000 characters, chosen when the only
+#: models available were local and small. It stayed a constant when the
+#: models stopped being small, and on a million-token window it removed
+#: 11,453 characters across three results in a single session -- including
+#: the http_request with which the Resident was verifying its own work, so
+#: it confirmed a page it had been shown four fifths of.
+#:
+#: The lesson is not "4,000 was too low". It is that a limit expressed as a
+#: constant is a limit that stops tracking the thing it was protecting.
+MAX_RESULT_CHARS = None
 
 #: Of what is kept, how much comes from the start. The beginning of output
 #: says what ran and the end says how it went, and the middle is usually the
@@ -117,6 +123,16 @@ class ToolContext:
     #: finished. Failure is written from journal.matters instead, which sees
     #: every tool without any of them knowing about it.
     journal: Any = None
+    #: The largest result this connection could actually carry, in
+    #: characters, or None where there is no edge to stay inside.
+    #:
+    #: Derived from the window rather than chosen: a result bigger than this
+    #: cannot reach the model at all, so cutting it is the difference between
+    #: an extract and a refused request. Below that edge nothing is cut, which
+    #: on a large window means nothing is ever cut -- and that is the point.
+    #: The tools ask for it by attribute, so one that forgets simply gets no
+    #: limit, which is the safe direction now rather than the dangerous one.
+    result_limit: int | None = None
     #: Who is calling: "resident", or a worker id. Tools do not currently
     #: branch on it; it is here so that an audit of who ran what is possible
     #: without changing every signature later.
@@ -211,8 +227,12 @@ def resolve_path(context: ToolContext, path: str) -> "Path":
     return candidate
 
 
-def size_for_model(text: str, limit: int = MAX_RESULT_CHARS) -> str:
-    """Cut a result down to what a model can afford to read.
+def size_for_model(text: str, limit: int | None = MAX_RESULT_CHARS) -> str:
+    """Cut a result down to what a model could actually be sent.
+
+    `None` means no cut, which is now the default and the ordinary case. A
+    result is shortened only where the connection's own window says it could
+    not arrive whole, and the caller passes that edge in.
 
     The cut is announced in the text itself. A result silently halved
     produces a Resident reasoning confidently about output it never saw,
@@ -223,7 +243,7 @@ def size_for_model(text: str, limit: int = MAX_RESULT_CHARS) -> str:
     testimony about evidence the same model is about to be judged on, and
     costs a round trip to obtain.
     """
-    if len(text) <= limit:
+    if limit is None or len(text) <= limit:
         return text
 
     marker_room = 80

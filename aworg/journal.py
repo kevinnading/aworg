@@ -245,6 +245,21 @@ class Journal:
             detail=body,
         )
 
+    def note_once(self, summary: str, **fields: Any) -> dict[str, Any] | None:
+        """Write this down only if it has not been written before.
+
+        For a standing condition -- something that is true until the owner
+        changes a setting -- as opposed to something that happened. Recording
+        it every time it holds would bury the events, which is the failure
+        this pane is most vulnerable to.
+
+        A reset clears the log, so the condition is announced again on the
+        far side of one. That is right: a fresh Aworg has not been told.
+        """
+        if self.store.journal_has(summary.strip()):
+            return None
+        return self.record(summary, **fields)
+
     # -- reading --------------------------------------------------------
 
     def entries(self, limit: int = 100) -> list[dict[str, Any]]:

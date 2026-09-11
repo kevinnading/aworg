@@ -72,7 +72,7 @@ async def run(context: ToolContext, state: str = "open") -> ToolResult:
             lines.append(f"{lead}    note: {entry['note']}")
 
     return ToolResult(
-        text=size_for_model("\n".join(lines)),
+        text=size_for_model("\n".join(lines), context.result_limit),
         payload="\n".join(lines),
         summary=f"{len(tasks)} task{'s' if len(tasks) != 1 else ''}",
     )

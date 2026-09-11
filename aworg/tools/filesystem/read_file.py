@@ -102,7 +102,7 @@ async def run(
         )
 
     return ToolResult(
-        text=size_for_model(numbered) + note,
+        text=size_for_model(numbered, context.result_limit) + note,
         payload=raw,
         summary=f"{len(window)} of {total} lines",
     )

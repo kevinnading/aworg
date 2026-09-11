@@ -132,7 +132,7 @@ async def run(
         return ToolResult(
             text=(
                 f"{record.label} exited immediately with code "
-                f"{process.returncode}. It is not running.\n\n{size_for_model(body)}"
+                f"{process.returncode}. It is not running.\n\n{size_for_model(body, context.result_limit)}"
             ),
             payload=output,
             is_error=True,
@@ -144,7 +144,7 @@ async def run(
         text=(
             f"Started {record.label} as `{record.id}` and it is still running "
             f"after {watch}s.\n\n"
-            + (f"What it printed so far:\n{size_for_model(body)}\n\n" if body else "")
+            + (f"What it printed so far:\n{size_for_model(body, context.result_limit)}\n\n" if body else "")
             + "Use list_processes to check on it or read more of its output, "
             "and stop_process to stop it. It keeps running until you do."
         ),

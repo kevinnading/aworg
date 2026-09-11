@@ -55,7 +55,7 @@ async def run(
             else f"stopped, exit code {record.process.returncode}"
         )
         return ToolResult(
-            text=f"{record.id} {record.label} -- {state}\n\n{size_for_model(body)}",
+            text=f"{record.id} {record.label} -- {state}\n\n{size_for_model(body, context.result_limit)}",
             payload=processes.output(record.id),
             summary=state,
         )
