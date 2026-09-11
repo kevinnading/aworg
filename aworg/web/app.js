@@ -512,7 +512,9 @@ function renderChat() {
   for (const message of app.conversation.messages) {
     // Every node remembers which stored row it came from, so the truncation
     // seam can be placed at the actual boundary rather than counted to.
-    const node = messageNode(message.role, message.content, message.model_label);
+    const node = messageNode(
+      message.role, message.content, message.model_label, message.blocks
+    );
     if (message.id !== undefined) node.dataset.mid = message.id;
     box.appendChild(node);
   }
@@ -527,6 +529,76 @@ function renderChat() {
  * what ran and how it went, and the output folded underneath for whoever
  * wants it. The exit code is on the outside, because that is the part the
  * owner cannot afford to miss. */
+/* Whether this reply was tool calls and nothing else.
+ *
+ * The blocks are the truth when they are there -- a reply with tool_use and
+ * no text block said nothing. Older messages were stored before blocks
+ * existed, so their rendered text is read instead: a bare list of tool names
+ * with no sentence in it. */
+function isOnlyCalls(content, blocks) {
+  if (Array.isArray(blocks) && blocks.length) {
+    return (
+      blocks.some((b) => b && b.type === "tool_use") &&
+      !blocks.some((b) => b && b.type === "text" && (b.text || "").trim())
+    );
+  }
+  const text = (content || "").trim();
+  if (!text || /[.!?:]/.test(text) || text.length > 90) return false;
+  return text.split(/,\s*/).every((part) => /^[a-z][a-z0-9_]*$/.test(part.trim()));
+}
+
+const MACHINERY_ICON =
+  '<path d="M2.5 5h11"/><path d="M2.5 11h11"/><circle cx="6" cy="5" r="1.6"/>' +
+  '<circle cx="10" cy="11" r="1.6"/>';
+
+/* One quiet line for what ran, with the detail folded behind it.
+ *
+ * Deliberately not a chat bubble. What the Resident *did* is not what it
+ * *said*, and rendering the two the same way is what buried the reply under
+ * its own plumbing. */
+function machineryNode(role, content, blocks) {
+  const wrapper = document.createElement("details");
+  wrapper.className = `msg machinery ${role}`;
+
+  const summary = document.createElement("summary");
+  summary.innerHTML =
+    '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" ' +
+    'stroke="currentColor" stroke-width="1.5" stroke-linecap="round" ' +
+    `aria-hidden="true">${MACHINERY_ICON}</svg>`;
+
+  const label = document.createElement("span");
+  label.textContent = machineryLabel(role, content, blocks);
+  summary.appendChild(label);
+  wrapper.appendChild(summary);
+
+  const body = document.createElement("pre");
+  body.className = "machinery-body";
+  body.textContent = content || "";
+  wrapper.appendChild(body);
+  return wrapper;
+}
+
+/* What the folded line says. Names rather than counts where the names are
+ * the useful part: "delegate, read_file" tells the owner what happened,
+ * where "2 tool calls" tells them only that something did. */
+function machineryLabel(role, content, blocks) {
+  const list = Array.isArray(blocks) ? blocks : [];
+  if (role === "resident") {
+    const names = list
+      .filter((b) => b && b.type === "tool_use")
+      .map((b) => b.name)
+      .filter(Boolean);
+    const shown = names.length ? names : (content || "").split(/,\s*/);
+    return shown.slice(0, 4).join(", ") + (shown.length > 4 ? ", …" : "");
+  }
+  const failed = list.filter((b) => b && b.is_error).length;
+  const count = list.length || 1;
+  return (
+    `${count} result${count === 1 ? "" : "s"}` +
+    (failed ? ` — ${failed} failed` : "")
+  );
+}
+
 /* A line above the reply saying why nothing is arriving.
  *
  * Replaced rather than appended: "waiting 40s" followed by "waiting 20s" is
@@ -549,7 +621,24 @@ function clearReplyNote(node) {
   if (note) note.remove();
 }
 
-function messageNode(role, content, label) {
+function messageNode(role, content, label, blocks) {
+  // Machinery, not speech.
+  //
+  // A reply that asked for tools and said nothing was stored with the tool
+  // names as its text, so the conversation showed "delegate" and
+  // "update_task" as things the Resident had told the owner. The results
+  // came out in full underneath -- a skill body, a worker's whole report,
+  // 25,000 tokens of a fetched page.
+  //
+  // The empty state of this very pane says to watch Activities to see what
+  // the Resident does. This is what makes that true. The record is still
+  // here and still openable, because Activities is runtime state and a
+  // conversation scrolled back through a week later is all there is; it is
+  // simply folded, so the reading order is what was said.
+  if (role === "tool" || (role === "resident" && isOnlyCalls(content, blocks))) {
+    return machineryNode(role, content, blocks);
+  }
+
   const wrapper = document.createElement("div");
   wrapper.className = `msg ${role}`;
 

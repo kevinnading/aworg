@@ -29,7 +29,7 @@ from typing import Any
 
 from . import host
 from .activities import ActivityManager
-from .agent import AgentLoop
+from .agent import AgentLoop, _describe_arguments
 from .models import Message, ModelError, build_adapter
 from .secrets import credential_ref
 from .tools import Registry, ToolContext
@@ -237,7 +237,19 @@ async def run_worker(
                 result.calls.append(
                     {
                         "name": event["name"],
-                        "arguments": event.get("arguments") or {},
+                        # A description, not the arguments.
+                        #
+                        # This held the whole dict, and a write_file's
+                        # content argument is the whole file -- so a builder
+                        # that wrote five pages put all five into the
+                        # Resident's context through its own report. One such
+                        # report came to 12,971 tokens, which is the opposite
+                        # of what delegating is for: the point of a worker is
+                        # that the work happens in a context that is then
+                        # thrown away.
+                        "arguments": _describe_arguments(
+                            event.get("arguments") or {}
+                        ),
                         "summary": event.get("summary") or "",
                         "is_error": bool(event.get("is_error")),
                     }

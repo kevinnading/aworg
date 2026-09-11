@@ -406,11 +406,30 @@ class Resident:
     def _estimate(self, text: str) -> int:
         return int(len(text) / self.CHARS_PER_TOKEN)
 
+    #: Tools the Resident does not get, however enabled they are.
+    #:
+    #: Fetching a page is doing, and doing belongs to a worker. The Resident
+    #: having http_request meant it used it: one turn delegated research to
+    #: the researcher and *then* fetched six pages itself anyway, putting
+    #: 25,577 tokens of web text into the conversation it has to carry for
+    #: the rest of its life.
+    #:
+    #: A worker reading a page and reporting three sentences is the whole
+    #: argument for workers existing. The researcher and the checker keep
+    #: http_request; the Resident asks one of them.
+    #:
+    #: Deliberately a short list, and deliberately not a setting. If it grows
+    #: past a couple of entries the answer is worker-only capabilities rather
+    #: than more names here.
+    NOT_THE_RESIDENTS = ("http_request",)
+
     def _offered_tools(self, adapter: Any, crew: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """The tool descriptors this turn will send, or none if it cannot.
 
         Built here rather than left to the loop because the same list has to
         be measured before the conversation is fitted around it.
+
+        Minus the few that belong to workers. See NOT_THE_RESIDENTS.
         """
         if not getattr(adapter, "supports_tools", False):
             return []
@@ -425,6 +444,27 @@ class Resident:
                 for s in self.skills.offered()
             ],
         )
+
+    def _without_workers_tools(
+        self, offered: list[dict[str, Any]], crew: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """Drop the tools that are a worker's to use, when one can take them.
+
+        Only when a worker actually has the tool and is enabled. An Aworg
+        whose researcher the owner deleted should not find the Resident
+        unable to fetch anything at all -- the rule exists to route work to
+        workers, not to make a capability unreachable.
+        """
+        covered = {
+            name
+            for worker in crew
+            for name in (worker.get("tools") or [])
+        }
+        return [
+            tool for tool in offered
+            if tool["name"] not in self.NOT_THE_RESIDENTS
+            or tool["name"] not in covered
+        ]
 
     def _tools_cost(self, offered: list[dict[str, Any]]) -> int:
         """What the tool schemas cost, in tokens, on every request.
@@ -808,7 +848,9 @@ class Resident:
 
         # Built before fitting, because the schemas are part of every request
         # and the conversation has to fit in what is left after them.
-        offered = self._offered_tools(adapter, crew)
+        offered = self._without_workers_tools(
+            self._offered_tools(adapter, crew), crew
+        )
 
         # Only what fits goes to the model. Everything stays on disk.
         system = self.system_prompt()
