@@ -291,6 +291,56 @@ That keeps "I have not chosen" and "I chose this one" as different facts,
 which is what lets a factory reset restore the shipped persona without the
 storage layer having to know what it is called.
 
+### Noticing and acting are separate objects
+
+`watch.py` reads the Living Log on a schedule and stops. It does not
+diagnose, decide, or repair; it holds what is outstanding and calls
+`on_trouble` with it.
+
+The seam exists before anything uses it, and that is deliberate. The
+autonomous repair loop is the obvious next thing to build, and the cheapest
+way to build it is inside the watcher — a little triage, then a little
+investigation, then a little fixing — until the thing that notices and the
+thing that acts are one object nobody can reason about separately. Drawing
+the line while there is nothing on the far side of it is the only moment the
+line is free.
+
+Two things follow that are worth more than tidiness. The inspection is
+testable with no model attached, which nothing else in the autonomous path
+will be. And an owner can eventually switch repair off while leaving noticing
+on — the difference between an Aworg that will not fix things and one that
+cannot see them. Those are the same object only if they were built as one.
+
+The watcher looks immediately on start rather than after its first interval.
+An Aworg that restarted may have an application that fell over while it was
+away, and the gap it would be blind across is exactly the gap it exists to
+cover.
+
+### The Lifecycle only moves on evidence AWORG gathered
+
+Every stage has a test, and every test is something AWORG observed rather
+than something the Resident reported. That was already true of "running" — a
+process AWORG holds, alive, with a port — and it now extends two stages
+further.
+
+"Verified" is AWORG's own fetch of the served application, and it counts only
+if it happened *after* the most recent change to the workspace. A running
+process proves something bound a port, not that the thing just changed still
+works; and a check made before the change was a check of a different
+application. The Resident saying it verified its work is testimony from the
+party being judged.
+
+"Watched" needs both halves of its own claim: an application that has
+actually posted to the Living Log, and a watcher that has actually completed
+a pass. An endpoint nobody has spoken down is a promise rather than a
+channel.
+
+The consequence is that stages move backwards, and they should. Break the
+application and the next fetch fails; the stage drops and the owner sees it
+without anyone having to notice and say so. A stepper that only advanced
+would be a record of what once happened rather than a description of what is
+true.
+
 ### The Living Log judges; nothing else does
 
 `aworg/journal.py` is the only place in AWORG that holds an opinion about what

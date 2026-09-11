@@ -46,11 +46,14 @@ It has a **Persona** — a name, a manner, and a chat that looks like its own
 room. Changing it does not make a new Resident: the conversation, the plan,
 the log and every permission carry straight on.
 
-What it does not have yet is the other half of the Living Log and the loop
-that would use it. Applications cannot yet report their own events *in*;
-nothing inspects the log on a schedule; and the autonomous repair loop — read
-the log at three in the morning and do something about it — is unbuilt, as is
-History and Reversibility. See [docs/02_MVP_SPEC.md](docs/02_MVP_SPEC.md).
+Applications it builds can **report their own trouble** back to it, without
+being wired up: the channel arrives in their environment. AWORG reads that
+log every minute and holds what is still outstanding.
+
+What it does not have yet is the autonomous repair loop — the part that takes
+what the watch found at three in the morning and does something about it —
+and History and Reversibility. See
+[docs/02_MVP_SPEC.md](docs/02_MVP_SPEC.md).
 
 ## Running it
 
@@ -498,6 +501,52 @@ link opens the whole of what came back, but Activities are runtime state and
 are forgotten in time, and a log whose entire content is a dead link is a
 record of nothing. So a bounded tail comes across when the entry is written —
 enough that the line still means something in the morning.
+
+## When an application says it is in trouble
+
+The Living Log has two directions, and the second is the one it was named
+for. AWORG writing down what it observed is one half; an application the
+Resident built, running in the workspace, reporting its own failure without a
+person noticing first, is the other.
+
+```bash
+curl -X POST "$AWORG_LOG_URL" -H "X-Aworg-Token: $AWORG_LOG_TOKEN"   -d '{"summary":"Checkout failed","severity":"critical",
+       "where":"POST /checkout","detail":"no such table: orders",
+       "application":"tea-shop"}'
+```
+
+Four fields rather than a message — what failed, how badly, where, and what
+surrounds it — kept separate so what reads them back can reason about them
+rather than parse prose. The application's own severity words (`error`,
+`warning`, `critical`) land on the same three levels AWORG uses for
+everything else, because an owner comparing an application's trouble with the
+machine's should not need a translation table.
+
+**The channel arrives by itself.** `AWORG_LOG_URL` and `AWORG_LOG_TOKEN` are
+in the environment of everything the Resident starts, so an application reads
+them the way it reads `PORT`. Nothing has to be wired up — which matters,
+because the thing doing the wiring would be a model that forgets.
+
+It is a token rather than an open port. Prototype authority is not production
+security and this is not an attempt at more, but something now reads this log
+on a schedule, and an unauthenticated port on localhost would mean any
+process on this machine could wake the Resident at three in the morning.
+
+### Open, and dealt with
+
+A concern or an alarm stays **open** until something closes it, and closing
+one carries who closed it and what they did — "the Resident restarted it" and
+"the owner said never mind" are different outcomes. Notes are never open; a
+note is a record, not a job.
+
+AWORG looks at what is open every minute, starting the moment it boots rather
+than a minute later — an Aworg that restarted may have an application that
+fell over while it was away.
+
+The watch **only looks**. It does not diagnose, decide, or repair. What to do
+about what it found attaches to a seam it calls and knows nothing else about,
+which is where the repair loop will go — and which is what will let you
+switch repair off while leaving noticing on.
 
 ## When it stops
 
