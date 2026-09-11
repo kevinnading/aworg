@@ -50,7 +50,14 @@ def main(argv: list[str] | None = None) -> int:
         print(f"AWORG home     {paths.home}")
         print(f"Owner interface  http://{host}:{port}")
         print()
-        uvicorn.run(create_app(paths), host=host, port=port, log_level="warning")
+        # The address is decided here, so it is told here. An application
+        # the Resident starts is given this to report to, and AWORG cannot
+        # work it out from the inside -- a server does not know what anyone
+        # called it.
+        uvicorn.run(
+            create_app(paths, address=f"http://{host}:{port}"),
+            host=host, port=port, log_level="warning",
+        )
         return 0
 
     parser.print_help()

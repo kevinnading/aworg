@@ -20,7 +20,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Response
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -28,6 +28,7 @@ from pydantic import BaseModel
 from .models import CAPABILITY_TAGS, PROVIDER_LABELS, ModelError, build_adapter
 from .paths import Paths
 from .journal import Journal
+from . import journal as journal_module
 from . import personas as personas_module
 from .resident import Busy, Resident
 from .secrets import SecretStore, credential_ref
@@ -196,6 +197,33 @@ class WorkerPatch(BaseModel):
     enabled: bool | None = None
 
 
+class ReportBody(BaseModel):
+    """What a running application says happened to it.
+
+    Four fields, matching what the MVP spec asks an application to be able to
+    say: what failed, how badly, where, and whatever surrounds it. Kept as
+    separate fields rather than one message so that what reads this back can
+    reason about it instead of parsing prose.
+    """
+    summary: str
+    #: The application's own word for how bad it is -- `error`, `warning`,
+    #: `critical`. Mapped onto AWORG's three levels; see journal.FROM_APPLICATION.
+    severity: str = "error"
+    #: Where it happened. A route, a file, a job name -- whatever the
+    #: application knows itself by.
+    where: str = ""
+    detail: str = ""
+    #: Which application, for an Aworg running more than one.
+    application: str = ""
+
+
+class ResolveBody(BaseModel):
+    #: What was done about it. Required in spirit rather than by the schema:
+    #: an entry closed with no account of why is one that teaches nothing.
+    resolution: str = ""
+    by: str = "owner"
+
+
 class PersonaBody(BaseModel):
     #: The persona to wear. Empty or null means the shipped default, which
     #: is how "I have not chosen" is expressed -- see personas.DEFAULT_PERSONA.
@@ -213,11 +241,19 @@ class LayoutPatch(BaseModel):
     sizes: dict[str, Any]
 
 
-def create_app(paths: Paths) -> FastAPI:
+def create_app(paths: Paths, address: str = "http://127.0.0.1:8420") -> FastAPI:
     paths.ensure()
     store = Store(paths.state_db)
     secrets = SecretStore(paths.secrets_db)
     resident = Resident(store, secrets, paths)
+    # Where an application AWORG starts should send what happens to it. Told
+    # rather than discovered: a server has no way of knowing what address
+    # anyone reached it on, and guessing would hand out a URL that works on
+    # the developer's machine and nowhere else.
+    resident.reporting = {
+        journal_module.URL_VAR: f"{address.rstrip('/')}/api/log",
+        journal_module.TOKEN_VAR: "",
+    }
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
@@ -239,6 +275,9 @@ def create_app(paths: Paths) -> FastAPI:
         the Activity stream -- which would leave the pane looking calm rather
         than deaf.
         """
+        # Made now rather than on first use, so that the very first
+        # application the Resident starts already has it in its environment.
+        resident.reporting[journal_module.TOKEN_VAR] = report_token()
         follower = asyncio.create_task(resident.journal.follow(resident.activities))
         resident.journal.record(
             "AWORG started",
@@ -889,6 +928,86 @@ def create_app(paths: Paths) -> FastAPI:
         pane about now.
         """
         return {"entries": resident.journal.entries(limit=limit)}
+
+    @app.get("/api/journal/open")
+    def open_living_log(limit: int = 50) -> dict[str, Any]:
+        """What went wrong and has not been dealt with.
+
+        Its own endpoint rather than a filter on the one above, because it is
+        a different question with a different reader. The pane shows history;
+        this is the working list.
+        """
+        return {"entries": resident.journal.open_entries(limit=limit)}
+
+    @app.post("/api/journal/{entry_id}/resolve")
+    def resolve_living_log(entry_id: int, body: ResolveBody) -> dict[str, Any]:
+        """Close one entry, with an account of what was done."""
+        closed = resident.journal.resolve(
+            entry_id, by=body.by.strip() or "owner", resolution=body.resolution
+        )
+        if closed is None:
+            raise HTTPException(404, "No such Living Log entry")
+        return closed
+
+    @app.post("/api/log")
+    def report_to_living_log(body: ReportBody, request: Request) -> dict[str, Any]:
+        """**The channel an application uses to tell its Resident it is in trouble.**
+
+        The direction the Living Log was named for, and the one it did not
+        have. Everything else writing to it is AWORG watching itself; this is
+        software the Resident built, running in the workspace, reporting its
+        own failure without a person noticing first.
+
+        Deliberately not under /api/journal. That is the owner interface's
+        surface; this is the far narrower one a generated application is
+        given, and keeping them apart is what lets the application's be
+        authenticated differently and reasoned about on its own.
+
+        A token, checked here. The spec is clear that prototype authority is
+        not production security, so this is not an attempt at more than it
+        looks -- but something will soon read this log on a schedule and act
+        on it, and an open port on localhost would mean any process on this
+        machine could wake the Resident at three in the morning. The token
+        keeps the channel meaning "the applications AWORG started".
+        """
+        offered = (
+            request.headers.get("x-aworg-token")
+            or request.query_params.get("token")
+            or ""
+        )
+        expected = report_token()
+        # Compared in constant time out of habit rather than necessity. It
+        # costs nothing and the habit is the point.
+        if not secrets_module.compare_digest(offered, expected):
+            raise HTTPException(401, "A valid AWORG_LOG_TOKEN is required.")
+
+        entry = resident.journal.report(
+            summary=body.summary,
+            severity=body.severity,
+            where=body.where,
+            detail=body.detail,
+            application=body.application,
+        )
+        if entry is None:
+            raise HTTPException(400, "An event needs a summary saying what happened.")
+        return entry
+
+    def report_token() -> str:
+        """The token applications report with, made once and kept.
+
+        In the secret store beside the model credentials, because it is the
+        same kind of thing: something AWORG holds on the owner's behalf that
+        should not turn up in the state database they might send someone.
+
+        Made on first use rather than at install, so an Aworg that never runs
+        an application never has one.
+        """
+        held = secrets.get(journal_module.TOKEN_REF)
+        if held:
+            return held
+        made = secrets_module.token_urlsafe(32)
+        secrets.set(journal_module.TOKEN_REF, made)
+        return made
 
     @app.delete("/api/journal")
     def clear_living_log() -> dict[str, int]:

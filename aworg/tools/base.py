@@ -122,9 +122,33 @@ class ToolContext:
     #: without changing every signature later.
     source: str = "resident"
 
+    #: How a started application reaches the Living Log: the URL to post to
+    #: and the token to post with. Supplied by whoever builds the context,
+    #: like everything else here, so a tool still cannot reach anything it
+    #: was not handed.
+    reporting: dict[str, str] = field(default_factory=dict)
+
     def progress(self, fraction: float | None = None, detail: str = "") -> None:
         if self.activity is not None:
             self.activities.progress(self.activity, fraction, detail)
+
+    def reporting_env(self) -> dict[str, str] | None:
+        """This process's environment, with the Living Log's address added.
+
+        The whole environment rather than only the two variables, because a
+        subprocess handed a bare pair loses PATH and everything else it needs
+        to run at all.
+
+        None when there is nothing to add, which is what
+        `create_subprocess_exec` wants in order to mean "inherit" -- passing a
+        copy would be the same thing more expensively, and would quietly stop
+        tracking the parent's environment if it ever changed.
+        """
+        if not self.reporting:
+            return None
+        import os
+
+        return {**os.environ, **self.reporting}
 
 
 class ToolModule(Protocol):

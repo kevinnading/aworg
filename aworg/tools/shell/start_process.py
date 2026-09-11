@@ -99,6 +99,15 @@ async def run(
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
             stdin=asyncio.subprocess.DEVNULL,
+            # The Living Log's address, handed to whatever is being started.
+            #
+            # This is what makes the channel real rather than documented. An
+            # application does not have to be told where AWORG is or be given
+            # a key -- it reads two environment variables that are simply
+            # there, the way a program reads PORT. Nothing has to be wired up,
+            # which matters because the thing doing the wiring would be a
+            # model that forgets.
+            env=context.reporting_env(),
         )
     except FileNotFoundError:
         raise ToolError(f"The shell {argv[0]!r} is not on this machine.") from None

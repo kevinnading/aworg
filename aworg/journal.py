@@ -56,6 +56,62 @@ ALARM = "alarm"
 
 LEVELS = (NOTE, CONCERN, ALARM)
 
+#: How an application's own words map onto the three levels above.
+#:
+#: One vocabulary, not two. An application reports in the words its language
+#: already uses -- `error`, `warning`, `info` -- and they land on the same
+#: three levels AWORG uses for everything else, because the pane an owner
+#: reads and the list a repair loop works from must not need a translation
+#: table to compare an application's trouble with the machine's.
+#:
+#: Deliberately small, as the spec asks. Anything unrecognised becomes a
+#: concern rather than being refused: an application that invented a severity
+#: was still trying to tell somebody something.
+FROM_APPLICATION = {
+    "debug": NOTE,
+    "info": NOTE,
+    "notice": NOTE,
+    "warn": CONCERN,
+    "warning": CONCERN,
+    "error": CONCERN,
+    "exception": CONCERN,
+    "critical": ALARM,
+    "fatal": ALARM,
+    "alarm": ALARM,
+    # The three AWORG words, so an application may simply use them.
+    NOTE: NOTE,
+    CONCERN: CONCERN,
+    ALARM: ALARM,
+}
+
+#: Where the reporting token is kept, in the same store as model credentials.
+#:
+#: A token rather than an open endpoint, and the reason is the loop that
+#: comes after this one. Something will read this log on a schedule and act
+#: on what it finds, so anything that can write to it can eventually make the
+#: Resident do work at three in the morning. An unauthenticated port on
+#: localhost would make that "any process on this machine".
+#:
+#: The spec is explicit that prototype authority is not production security
+#: and that the Resident may hold broad authority in its own workspace. This
+#: is not an attempt at more than that. It is the cheapest thing that keeps
+#: the channel meaning "the applications AWORG started" rather than "whatever
+#: else is running here", which is the distinction the repair loop needs to
+#: still be true later.
+TOKEN_REF = "journal:report-token"
+
+#: What a started application is told, so it can report without being
+#: configured. Injected into the environment of everything ProcessTable
+#: starts, which is how an application AWORG built inherits the channel
+#: without anyone having to wire it up.
+URL_VAR = "AWORG_LOG_URL"
+TOKEN_VAR = "AWORG_LOG_TOKEN"
+
+#: The longest an application's own text may be. Applications are generated
+#: by a model and may log in a loop; this is the Living Log's share of the
+#: damage a runaway one can do.
+MAX_REPORT_CHARS = 2000
+
 
 def _what_happened(activity: dict[str, Any]) -> str:
     """What was asked for, and what came back.
@@ -134,10 +190,78 @@ class Journal:
             keep=self.KEEP,
         )
 
+    def report(
+        self,
+        summary: str,
+        severity: str = "error",
+        where: str = "",
+        detail: str = "",
+        application: str = "",
+    ) -> dict[str, Any] | None:
+        """An application telling its Resident something happened to it.
+
+        **This is the direction the Living Log was named for.** Everything
+        else in this file is AWORG watching itself -- its own processes, its
+        own tools, its own workers. This is software the Resident built,
+        running in the workspace, reporting its own trouble without a person
+        noticing first. It is the channel the repair loop will eventually
+        wake on.
+
+        The application's severity is mapped onto the same three levels AWORG
+        uses for everything else rather than kept as a parallel vocabulary.
+        An owner reading the pane, and a loop working a list, must not need a
+        translation table to compare an application's trouble with the
+        machine's.
+
+        Nothing here is trusted as instruction. An application is software a
+        model wrote; its log lines are data. They are length-bounded, they
+        are recorded under a source that says plainly where they came from,
+        and the four things the spec asks for -- what failed, where, how
+        badly, and the surrounding detail -- are kept in separate fields so
+        that what follows can reason about them rather than read prose.
+        """
+        summary = (summary or "").strip()[:MAX_REPORT_CHARS]
+        if not summary:
+            return None
+
+        level = FROM_APPLICATION.get((severity or "").strip().lower(), CONCERN)
+        name = (application or "").strip()[:80] or "the application"
+        place = (where or "").strip()[:200]
+
+        body = (detail or "").strip()[:MAX_REPORT_CHARS]
+        if place:
+            # Where it happened, kept in front of the detail rather than
+            # buried in it: it is the first thing anyone diagnosing this
+            # will want and the last thing they should have to hunt for.
+            body = f"In {place}.\n\n{body}".strip()
+
+        return self.record(
+            summary,
+            level=level,
+            kind="application",
+            # Named rather than lumped under one label, because an Aworg may
+            # be running more than one thing it built.
+            source=f"application:{name}",
+            detail=body,
+        )
+
     # -- reading --------------------------------------------------------
 
     def entries(self, limit: int = 100) -> list[dict[str, Any]]:
         return self.store.list_journal(limit=limit)
+
+    def open_entries(self, limit: int = 50) -> list[dict[str, Any]]:
+        """What went wrong and has not been dealt with.
+
+        The list the periodic inspection works from. Notes never appear here
+        however recent: a note is a record, not a job.
+        """
+        return self.store.list_journal(limit=limit, open_only=True)
+
+    def resolve(
+        self, entry_id: int, by: str = "resident", resolution: str = ""
+    ) -> dict[str, Any] | None:
+        return self.store.resolve_journal_entry(entry_id, by=by, resolution=resolution)
 
     def clear(self) -> int:
         return self.store.clear_journal()

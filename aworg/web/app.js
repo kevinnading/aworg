@@ -239,6 +239,9 @@ async function refreshLivingLog() {
     detail: entry.detail || "",
     at: entry.at || "",
     activity_id: entry.activity_id,
+    open: !entry.resolved && ["concern", "alarm"].includes(entry.level),
+    resolution: entry.resolution || "",
+    resolved_by: entry.resolved_by || "",
   }));
   repaintPane("log");
 }
@@ -1744,6 +1747,12 @@ function logRow(item) {
   name.className = "pane-item-name";
   name.textContent = item.name;
 
+  // Still open, or dealt with. The distinction is the pane's most useful
+  // fact once anything is reading this list to decide what to work on, and
+  // an owner glancing at it wants to know what is outstanding rather than
+  // what has ever been wrong.
+  if (item.open) row.classList.add("open");
+
   const when = document.createElement("span");
   when.className = "log-when";
   when.textContent = logTime(item.at);
@@ -1760,6 +1769,18 @@ function logRow(item) {
     detail.className = "log-detail";
     detail.textContent = item.detail;
     row.appendChild(detail);
+  }
+
+  // What was done about it, when something was. Shown rather than only
+  // stored: "resolved" with no account of how is a claim, and this pane is
+  // the one place an owner goes to check rather than take someone's word.
+  if (item.resolution) {
+    const done = document.createElement("span");
+    done.className = "log-resolution";
+    done.textContent = item.resolved_by
+      ? `${item.resolved_by}: ${item.resolution}`
+      : item.resolution;
+    row.appendChild(done);
   }
   return row;
 }

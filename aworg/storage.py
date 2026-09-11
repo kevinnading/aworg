@@ -166,7 +166,20 @@ CREATE TABLE IF NOT EXISTS journal (
     -- forgotten in time, so this is a link that may go dead -- which is why
     -- the entry has to stand on its own without it.
     activity_id TEXT,
-    at          TEXT NOT NULL DEFAULT (datetime('now'))
+    at          TEXT NOT NULL DEFAULT (datetime('now')),
+    -- Whether anything still needs doing about this.
+    --
+    -- Only concerns and alarms are ever open; a note is a record of
+    -- something that happened and there is nothing to resolve about it.
+    -- That is why this is not defaulted per level here -- see
+    -- list_journal, which decides what "open" means in one place.
+    resolved    INTEGER NOT NULL DEFAULT 0,
+    resolved_at TEXT,
+    -- Who closed it, and what they did. "The Resident restarted it" and
+    -- "the owner said never mind" are different outcomes, and a loop that
+    -- cannot tell them apart learns the wrong lesson from its own history.
+    resolved_by TEXT,
+    resolution  TEXT NOT NULL DEFAULT ''
 );
 
 CREATE INDEX IF NOT EXISTS idx_journal_at ON journal (id DESC);
@@ -519,6 +532,10 @@ class Store:
         # and it wears exactly one at a time -- and because putting it here
         # is what makes it survive everything a reset does to the rest.
         ("resident", "persona", "TEXT"),
+        ("journal", "resolved", "INTEGER NOT NULL DEFAULT 0"),
+        ("journal", "resolved_at", "TEXT"),
+        ("journal", "resolved_by", "TEXT"),
+        ("journal", "resolution", "TEXT NOT NULL DEFAULT ''"),
     ]
 
     def _init(self) -> None:
@@ -1059,15 +1076,55 @@ class Store:
             ).fetchone()
         return dict(row) if row else {}
 
-    def list_journal(self, limit: int = 100) -> list[dict[str, Any]]:
-        """Newest first, because the answer to "what happened" starts at the end."""
+    #: What counts as still open. Notes are never open -- a note records
+    #: something that happened and there is nothing to do about it -- so
+    #: "unresolved" is narrower than "not yet marked resolved", and the
+    #: difference is defined here rather than at each call site.
+    OPEN_LEVELS = ("concern", "alarm")
+
+    def list_journal(
+        self, limit: int = 100, open_only: bool = False
+    ) -> list[dict[str, Any]]:
+        """Newest first, because the answer to "what happened" starts at the end.
+
+        `open_only` is what the periodic inspection asks for: the things that
+        went wrong and have not been dealt with. Everything else is history,
+        and a loop that re-reads history every few minutes would keep
+        rediscovering problems it already fixed.
+        """
+        query = "SELECT * FROM journal"
+        params: list[Any] = []
+        if open_only:
+            query += (
+                f" WHERE resolved = 0 AND level IN "
+                f"({','.join('?' * len(self.OPEN_LEVELS))})"
+            )
+            params.extend(self.OPEN_LEVELS)
+        query += " ORDER BY id DESC LIMIT ?"
+        params.append(limit)
         with self._connect() as conn:
-            return [
-                dict(r)
-                for r in conn.execute(
-                    "SELECT * FROM journal ORDER BY id DESC LIMIT ?", (limit,)
-                ).fetchall()
-            ]
+            return [dict(r) for r in conn.execute(query, params).fetchall()]
+
+    def resolve_journal_entry(
+        self, entry_id: int, by: str = "resident", resolution: str = ""
+    ) -> dict[str, Any] | None:
+        """Close one entry, saying who closed it and what they did.
+
+        Both halves matter to whatever reads this back. "The Resident
+        restarted it" and "the owner said never mind" are different outcomes,
+        and a repair loop that cannot tell them apart would learn the wrong
+        lesson from its own history.
+        """
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE journal SET resolved = 1, resolved_at = datetime('now'),"
+                " resolved_by = ?, resolution = ? WHERE id = ?",
+                (by, resolution.strip(), entry_id),
+            )
+            row = conn.execute(
+                "SELECT * FROM journal WHERE id = ?", (entry_id,)
+            ).fetchone()
+        return dict(row) if row else None
 
     def clear_journal(self) -> int:
         with self._connect() as conn:

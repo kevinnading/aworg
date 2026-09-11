@@ -362,6 +362,15 @@ def log(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "detail": entry.get("detail") or "",
             "at": entry.get("at") or "",
             "activity_id": entry.get("activity_id"),
+            # Whether anything still needs doing. Notes are never open, so
+            # this is narrower than "not marked resolved" -- the store
+            # decides what open means and this only carries the answer.
+            "open": bool(
+                not entry.get("resolved")
+                and (entry.get("level") in ("concern", "alarm"))
+            ),
+            "resolution": entry.get("resolution") or "",
+            "resolved_by": entry.get("resolved_by") or "",
         }
         for entry in entries
     ]

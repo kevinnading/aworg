@@ -140,6 +140,10 @@ class Resident:
         self.personas = PersonaLibrary(
             installed=(paths.home / "personas") if paths is not None else None,
         )
+        #: Where an application this Resident starts should report what
+        #: happens to it, and the token to report with. Filled in by the
+        #: server, which is the only thing that knows the address.
+        self.reporting: dict[str, str] = {}
         #: Observed at startup rather than at install, because a machine
         #: surveyed at install time is wrong the first time its owner
         #: installs anything -- and refreshed as it ages, because an Aworg
@@ -802,6 +806,7 @@ class Resident:
                 processes=self.processes,
                 skills=self.skills,
                 journal=self.journal,
+                reporting=self.reporting,
             ),
             activities=self.activities,
             live={"workers": crew},
