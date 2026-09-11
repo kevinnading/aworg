@@ -1244,6 +1244,21 @@ class Store:
             ).fetchall()
         return [r["source"].split(":", 1)[-1] for r in rows]
 
+    def get_journal_entry(self, entry_id: int) -> dict[str, Any] | None:
+        """One entry, by id.
+
+        So that closing an entry can be refused for a reason rather than
+        applied blindly. "There is no such entry", "that one is a note and
+        has nothing to resolve" and "somebody already closed that" are three
+        different answers, and an UPDATE that touches no rows gives the
+        caller none of them.
+        """
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM journal WHERE id = ?", (entry_id,)
+            ).fetchone()
+        return dict(row) if row else None
+
     def journal_has(self, summary: str) -> bool:
         """Whether this exact line has been written before.
 

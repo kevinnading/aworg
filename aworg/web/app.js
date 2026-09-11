@@ -307,6 +307,20 @@ async function refreshLivingLog() {
     resolution: entry.resolution || "",
     resolved_by: entry.resolved_by || "",
   }));
+
+  // Not while somebody is writing in it.
+  //
+  // The repaint rebuilds every row, so it takes any open resolver -- and the
+  // account half-typed in it -- with it. This pane refreshes on a twenty
+  // second timer and again after every busy turn, and saying properly what
+  // happened to a concern takes longer than twenty seconds, which made the
+  // box a trap: type a real account, lose it, learn to type "fixed".
+  //
+  // The held-back picture is a few seconds of history, and history is the
+  // one thing that does not go stale. It lands the moment the box closes,
+  // which refreshLivingLog is called again for.
+  if (document.querySelector(".log-resolver")) return;
+
   repaintPane("log");
 }
 
@@ -1991,6 +2005,26 @@ function logRow(item) {
   when.title = item.at || "";
 
   head.append(name, when);
+
+  // A way to close it, on the ones that are open.
+  //
+  // The pane has shown `resolved_by: resolution` since it was written, and
+  // until now nothing on this machine could ever set them: the store could
+  // close an entry and the endpoint could close an entry, and no owner and
+  // no Resident was ever given the means to ask. Forty-two entries in, not
+  // one had been resolved -- so "what is outstanding" meant "everything
+  // that has ever gone wrong", and a working list that only grows is one
+  // its owner stops reading.
+  if (item.open) {
+    const close = document.createElement("button");
+    close.type = "button";
+    close.className = "log-close";
+    close.textContent = "Resolve";
+    close.title = "Close this out, saying what happened to it.";
+    close.onclick = () => openResolver(row, item);
+    head.appendChild(close);
+  }
+
   row.appendChild(head);
 
   if (item.detail) {
@@ -2024,6 +2058,79 @@ function logTime(stamp) {
   const parsed = new Date(stamp.replace(" ", "T") + "Z");
   if (Number.isNaN(parsed.getTime())) return stamp;
   return parsed.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+/* Ask the owner what happened, then close the entry out.
+ *
+ * Inline rather than a prompt() box, because the account is the point. What
+ * is stored is read back by an owner in the morning and, before long, by
+ * the repair loop deciding whether it has seen this before -- and a dialog
+ * that can be dismissed with the return key is a dialog that fills a column
+ * with empty strings.
+ *
+ * The row is left in place while this is open so the entry being closed
+ * stays visible above the box. Closing without typing anything is allowed
+ * and does nothing, which is the right outcome for a button pressed by
+ * accident. */
+function openResolver(row, item) {
+  if (row.querySelector(".log-resolver")) return;
+
+  const box = document.createElement("form");
+  box.className = "log-resolver";
+
+  const field = document.createElement("input");
+  field.type = "text";
+  field.className = "log-resolution-input";
+  field.placeholder = "What happened to it?";
+  field.maxLength = 500;
+
+  const confirm = document.createElement("button");
+  confirm.type = "submit";
+  confirm.className = "log-close confirm";
+  confirm.textContent = "Close";
+
+  const cancel = document.createElement("button");
+  cancel.type = "button";
+  cancel.className = "log-close";
+  cancel.textContent = "Cancel";
+  // Refreshed on the way out, not merely closed: repaints were held back
+  // while this was open, so the pane is behind by however long the owner
+  // spent thinking about it.
+  cancel.onclick = () => {
+    box.remove();
+    refreshLivingLog();
+  };
+
+  box.append(field, confirm, cancel);
+  box.onsubmit = async (event) => {
+    event.preventDefault();
+    const resolution = field.value.trim();
+    if (!resolution) {
+      field.focus();
+      return;
+    }
+    confirm.disabled = true;
+    try {
+      await api(`/api/journal/${encodeURIComponent(item.id)}/resolve`, {
+        method: "POST",
+        body: JSON.stringify({ by: "owner", resolution }),
+      });
+    } catch (error) {
+      confirm.disabled = false;
+      field.value = "";
+      field.placeholder = error.message || "That did not work.";
+      return;
+    }
+    // Re-read rather than striking the row out here. The server is what
+    // knows whether it closed, and a row that greys itself out on a request
+    // it did not watch land is the same claim-over-evidence this pane
+    // exists to refuse.
+    box.remove();
+    await refreshLivingLog();
+  };
+
+  row.appendChild(box);
+  field.focus();
 }
 
 function factRow(item) {
