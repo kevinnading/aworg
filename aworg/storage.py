@@ -440,6 +440,14 @@ owner may not be a programmer and should never need to be."""
 #: Needed because tools arrive after workers do. The runner shipped before
 #: start_process existed, so it was left trying to launch a web server with
 #: the tool that waits for things to finish, and sat there until the timeout.
+#: Crews that AWORG shipped and the owner has not touched. A database whose
+#: worker names are exactly one of these was configured by AWORG alone, so a
+#: newly shipped worker can safely be added to it; anything else is the
+#: owner's arrangement and is left as it is.
+PREVIOUS_WORKER_CREWS = [
+    {"builder", "runner", "checker"},
+]
+
 PREVIOUS_WORKER_TOOLS = {
     "runner": [["execute_command", "read_file"]],
     "checker": [["read_file", "search_files", "execute_command"]],
@@ -452,10 +460,17 @@ PREVIOUS_WORKER_TOOLS = {
 #: Seeded once, when the table is empty, and never again -- an owner who
 #: deletes one should not find it back tomorrow.
 #:
-#: Three, and the number is the point. The Resident routes by picking a name
-#: out of this list, and routing degrades as the list grows exactly the way
-#: tool selection does. Three specialists whose jobs do not overlap are
+#: Four, and the number is still the point. The Resident routes by picking a
+#: name out of this list, and routing degrades as the list grows exactly the
+#: way tool selection does. A few specialists whose jobs do not overlap are
 #: routed correctly; ten shading into each other are not.
+#:
+#: The fourth earned its place by what it keeps out of the conversation. A
+#: Resident fetching four pages for research put 175,000 tokens of markup
+#: into its own memory, against 855 tokens of everything it had actually
+#: said -- and carried all of it on every request afterwards. Reading a page
+#: to learn one fact from it is precisely the kind of work that should happen
+#: in a context that is then thrown away.
 #:
 #: Prompts are deliberately short. Measured against the models this is built
 #: for, longer system prompts scored *worse* -- see docs/06_ARCHITECTURE.md.
@@ -504,6 +519,33 @@ DEFAULT_WORKERS = [
             "Quote the output rather than summarising it, and always give the "
             "exit code. A command that failed is a normal result: report the "
             "failure, do not try to hide or fix it."
+        ),
+    },
+    {
+        "name": "researcher",
+        "description": (
+            "Looks things up on the web and reports what it found in its own "
+            "words, with the addresses it found them at. Use it instead of "
+            "fetching pages yourself. Cannot change anything."
+        ),
+        "tools": ["http_request", "read_file"],
+        # None. Reading a page has no conventions to follow, and a skill here
+        # would be context spent on advice about writing files by something
+        # that cannot write one.
+        "skills": [],
+        "system_prompt": (
+            "You look things up and report what you found.\n\n"
+            "Fetch the pages, read them, and write back what they "
+            "actually say -- in your own words, short, with the address "
+            "you found each thing at. Quote only the lines that matter.\n\n"
+            "**Never paste a page back.** The whole reason you exist is "
+            "that the Resident must not have to hold a web page in its "
+            "memory to learn one fact from it. A page handed back unread "
+            "is a job not done.\n\n"
+            "Say plainly what you could not find. A gap reported is "
+            "useful; a gap filled in with something plausible is worse "
+            "than useless, because the Resident cannot tell the "
+            "difference and the owner will not check."
         ),
     },
     {
@@ -591,6 +633,7 @@ class Store:
             self._refresh_default_prompt(conn)
             self._seed_workers(conn)
             self._refresh_worker_tools(conn)
+            self._adopt_new_workers(conn)
 
     @staticmethod
     def _refresh_worker_tools(conn) -> None:
@@ -618,6 +661,41 @@ class Store:
                     "WHERE id = ?",
                     (json.dumps(target), row["id"]),
                 )
+
+    @staticmethod
+    def _adopt_new_workers(conn) -> None:
+        """Give an existing Aworg a worker that shipped after it was made.
+
+        Only where the crew is still exactly an older shipped set -- the same
+        exact-match rule the system prompt and the tool scopes use, and for
+        the same reason. A crew the owner has edited is theirs, and adding to
+        it would be AWORG deciding they wanted something.
+
+        Without this a worker added here reaches only fresh installs, and the
+        Aworgs that most need it are the ones that have been running long
+        enough to have a conversation worth protecting.
+        """
+        have = {
+            row["name"] for row in conn.execute("SELECT name FROM workers").fetchall()
+        }
+        if not have or have not in PREVIOUS_WORKER_CREWS:
+            return
+        for spec in DEFAULT_WORKERS:
+            if spec["name"] in have:
+                continue
+            conn.execute(
+                "INSERT INTO workers "
+                "(id, name, description, system_prompt, tools, skills) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    uuid.uuid4().hex[:12],
+                    spec["name"],
+                    spec["description"],
+                    spec["system_prompt"],
+                    json.dumps(spec["tools"]),
+                    json.dumps(spec.get("skills") or []),
+                ),
+            )
 
     @staticmethod
     def _seed_workers(conn) -> None:

@@ -99,7 +99,6 @@ def describe_for(skills: list[dict] | None = None, **_: object) -> dict:
     if not skills:
         return {}
 
-    lines = "\n".join(f"- {s['name']}: {s['description']}" for s in skills)
     schema = {
         "type": "object",
         "properties": {
@@ -113,6 +112,6 @@ def describe_for(skills: list[dict] | None = None, **_: object) -> dict:
     }
     return {
         "name": NAME,
-        "description": f"{DESCRIPTION}\n\nYour skills:\n{lines}",
+        "description": DESCRIPTION,
         "inputSchema": schema,
     }
