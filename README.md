@@ -548,6 +548,53 @@ about what it found attaches to a seam it calls and knows nothing else about,
 which is where the repair loop will go — and which is what will let you
 switch repair off while leaving noticing on.
 
+## Rate limits, and waiting instead of failing
+
+A hosted model is sold by the minute as well as by the token. Cross the line
+and the provider refuses the request — in the middle of a turn, after the
+Resident has read three files and delegated to a worker, so the cost of
+finding out is everything done so far.
+
+Each connection has a **tokens per minute** allowance, set in Settings.
+Leaving it blank uses the provider's entry tier, which for OpenAI is 30,000 —
+a new key is a tier-1 key, and discovering that by being cut off halfway
+through a job is a poor introduction. Local connections have no limit, since
+the only cost there is your own hardware.
+
+The allowance is shared by everything on that connection. The Resident and
+its workers spend from one pot, because the provider counts them together.
+
+When the next request will not fit, AWORG waits and **says so in the
+conversation** — a Resident silent for forty seconds and a Resident that has
+hung look identical from outside, and only one of them is fine.
+
+And when a limit is hit anyway — the budget is an estimate against a number
+the provider counts its own way, and a key may be shared — the refusal is
+waited out and retried rather than ending the turn. It honours `retry-after`
+where the provider sends one, and reads *"try again in 12.4s"* out of the
+message where it does not.
+
+This exists because of a specific failure. A 429 killed a reply midway, AWORG
+recorded it nowhere, and the conversation simply stopped after a tool result.
+The owner waited, typed "continue", and it carried on with no idea what had
+happened. A turn that dies part way now leaves a Living Log entry too.
+
+## When the application changes, the preview follows
+
+The preview is an iframe of a server the Resident started, and its address
+does not change when the files behind it do — so an edit to `index.html` left
+you looking at the page from before the edit, on the same URL, with nothing
+to say it was stale.
+
+The preview now follows a revision that moves when the Living Workspace
+changes. The Resident can also move it itself with **`reload_preview`**, for
+the cases a timestamp does not cover: a restarted server, a regenerated
+database, a page rendered from something outside the workspace — or simply
+wanting you to look again now rather than on the next poll.
+
+It reloads a view and nothing else. The tool says so in its own result,
+because "the preview refreshed" is not evidence that the page is right.
+
 ## When it stops
 
 A Resident working a plan can go round many times, and a count of rounds
