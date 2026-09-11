@@ -74,15 +74,17 @@ STAGE_IDS = [stage["id"] for stage in STAGES]
 #: then "running" once AWORG held the processes the Resident starts and could
 #: see one was alive. It reaches "verified" now that AWORG fetches the served
 #: application itself and can tell that the thing answering is the thing as
-#: it currently stands. "Watched" waits on something inspecting the Living
-#: Log on a schedule; "published" on snapshots, which are not this milestone.
-REACHABLE_THROUGH = "verified"
+#: it currently stands. It reaches "watched" now that an application can
+#: report its own trouble and something reads that log on a schedule.
+#: "Published" waits on snapshots, which are not this milestone.
+REACHABLE_THROUGH = "watched"
 
 
 def assess(
     workspace_has_files: bool,
     serving: dict[str, Any] | None = None,
     answered: dict[str, Any] | None = None,
+    watched: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Which stage the application is at, and why.
 
@@ -105,8 +107,28 @@ def assess(
     Note that this can move backwards, and should. Break the application and
     the next fetch fails; the stage drops to running and the owner sees it
     without anyone having to notice and say so.
+
+    `watched` needs both halves of its own evidence: an application that has
+    actually used the Living Log, and a watcher that has actually run a pass.
+    Neither alone is the claim. A channel nobody has spoken down is not
+    connected, and a watcher that has been started but never looked has not
+    inspected anything -- and this stage exists precisely to tell an owner
+    that their application can say it is in trouble and that something is
+    listening.
     """
-    if serving and answered:
+    if serving and answered and watched:
+        current = "watched"
+        reason = (
+            f"{watched.get('application')} has reported to the Living Log, "
+            f"and AWORG has read it {watched.get('passes')} time"
+            f"{'s' if watched.get('passes') != 1 else ''}"
+            + (
+                f" -- {watched['outstanding']} thing"
+                f"{'s' if watched['outstanding'] != 1 else ''} still open."
+                if watched.get("outstanding") else " with nothing outstanding."
+            )
+        )
+    elif serving and answered:
         current = "verified"
         reason = (
             f"AWORG fetched it on port {serving.get('port')} after the last "

@@ -29,6 +29,7 @@ from . import host
 from .activities import ActivityManager
 from .journal import Journal
 from .personas import PersonaLibrary
+from .watch import Watch
 from .processes import ProcessTable, sweep_orphans
 from .skills import SkillLibrary
 from .agent import AgentLoop
@@ -140,6 +141,10 @@ class Resident:
         self.personas = PersonaLibrary(
             installed=(paths.home / "personas") if paths is not None else None,
         )
+        #: Reads the Living Log on a schedule and says what is still open.
+        #: Deliberately only that -- it notices, and what to do about it
+        #: attaches to its `on_trouble` seam. See watch.py.
+        self.watch = Watch(self.journal)
         #: Where an application this Resident starts should report what
         #: happens to it, and the token to report with. Filled in by the
         #: server, which is the only thing that knows the address.

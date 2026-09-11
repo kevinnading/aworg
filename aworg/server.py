@@ -280,6 +280,11 @@ def create_app(paths: Paths, address: str = "http://127.0.0.1:8420") -> FastAPI:
         # application the Resident starts already has it in its environment.
         resident.reporting[journal_module.TOKEN_VAR] = report_token()
         follower = asyncio.create_task(resident.journal.follow(resident.activities))
+        # Reads the Living Log on a schedule. Started here for the same
+        # reason the follower is: it needs a running loop and it should stop
+        # with the app, and an Aworg serving pages with nothing watching its
+        # log would look calm rather than blind.
+        watcher = asyncio.create_task(resident.watch.run())
         resident.journal.record(
             "AWORG started",
             kind="aworg",
@@ -287,8 +292,10 @@ def create_app(paths: Paths, address: str = "http://127.0.0.1:8420") -> FastAPI:
         )
         yield
         follower.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await follower
+        watcher.cancel()
+        for task in (follower, watcher):
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
         # Recorded before the processes go, so the count is what was actually
         # running rather than zero.
         running = sum(1 for p in resident.processes.all() if p.alive)
@@ -680,8 +687,29 @@ def create_app(paths: Paths, address: str = "http://127.0.0.1:8420") -> FastAPI:
         """
         serving = serving_now()
         return lifecycle.assess(
-            workspace_has_files(), serving, answered_now(serving)
+            workspace_has_files(), serving, answered_now(serving), watching_now()
         )
+
+    def watching_now() -> dict[str, Any] | None:
+        """Whether the Living Log is connected and actually being read.
+
+        Both halves, and neither is enough alone. An endpoint nobody has
+        posted to is a promise rather than a channel, and a watcher that has
+        been started but has never completed a pass has inspected nothing.
+        This stage tells an owner their application can say it is in trouble
+        and that something is listening, so it should not say so until both
+        are observably true.
+        """
+        reporters = store.journal_reporters()
+        looked = resident.watch.snapshot()
+        if not reporters or not looked["passes"]:
+            return None
+        return {
+            "application": reporters[0] if len(reporters) == 1
+                           else f"{len(reporters)} applications",
+            "passes": looked["passes"],
+            "outstanding": looked["outstanding"],
+        }
 
     @app.get("/api/panes")
     def status_panes() -> list[dict[str, Any]]:
@@ -932,6 +960,16 @@ def create_app(paths: Paths, address: str = "http://127.0.0.1:8420") -> FastAPI:
         pane about now.
         """
         return {"entries": resident.journal.entries(limit=limit)}
+
+    @app.get("/api/watch")
+    def watch_state() -> dict[str, Any]:
+        """What the periodic inspection has seen.
+
+        Runtime state, so it is read rather than stored: "when did you last
+        look" has no meaning across a restart, and an Aworg that has just
+        started has not looked yet however long its log is.
+        """
+        return resident.watch.snapshot()
 
     @app.get("/api/journal/open")
     def open_living_log(limit: int = 50) -> dict[str, Any]:

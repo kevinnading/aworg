@@ -1105,6 +1105,19 @@ class Store:
         with self._connect() as conn:
             return [dict(r) for r in conn.execute(query, params).fetchall()]
 
+    def journal_reporters(self) -> list[str]:
+        """Applications that have actually used the Living Log.
+
+        Evidence that the channel is connected rather than merely available.
+        An endpoint nobody has posted to is a promise, and the Lifecycle
+        stepper is built on what is observably true.
+        """
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT DISTINCT source FROM journal WHERE kind = 'application'"
+            ).fetchall()
+        return [r["source"].split(":", 1)[-1] for r in rows]
+
     def resolve_journal_entry(
         self, entry_id: int, by: str = "resident", resolution: str = ""
     ) -> dict[str, Any] | None:
