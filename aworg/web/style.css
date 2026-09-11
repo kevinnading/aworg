@@ -939,8 +939,8 @@ body.has-maximised-pane .resizer { pointer-events: none; }
 /* The one colour in this file that is not a token, deliberately. Inside the
    frame is the Resident's application, not AWORG's interface, and a page's
    canvas is white before it says otherwise. Theming it would be AWORG
-   reaching into something that is not its to style. */
-.preview-inner iframe { width: 100%; height: 100%; border: none; background: #fff; }
+   reaching into something that is not its to style. See .preview-stage for
+   the sizing, which is no longer the pane's. */
 
 .preview-empty {
   height: 100%;
@@ -2009,3 +2009,42 @@ button.danger:disabled { opacity: 0.4; cursor: not-allowed; }
   color: var(--muted);
   font-style: italic;
 }
+
+/* ---- the application preview, as a true miniature ---- */
+
+/* The frame is rendered at a desktop width and scaled down, so what the pane
+   shows is the layout the owner actually built rather than the phone layout
+   an iframe 420px wide would trigger. The stage is what gets scaled; the
+   frame inside it keeps its real dimensions. */
+.preview-inner { position: relative; overflow: hidden; }
+.preview-stage {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: top left;
+  /* The scale is set inline, per pane size. Only the origin belongs here. */
+}
+.preview-stage iframe { display: block; border: none; background: #fff; }
+
+/* What the owner is looking at, said rather than left to be assumed. A
+   miniature that does not announce itself invites judging type sizes and
+   spacing from a third-scale render. */
+.preview-inner[data-scale]::after {
+  content: attr(data-scale);
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--bg) 78%, transparent);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 1px 6px;
+  pointer-events: none;
+}
+
+/* The three controls sit together and stay quiet until the pane is hovered
+   or one of them is focused -- the application is the subject, not its
+   chrome. */
+.pane-head .pane-action + .pane-action { margin-left: 2px; }

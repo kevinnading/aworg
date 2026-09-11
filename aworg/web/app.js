@@ -88,6 +88,18 @@ async function boot() {
   // waiting on it would mean boot never finishing.
   startActivities();
   startLivingLog();
+  watchPreviewSize();
+}
+
+/* Re-fit the miniature whenever the pane's size changes.
+ *
+ * A ResizeObserver rather than a resize listener, because the three things
+ * that change this size are the window, a dragged divider, and expanding the
+ * preview -- and only the first of those fires a window event. */
+function watchPreviewSize() {
+  const inner = el("preview-inner");
+  if (!inner || typeof ResizeObserver === "undefined") return;
+  new ResizeObserver(() => fitPreview()).observe(inner);
 }
 
 /* Who the Resident is, as far as the interface is concerned.
@@ -1626,6 +1638,12 @@ function paneNode(pane, { region, last }) {
   // The application is the one pane worth filling the screen with, so it is
   // the one that gets to. Everything else is read at a glance.
   if (pane.id === "preview") {
+    // Refresh, open fully, expand -- the three the application preview is
+    // specified to have. Expand was the only one that existed.
+    head.appendChild(previewAction("refresh", "Reload the application", REFRESH_ICON,
+                                   () => loadPreview({ reload: true })));
+    head.appendChild(previewAction("open", "Open the application in a new tab",
+                                   OPEN_ICON, openPreviewFully));
     head.appendChild(maximizeButton());
   } else if (pane.id === "workspace") {
     // The one pane that already updates on its own, and says so. The rest
@@ -1658,6 +1676,42 @@ function paneNode(pane, { region, last }) {
 
   section.append(head, body);
   return section;
+}
+
+const REFRESH_ICON =
+  '<path d="M13.6 6.8A5.6 5.6 0 1 0 13.9 9.6"/><path d="M13.9 2.8v4h-4"/>';
+const OPEN_ICON =
+  '<path d="M9.4 2.6h4v4"/><path d="M13.4 2.6 7.6 8.4"/>' +
+  '<path d="M11.6 9.6v3.8H2.6V4.4h3.8"/>';
+
+/* One of the small controls in the Application pane's own header.
+ *
+ * Built here rather than in markup because the pane is assembled from a
+ * template, and a control that only makes sense for one pane belongs with
+ * the code that knows which pane it is. */
+function previewAction(name, label, icon, onClick) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "pane-action";
+  button.id = `preview-${name}`;
+  button.setAttribute("aria-label", label);
+  button.title = label;
+  button.onclick = onClick;
+  button.innerHTML =
+    '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" ' +
+    'stroke="currentColor" stroke-width="1.5" stroke-linecap="round" ' +
+    `stroke-linejoin="round" aria-hidden="true">${icon}</svg>`;
+  return button;
+}
+
+/* The application in a tab of its own, at its real size.
+ *
+ * The preview is a miniature and always will be; this is the escape hatch to
+ * the actual thing, which is what an owner wants the moment they see
+ * something they care about. */
+function openPreviewFully() {
+  const url = app.previewUrl;
+  if (url) window.open(url, "_blank", "noopener");
 }
 
 const MAXIMIZE_ICON =
@@ -1698,6 +1752,9 @@ function togglePreviewMaximised(force) {
 
   const next = force === undefined ? !pane.classList.contains("maximised") : force;
   pane.classList.toggle("maximised", next);
+  // The observer catches this too, but calling directly means the miniature
+  // is already the right size in the frame the expansion paints.
+  fitPreview();
   document.body.classList.toggle("has-maximised-pane", next);
   paintMaximizeButton(el("maximize-preview"), next);
   if (!next) el("maximize-preview").focus();
@@ -2615,7 +2672,19 @@ function startWorkspaceWatch() {
   if (app.workspaceTimer) return;
   loadPreview();
   loadWorkspace();
-  app.workspaceTimer = setInterval(loadWorkspace, 2000);
+  app.workspaceTimer = setInterval(() => {
+    loadWorkspace();
+    // Asked on the same heartbeat, because a server starting changes nothing
+    // in the workspace and the preview would otherwise stay empty until the
+    // owner reloaded the page. It was: the application only ever appeared on
+    // a fresh load, never at the moment the Resident served it.
+    //
+    // Safe to poll because loadPreview rebuilds the frame only when the URL
+    // actually changes -- otherwise this would reload the running
+    // application every two seconds and throw away whatever the owner had
+    // scrolled to.
+    loadPreview();
+  }, 2000);
   el("workspace-live").hidden = false;
 }
 
@@ -2625,7 +2694,24 @@ function stopWorkspaceWatch() {
   el("workspace-live").hidden = true;
 }
 
-async function loadPreview() {
+/* The width the application is rendered at, whatever size the pane is.
+ *
+ * **This is the whole point of the preview zooming.** An iframe sized to the
+ * pane is an iframe about 420 pixels wide, so a desktop site renders its
+ * phone layout and the owner is shown something they did not build. Worse,
+ * they are shown it at full scale: the last preview held a header and three
+ * words of a headline.
+ *
+ * So the frame is given a real desktop viewport and the whole thing is
+ * scaled down to fit. What the owner sees is a true miniature -- the layout
+ * they asked for, small -- rather than a crop of a different layout. */
+const PREVIEW_WIDTH = 1280;
+
+/* Never scaled up past life size. A pane wider than 1280 would otherwise
+ * enlarge the page, which is not a preview of anything. */
+const PREVIEW_MAX_SCALE = 1;
+
+async function loadPreview(options) {
   const inner = el("preview-inner");
   let preview;
   try {
@@ -2634,12 +2720,31 @@ async function loadPreview() {
     return;
   }
 
+  // Nothing changed and nobody asked -- leave the frame alone. Rebuilding it
+  // on every poll would reload the application every two seconds, losing
+  // whatever the owner had scrolled to or typed into it.
+  const signature = `${preview.available}|${preview.url || ""}`;
+  const reload = options && options.reload;
+  if (!reload && signature === app.previewSignature) return;
+  app.previewSignature = signature;
+  app.previewUrl = preview.available ? preview.url : null;
+
   inner.innerHTML = "";
   if (preview.available && preview.url) {
+    const stage = document.createElement("div");
+    stage.className = "preview-stage";
+
     const frame = document.createElement("iframe");
-    frame.src = preview.url;
+    // Cache-busted on a deliberate refresh so the owner gets the application
+    // as it is now rather than as the browser remembers it.
+    frame.src = reload
+      ? preview.url + (preview.url.includes("?") ? "&" : "?") + "r=" + Date.now()
+      : preview.url;
     frame.title = "Application preview";
-    inner.appendChild(frame);
+    frame.style.width = `${PREVIEW_WIDTH}px`;
+    stage.appendChild(frame);
+    inner.appendChild(stage);
+    fitPreview();
     return;
   }
 
@@ -2651,6 +2756,35 @@ async function loadPreview() {
   hint.textContent = preview.hint || "";
   empty.append(detail, hint);
   inner.appendChild(empty);
+}
+
+/* Scale the rendered application down until it fits the pane.
+ *
+ * Recomputed rather than set once, because the pane is resizable, the window
+ * is resizable, and expanding the preview changes its size by a factor of
+ * three. A scale that was right when the frame was built is wrong the moment
+ * the owner drags a divider.
+ *
+ * The frame's height is derived from the scale rather than fixed, so the
+ * miniature shows as much of the page as the pane's shape allows: a tall
+ * pane shows more of the application, which is what a taller pane is for.
+ */
+function fitPreview() {
+  const inner = el("preview-inner");
+  const stage = inner && inner.querySelector(".preview-stage");
+  const frame = stage && stage.querySelector("iframe");
+  if (!frame) return;
+
+  const width = inner.clientWidth;
+  const height = inner.clientHeight;
+  if (!width || !height) return;
+
+  const scale = Math.min(width / PREVIEW_WIDTH, PREVIEW_MAX_SCALE);
+  frame.style.height = `${Math.round(height / scale)}px`;
+  stage.style.transform = `scale(${scale})`;
+  // Announced, because a miniature that does not say it is one invites the
+  // owner to judge type sizes and spacing from it.
+  inner.dataset.scale = `${Math.round(scale * 100)}%`;
 }
 
 async function loadWorkspace(path) {
