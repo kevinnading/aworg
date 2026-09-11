@@ -857,7 +857,12 @@ def create_app(paths: Paths, address: str = "http://127.0.0.1:8420") -> FastAPI:
         # follower subscribed to the old one, and an Aworg that had been
         # reset would stop recording anything at all -- see forget_all.
         resident.activities.forget_all()
+        # And the watch looks again, because what it is holding was erased a
+        # moment ago. Without this it goes on reporting trouble from entries
+        # that no longer exist -- observed doing exactly that, three
+        # outstanding items in a log with none.
         resident.turn = None
+        await resident.watch.inspect()
 
         # Written after the wipe, not before, so it survives it. A reset is
         # the largest thing that can happen to an Aworg and a Living Log that
