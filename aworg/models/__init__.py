@@ -50,6 +50,17 @@ def build_adapter(connection: dict, api_key: str) -> ModelAdapter:
         context=connection.get("context"),
         auth=profile["auth"],
         headers=profile["headers"],
+        # The budget is per connection and shared by everything using it, so
+        # it is keyed by the connection's own id rather than by model name.
+        connection_id=connection.get("id") or "",
+        # The owner's figure if they have set one, otherwise the provider's
+        # entry tier. A new key is a tier-1 key, and finding that out by
+        # being cut off halfway through a job is a poor introduction.
+        tokens_per_minute=(
+            connection.get("tokens_per_minute")
+            if connection.get("tokens_per_minute")
+            else profile.get("tpm") or None
+        ),
     )
 
 

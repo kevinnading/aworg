@@ -145,6 +145,11 @@ class Resident:
         #: Deliberately only that -- it notices, and what to do about it
         #: attaches to its `on_trouble` seam. See watch.py.
         self.watch = Watch(self.journal)
+        #: Bumped when the Resident wants the owner's preview reloaded.
+        #: Read into /api/preview's revision, which the interface watches.
+        #: A counter rather than a signal because the interface polls, and a
+        #: value it can compare is simpler than a channel it must not miss.
+        self.preview_revision = 0
         #: Where an application this Resident starts should report what
         #: happens to it, and the token to report with. Filled in by the
         #: server, which is the only thing that knows the address.
@@ -672,6 +677,7 @@ class Resident:
                     async for event in self.respond_to(message, turn):
                         if event["type"] == "error":
                             failed = True
+                            self._turn_failed(event.get("message", ""))
                         turn.emit(event)
 
                     nudge = self._continuation(turn, failed)
@@ -688,11 +694,47 @@ class Resident:
                 # Nothing above is watching this task, so a failure here
                 # would otherwise be silent and the turn would never end.
                 turn.emit({"type": "error", "message": str(exc)})
+                self._turn_failed(str(exc))
             finally:
                 turn.finish()
 
         turn.task = asyncio.create_task(run())
         return turn
+
+    def _bump_preview(self) -> int:
+        """Ask the owner's preview to fetch the application again.
+
+        A counter the interface compares rather than a message it must not
+        miss. The interface already polls; giving it a value that changed is
+        simpler and survives a browser that was closed at the moment.
+        """
+        self.preview_revision += 1
+        return self.preview_revision
+
+    def _turn_failed(self, message: str) -> None:
+        """Write down that a reply died part way through.
+
+        It was written down nowhere. The error reached the browser as a
+        transient event and nothing else, so an owner who reloaded -- or who
+        looked away -- found a conversation that simply stopped after a tool
+        result, with no indication that anything had gone wrong.
+
+        That is exactly what happened on a rate limit: the turn ended
+        mid-job, the owner waited, typed "continue", and it carried on. The
+        Living Log existing and not being told is worse than it not existing,
+        because the pane that answers "what happened" answered wrongly.
+        """
+        if not (message or "").strip():
+            return
+        self.journal.record(
+            "A reply stopped part way through",
+            level="concern",
+            kind="turn",
+            detail=(
+                f"{message.strip()}\n\nWhatever had already been done was "
+                "kept. Ask the Resident to carry on."
+            ),
+        )
 
     async def follow(self, turn: "Turn") -> AsyncIterator[dict[str, Any]]:
         """Watch a turn, from the beginning, however late you arrive."""
@@ -836,6 +878,7 @@ class Resident:
                 skills=self.skills,
                 journal=self.journal,
                 reporting=self.reporting,
+                preview=self._bump_preview,
                 # The only ceiling a result has: what this connection could
                 # actually carry. None on a window nobody has declared, which
                 # means nothing is cut and the provider objects if it must --

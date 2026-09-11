@@ -14,6 +14,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, AsyncIterator
 
+from .. import ratelimit
+
 
 @dataclass
 class Message:
@@ -71,7 +73,10 @@ class Fragment:
 
     #: "reply" -- part of the answer. "thinking" -- reasoning on the way to
     #: it. "tool_use" -- the model asking to run something, which is not
-    #: text at all and carries a ToolCall instead.
+    #: text at all and carries a ToolCall instead. "waiting" -- nothing is
+    #: happening and here is why, which exists because a Resident silent for
+    #: forty seconds and a Resident that has hung look identical from
+    #: outside.
     kind: str
     text: str = ""
     tool_call: "ToolCall | None" = None
@@ -101,6 +106,8 @@ class ModelAdapter:
         context: int | None = None,
         auth: str = "bearer",
         headers: dict[str, str] | None = None,
+        connection_id: str = "",
+        tokens_per_minute: int | None = None,
     ):
         self.model = model
         self.api_key = api_key
@@ -117,6 +124,13 @@ class ModelAdapter:
         #: depends on the model and the job, so it is the owner's choice and
         #: belongs to the connection rather than being decided here.
         self.reasoning = reasoning
+        #: This connection's tokens-per-minute allowance, as a budget shared
+        #: with everything else using the same connection -- the Resident and
+        #: its workers spend from one pot, because the provider counts them
+        #: together. None where nothing is stated, which is a local model.
+        self.budget = ratelimit.budget_for(
+            connection_id or f"{self.provider}:{model}", tokens_per_minute
+        )
         #: How many tokens a single request may carry, or None if nobody has
         #: said. Local servers announce it; hosted ones mostly do not, and a
         #: request past it is refused outright rather than trimmed -- so this
@@ -187,6 +201,53 @@ class ModelAdapter:
         """
         raise NotImplementedError
         yield Fragment("reply", "")  # pragma: no cover - marks this a generator
+
+    #: Characters per token, for estimating what a request will cost before
+    #: sending it. Deliberately pessimistic -- undercounting spends more of
+    #: the allowance than was reserved, which is the failure this avoids.
+    CHARS_PER_TOKEN = 3.4
+
+    def estimate_cost(self, payload: Any) -> int:
+        """Roughly what this request will be charged, in tokens.
+
+        From the serialised payload, because that is what actually goes on
+        the wire and it is the one thing every adapter has in the same shape.
+        A real tokenizer would be better and is not available here; the
+        allowance carries headroom precisely because this is an estimate.
+
+        The reply is charged too and cannot be known in advance, so a flat
+        allowance for it is added. A turn that reserves only its input and
+        then receives four thousand tokens of answer has spent more than it
+        booked.
+        """
+        import json as _json
+
+        try:
+            size = len(_json.dumps(payload))
+        except (TypeError, ValueError):
+            size = 0
+        return int(size / self.CHARS_PER_TOKEN) + self.REPLY_ALLOWANCE
+
+    #: Assumed cost of a reply, in tokens. Not a cap on anything -- just the
+    #: part of the bill that cannot be counted before it arrives.
+    REPLY_ALLOWANCE = 1200
+
+    async def wait_for_budget(self, payload: Any) -> float:
+        """Hold until this request fits the allowance. Returns seconds waited.
+
+        Zero is the ordinary answer. Anything else is reported upward as a
+        `waiting` fragment by the caller, because the alternative is a
+        Resident that goes quiet and an owner who cannot tell that from a
+        crash.
+        """
+        waited = 0.0
+
+        def note(seconds: float) -> None:
+            nonlocal waited
+            waited = seconds
+
+        await self.budget.reserve(self.estimate_cost(payload), on_wait=note)
+        return waited
 
     async def probe(self) -> None:
         """Verify the connection works. Raises ModelError if it does not."""

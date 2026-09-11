@@ -10,7 +10,9 @@ AWORG needing to know anything about it.
 
 from __future__ import annotations
 
+import asyncio
 import json
+import re
 from typing import Any, AsyncIterator
 
 import httpx
@@ -346,87 +348,145 @@ class OpenAICompatibleAdapter(ModelAdapter):
         #: held until the stream ends and flushed together.
         building: dict[int, dict[str, str]] = {}
 
+        waited = await self.wait_for_budget(payload)
+        if waited:
+            yield Fragment(
+                "waiting",
+                f"Staying inside this connection's rate limit -- {waited:.0f}s.",
+            )
+
         try:
             async with httpx.AsyncClient(timeout=STREAM_TIMEOUT) as client:
-                async with client.stream(
-                    "POST",
-                    f"{self.base_url}/chat/completions",
-                    json=payload,
-                    headers=headers,
-                ) as response:
-                    if response.status_code >= 400:
-                        body = (await response.aread()).decode("utf-8", "replace")
-                        raise ModelError(_describe(response.status_code, body))
-                    async for line in response.aiter_lines():
-                        if not line.startswith("data:"):
-                            continue
-                        chunk = line[5:].strip()
-                        if not chunk or chunk == "[DONE]":
-                            continue
-                        try:
-                            event = json.loads(chunk)
-                        except json.JSONDecodeError:
-                            continue
-                        choices = event.get("choices") or []
-                        if not choices:
-                            continue
-                        if choices[0].get("finish_reason"):
-                            stopped_for = choices[0]["finish_reason"]
-                        delta = choices[0].get("delta") or {}
-                        # Reasoning models send their thinking down the same
-                        # stream under a different key. Reading only `content`
-                        # means yielding nothing at all while the model works:
-                        # a 9B answering "what is 2+2" sent 260 reasoning
-                        # chunks before the first content chunk, and everything
-                        # above here saw silence for all of them.
-                        thinking = delta.get("reasoning_content")
-                        if thinking:
-                            yield Fragment("thinking", thinking)
-                        text = delta.get("content")
-                        if text:
-                            for kind, part in splitter.feed(text):
-                                yield Fragment(kind, part)
-
-                        for call in delta.get("tool_calls") or []:
-                            slot = building.setdefault(
-                                call.get("index", 0), {"id": "", "name": "", "json": ""}
+                for attempt in range(RATE_LIMIT_TRIES):
+                    async with client.stream(
+                        "POST",
+                        f"{self.base_url}/chat/completions",
+                        json=payload,
+                        headers=headers,
+                    ) as response:
+                        if response.status_code == 429 and attempt < RATE_LIMIT_TRIES - 1:
+                            # Waited out rather than raised. See the same guard in
+                            # openai_responses.py for why a rate limit must not be
+                            # allowed to end a turn.
+                            body = (await response.aread()).decode("utf-8", "replace")
+                            pause = _retry_after(response, body)
+                            yield Fragment(
+                                "waiting",
+                                f"Rate limited -- waiting {pause:.0f}s and trying again.",
                             )
-                            # The id and name arrive once, at the start; the
-                            # arguments arrive in pieces after. Guarding each
-                            # rather than overwriting stops a later empty
-                            # chunk from erasing what was already collected.
-                            if call.get("id"):
-                                slot["id"] = call["id"]
-                            function = call.get("function") or {}
-                            if function.get("name"):
-                                slot["name"] = function["name"]
-                            if function.get("arguments"):
-                                slot["json"] += function["arguments"]
-
-                    for kind, part in splitter.drain():
-                        yield Fragment(kind, part)
-
-                    for _, slot in sorted(building.items()):
-                        if not slot["name"]:
+                            await asyncio.sleep(pause)
                             continue
-                        parsed = _arguments(slot["json"])
-                        # Arguments that were sent but will not parse mean the
-                        # reply was severed mid-object. So does the server
-                        # saying it stopped for length while a call was open.
-                        cut = (parsed is None) or (
-                            stopped_for == "length" and bool(slot["json"])
-                        )
-                        yield Fragment(
-                            "tool_use",
-                            tool_call=ToolCall(
-                                id=slot["id"] or f"call_{slot['name']}",
-                                name=slot["name"],
-                                arguments=parsed or {},
-                                truncated=cut,
-                            ),
-                        )
+                        if response.status_code >= 400:
+                            body = (await response.aread()).decode("utf-8", "replace")
+                            raise ModelError(_describe(response.status_code, body))
+                        async for line in response.aiter_lines():
+                            if not line.startswith("data:"):
+                                continue
+                            chunk = line[5:].strip()
+                            if not chunk or chunk == "[DONE]":
+                                continue
+                            try:
+                                event = json.loads(chunk)
+                            except json.JSONDecodeError:
+                                continue
+                            choices = event.get("choices") or []
+                            if not choices:
+                                continue
+                            if choices[0].get("finish_reason"):
+                                stopped_for = choices[0]["finish_reason"]
+                            delta = choices[0].get("delta") or {}
+                            # Reasoning models send their thinking down the same
+                            # stream under a different key. Reading only `content`
+                            # means yielding nothing at all while the model works:
+                            # a 9B answering "what is 2+2" sent 260 reasoning
+                            # chunks before the first content chunk, and everything
+                            # above here saw silence for all of them.
+                            thinking = delta.get("reasoning_content")
+                            if thinking:
+                                yield Fragment("thinking", thinking)
+                            text = delta.get("content")
+                            if text:
+                                for kind, part in splitter.feed(text):
+                                    yield Fragment(kind, part)
+
+                            for call in delta.get("tool_calls") or []:
+                                slot = building.setdefault(
+                                    call.get("index", 0), {"id": "", "name": "", "json": ""}
+                                )
+                                # The id and name arrive once, at the start; the
+                                # arguments arrive in pieces after. Guarding each
+                                # rather than overwriting stops a later empty
+                                # chunk from erasing what was already collected.
+                                if call.get("id"):
+                                    slot["id"] = call["id"]
+                                function = call.get("function") or {}
+                                if function.get("name"):
+                                    slot["name"] = function["name"]
+                                if function.get("arguments"):
+                                    slot["json"] += function["arguments"]
+
+                        for kind, part in splitter.drain():
+                            yield Fragment(kind, part)
+
+                        for _, slot in sorted(building.items()):
+                            if not slot["name"]:
+                                continue
+                            parsed = _arguments(slot["json"])
+                            # Arguments that were sent but will not parse mean the
+                            # reply was severed mid-object. So does the server
+                            # saying it stopped for length while a call was open.
+                            cut = (parsed is None) or (
+                                stopped_for == "length" and bool(slot["json"])
+                            )
+                            yield Fragment(
+                                "tool_use",
+                                tool_call=ToolCall(
+                                    id=slot["id"] or f"call_{slot['name']}",
+                                    name=slot["name"],
+                                    arguments=parsed or {},
+                                    truncated=cut,
+                                ),
+                            )
+                        # One good pass is the whole job. Without this the retry
+                        # loop would send the same request again.
+                        return
         except httpx.RequestError as exc:
             raise ModelError(f"Could not reach {self.base_url}: {exc}") from exc
+
+
+#: How long to wait after a refusal that did not say. Providers usually send
+#: retry-after; this is for the ones that do not.
+DEFAULT_BACKOFF = 20.0
+
+#: How many times to wait out a rate limit before giving up on the turn.
+#: Three is enough to ride out a minute-long window twice over, and few
+#: enough that a genuinely exhausted quota still ends rather than hanging.
+RATE_LIMIT_TRIES = 3
+
+
+def _retry_after(response: Any, body: str) -> float:
+    """How long the provider asked us to wait, or a sensible guess.
+
+    Read from the header where there is one. The message sometimes carries
+    the number too -- "try again in 12.4s" -- and that is worth parsing,
+    because waiting the guess when the provider told us the answer is time
+    the owner spends watching nothing.
+    """
+    header = ""
+    try:
+        header = response.headers.get("retry-after", "") or ""
+    except Exception:                                      # noqa: BLE001
+        header = ""
+    if header.strip():
+        try:
+            return max(1.0, float(header.strip()))
+        except ValueError:
+            pass
+    found = re.search(r"try again in ([0-9.]+)\s*(ms|s)", body, re.I)
+    if found:
+        value = float(found.group(1))
+        return max(1.0, value / 1000 if found.group(2).lower() == "ms" else value)
+    return DEFAULT_BACKOFF
 
 
 def _describe(status: int, body: str) -> str:

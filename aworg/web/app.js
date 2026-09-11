@@ -527,6 +527,28 @@ function renderChat() {
  * what ran and how it went, and the output folded underneath for whoever
  * wants it. The exit code is on the outside, because that is the part the
  * owner cannot afford to miss. */
+/* A line above the reply saying why nothing is arriving.
+ *
+ * Replaced rather than appended: "waiting 40s" followed by "waiting 20s" is
+ * a countdown the owner has to read backwards. There is one note and it says
+ * the current reason, and it goes as soon as the reply starts.
+ */
+function setReplyNote(node, text) {
+  if (!node) return;
+  let note = node.querySelector(".reply-note");
+  if (!note) {
+    note = document.createElement("div");
+    note.className = "reply-note";
+    node.insertBefore(note, node.firstChild);
+  }
+  note.textContent = text;
+}
+
+function clearReplyNote(node) {
+  const note = node && node.querySelector(".reply-note");
+  if (note) note.remove();
+}
+
 function messageNode(role, content, label) {
   const wrapper = document.createElement("div");
   wrapper.className = `msg ${role}`;
@@ -678,7 +700,13 @@ async function watchTurn(open, text) {
           seam.textContent =
             `Carrying on with the plan — ${count} task${count === 1 ? "" : "s"} left`;
           box.appendChild(seam);
-        } else if (event.type === "thinking") {
+        } else if (event.type === "waiting") {
+        // AWORG holding off on purpose -- a rate limit, almost always. Shown
+        // in the reply itself rather than in a corner, because the owner is
+        // watching this space and the alternative is a Resident that appears
+        // to have hung.
+        setReplyNote(replyNode, event.text);
+      } else if (event.type === "thinking") {
           thinking += event.text;
           if (!thoughts.isConnected) {
             replyNode.insertBefore(thoughts, body);
@@ -696,6 +724,7 @@ async function watchTurn(open, text) {
           stream.scrollTop = stream.scrollHeight;
           keepAtBottom(box, following);
         } else if (event.type === "delta") {
+        clearReplyNote(replyNode);
           if (!replyNode.isConnected) box.appendChild(replyNode);
           collected += event.text;
           app.contextStreamed = estimateTokens(collected);
@@ -1193,6 +1222,8 @@ function openForm(connection) {
   applyProviderProfile({ keepValues: true });
   el("conn-reasoning").value = (connection && connection.reasoning) || "auto";
   el("conn-context").value = connection && connection.context ? connection.context : "";
+  el("conn-tpm").value =
+    connection && connection.tokens_per_minute ? connection.tokens_per_minute : "";
   el("conn-credential").value = "";
   el("conn-credential").placeholder = connection && connection.has_credential
     ? "Stored — leave blank to keep it"
@@ -2723,7 +2754,11 @@ async function loadPreview(options) {
   // Nothing changed and nobody asked -- leave the frame alone. Rebuilding it
   // on every poll would reload the application every two seconds, losing
   // whatever the owner had scrolled to or typed into it.
-  const signature = `${preview.available}|${preview.url || ""}`;
+  // The revision is part of this, and it is the part that matters. The URL
+  // does not change when the files behind it do, so a signature of the
+  // address alone left the owner watching the page from before the edit.
+  const signature =
+    `${preview.available}|${preview.url || ""}|${preview.revision || ""}`;
   const reload = options && options.reload;
   if (!reload && signature === app.previewSignature) return;
   app.previewSignature = signature;
@@ -3115,6 +3150,11 @@ function wireEvents() {
       // was set before actually clears it, rather than being read as "not
       // supplied" and left alone.
       context: parseInt(el("conn-context").value, 10) || 0,
+      // Blank means "use the provider's entry tier", which is not the
+      // same as 0 -- that is the owner saying there is no limit at all.
+      tokens_per_minute: el("conn-tpm").value.trim() === ""
+        ? null
+        : parseInt(el("conn-tpm").value, 10) || 0,
       tags: [...app.editingTags],
       credential: el("conn-credential").value || null,
     };

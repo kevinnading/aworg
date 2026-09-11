@@ -123,6 +123,11 @@ class ToolContext:
     #: finished. Failure is written from journal.matters instead, which sees
     #: every tool without any of them knowing about it.
     journal: Any = None
+    #: How a tool asks the owner's preview to reload. Supplied by whoever
+    #: builds the context, like everything else here, and called rather than
+    #: written to -- the tool has no business knowing that a revision counter
+    #: is what makes the interface look again.
+    preview: Any = None
     #: The largest result this connection could actually carry, in
     #: characters, or None where there is no edge to stay inside.
     #:

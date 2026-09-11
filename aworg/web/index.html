@@ -265,6 +265,14 @@
           </label>
 
           <label class="field">
+            <span>Rate limit <em>tokens per minute — blank uses the provider's
+              entry tier; 0 means no limit</em></span>
+            <input id="conn-tpm" type="number" min="0" step="1000" placeholder="e.g. 30000" autocomplete="off">
+            <em class="field-note">AWORG waits rather than being refused, and
+              says so in the conversation while it waits.</em>
+          </label>
+
+          <label class="field">
             <span>Thinking <em>reasoning models only</em></span>
             <select id="conn-reasoning">
               <option value="auto">Leave it to the model</option>

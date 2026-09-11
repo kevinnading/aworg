@@ -149,7 +149,13 @@ class AgentLoop:
                         self._keep(record, working, "".join(said), [])
                         return
 
-                    if fragment.kind == "thinking":
+                    if fragment.kind == "waiting":
+                        # Not the reply and not thinking: AWORG holding off
+                        # on purpose. Passed straight up so the owner can see
+                        # that nothing is broken -- a Resident silent for
+                        # forty seconds and one that has hung look identical.
+                        yield {"type": "waiting", "text": fragment.text}
+                    elif fragment.kind == "thinking":
                         thought = True
                         yield {"type": "thinking", "text": fragment.text}
                     elif fragment.kind == "tool_use" and fragment.tool_call:

@@ -114,6 +114,7 @@ class ConnectionBody(BaseModel):
     context: int | None = None
     enabled: bool = True
     credential: str | None = None
+    tokens_per_minute: int | None = None
 
 
 class ModelsBody(BaseModel):
@@ -136,6 +137,8 @@ class ConnectionPatch(BaseModel):
     context: int | None = None
     enabled: bool | None = None
     credential: str | None = None
+    #: 0 clears it back to no limit.
+    tokens_per_minute: int | None = None
 
 
 class ResidentPatch(BaseModel):
@@ -407,6 +410,7 @@ def create_app(paths: Paths, address: str = "http://127.0.0.1:8420") -> FastAPI:
             tags=body.tags,
             reasoning=body.reasoning,
             context=body.context,
+            tokens_per_minute=body.tokens_per_minute,
             enabled=body.enabled,
         )
         # An empty string means "leave the stored credential alone", so that
@@ -1408,6 +1412,21 @@ def create_app(paths: Paths, address: str = "http://127.0.0.1:8420") -> FastAPI:
                 "url": f"http://127.0.0.1:{port}/",
                 "detail": record.label,
                 "hint": f"Served by {record.id}, running for {record.uptime:.0f}s.",
+                # What the owner is looking at, as a value that changes when
+                # it stops being current.
+                #
+                # The URL alone is not enough and that was the bug: the
+                # Resident edits index.html, the address stays
+                # http://127.0.0.1:8000/, and the preview goes on showing the
+                # page from before the change. The spec asks it to reflect
+                # the application's current state; it reflected its state at
+                # the moment the server started.
+                #
+                # Two things move it. The workspace changing, which AWORG
+                # already watches for the Verified stage, and the Resident
+                # asking -- because a change the model knows about should not
+                # wait on a file's timestamp.
+                "revision": f"{workspace_changed_at():.0f}:{resident.preview_revision}",
             }
 
         return {

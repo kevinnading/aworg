@@ -33,7 +33,9 @@ than a handle into somebody's server. The cost is noted at `_input`.
 
 from __future__ import annotations
 
+import asyncio
 import json
+import re
 from typing import Any, AsyncIterator
 
 import httpx
@@ -251,134 +253,174 @@ class OpenAIResponsesAdapter(ModelAdapter):
             "Content-Type": "application/json",
         }
 
-        #: Tool calls arrive as their own items: an "added" event naming the
-        #: call, then argument text in pieces, then a "done". Held by the
-        #: item id the events carry rather than by position.
-        building: dict[str, dict[str, str]] = {}
-        #: Whether the reply was cut off rather than finished. Unlike
-        #: completions there is an explicit event for it, so this does not
-        #: have to be inferred from a finish reason.
-        cut_off = False
+        # Stay inside the allowance before asking, rather than finding out
+        # by being refused halfway through a turn.
+        waited = await self.wait_for_budget(payload)
+        if waited:
+            yield Fragment(
+                "waiting",
+                f"Staying inside this connection's rate limit -- {waited:.0f}s.",
+            )
 
         try:
-            async with httpx.AsyncClient(timeout=STREAM_TIMEOUT) as client:
-                async with client.stream(
-                    "POST", f"{self.base_url}/responses", json=payload, headers=headers
-                ) as response:
-                    if response.status_code >= 400:
-                        body = (await response.aread()).decode("utf-8", "replace")
-                        if self.summaries and _wants_verification(body):
-                            # Asked for reasoning summaries and this
-                            # organisation is not allowed them. The refusal is
-                            # of the whole request, not of the summary, so
-                            # without this an unverified owner has a Resident
-                            # that cannot answer at all. Give up the narration
-                            # for the life of the connection and ask again.
-                            self.summaries = False
-                            payload.pop("reasoning", None)
-                            again = self._reasoning()
-                            if again:
-                                payload["reasoning"] = again
-                            async for fragment in self.stream(messages, system, tools):
-                                yield fragment
-                            return
-                        raise ModelError(_describe(response.status_code, body))
-
-                    async for line in response.aiter_lines():
-                        # Only the data lines are read. The stream also
-                        # carries `event:` lines naming the same thing, and
-                        # reading one source rather than pairing two is both
-                        # shorter and harder to get out of step.
-                        if not line.startswith("data:"):
-                            continue
-                        chunk = line[5:].strip()
-                        if not chunk or chunk == "[DONE]":
-                            continue
-                        try:
-                            event = json.loads(chunk)
-                        except json.JSONDecodeError:
-                            continue
-
-                        kind = event.get("type") or ""
-
-                        if kind == "response.output_text.delta":
-                            text = event.get("delta")
-                            if text:
-                                yield Fragment("reply", text)
-
-                        elif kind in (
-                            "response.reasoning_summary_text.delta",
-                            # Older naming, still sent by some deployments.
-                            "response.reasoning_summary.delta",
-                        ):
-                            text = event.get("delta")
-                            if text:
-                                yield Fragment("thinking", text)
-
-                        elif kind == "response.output_item.added":
-                            item = event.get("item") or {}
-                            if item.get("type") == "function_call":
-                                building[item.get("id") or ""] = {
-                                    # call_id is what a result must come back
-                                    # with, and it is a different value from
-                                    # the item's own id. Mixing them up
-                                    # produces a result the API rejects as
-                                    # matching no call.
-                                    "call_id": item.get("call_id", ""),
-                                    "name": item.get("name", ""),
-                                    "json": "",
-                                }
-
-                        elif kind == "response.function_call_arguments.delta":
-                            slot = building.get(event.get("item_id") or "")
-                            if slot is not None and event.get("delta"):
-                                slot["json"] += event["delta"]
-
-                        elif kind == "response.function_call_arguments.done":
-                            slot = building.get(event.get("item_id") or "")
-                            # The complete arguments, if the API chose to send
-                            # them whole. Preferred over what was accumulated,
-                            # because a dropped delta would otherwise leave a
-                            # fragment that will not parse.
-                            if slot is not None and isinstance(event.get("arguments"), str):
-                                slot["json"] = event["arguments"]
-
-                        elif kind == "response.incomplete":
-                            cut_off = True
-
-                        elif kind == "response.completed":
-                            body = event.get("response") or {}
-                            if body.get("status") == "incomplete":
-                                cut_off = True
-
-                        elif kind in ("error", "response.failed"):
-                            detail = (
-                                (event.get("error") or {}).get("message")
-                                or ((event.get("response") or {}).get("error") or {})
-                                .get("message")
-                                or "the provider reported an error mid-reply"
+            for attempt in range(RATE_LIMIT_TRIES):
+                async with httpx.AsyncClient(timeout=STREAM_TIMEOUT) as client:
+                    async with client.stream(
+                        "POST", f"{self.base_url}/responses", json=payload,
+                        headers=headers,
+                    ) as response:
+                        if response.status_code == 429 and attempt < RATE_LIMIT_TRIES - 1:
+                            # Expected rather than exceptional. The budget is
+                            # an estimate against a number the provider counts
+                            # its own way, and a key may be shared -- so this
+                            # is waited out and retried instead of ending the
+                            # turn. Ending it is what left an owner with a
+                            # conversation that stopped after a tool result
+                            # and no explanation.
+                            body = (await response.aread()).decode("utf-8", "replace")
+                            pause = _retry_after(response, body)
+                            yield Fragment(
+                                "waiting",
+                                f"Rate limited by OpenAI -- waiting {pause:.0f}s "
+                                "and trying again.",
                             )
-                            raise ModelError(f"OpenAI: {detail}")
-
-                    for slot in building.values():
-                        if not slot["name"]:
+                            await asyncio.sleep(pause)
                             continue
-                        parsed = _arguments(slot["json"])
-                        yield Fragment(
-                            "tool_use",
-                            tool_call=ToolCall(
-                                id=slot["call_id"] or f"call_{slot['name']}",
-                                name=slot["name"],
-                                arguments=parsed or {},
-                                # Severed either way: arguments that will not
-                                # parse, or the API saying it ran out of room
-                                # with a call open.
-                                truncated=(parsed is None)
-                                or (cut_off and bool(slot["json"])),
-                            ),
-                        )
+                        async for fragment in self._read(response, payload,
+                                                         messages, system, tools):
+                            yield fragment
+                        return
         except httpx.RequestError as exc:
             raise ModelError(f"Could not reach {self.base_url}: {exc}") from exc
+
+    async def _read(
+        self,
+        response: Any,
+        payload: dict[str, Any],
+        messages: list[Message],
+        system: str,
+        tools: list[dict[str, Any]] | None,
+    ) -> AsyncIterator[Fragment]:
+        """Turn one streamed response into fragments.
+
+        Split out from `stream` so that the retry above can wrap the request
+        without the parsing being indented inside two more loops.
+        """
+        building: dict[str, dict[str, str]] = {}
+        cut_off = False
+
+        if response.status_code >= 400:
+            body = (await response.aread()).decode("utf-8", "replace")
+            if self.summaries and _wants_verification(body):
+                # Asked for reasoning summaries and this
+                # organisation is not allowed them. The refusal is
+                # of the whole request, not of the summary, so
+                # without this an unverified owner has a Resident
+                # that cannot answer at all. Give up the narration
+                # for the life of the connection and ask again.
+                self.summaries = False
+                payload.pop("reasoning", None)
+                again = self._reasoning()
+                if again:
+                    payload["reasoning"] = again
+                async for fragment in self.stream(messages, system, tools):
+                    yield fragment
+                return
+            raise ModelError(_describe(response.status_code, body))
+
+        async for line in response.aiter_lines():
+            # Only the data lines are read. The stream also
+            # carries `event:` lines naming the same thing, and
+            # reading one source rather than pairing two is both
+            # shorter and harder to get out of step.
+            if not line.startswith("data:"):
+                continue
+            chunk = line[5:].strip()
+            if not chunk or chunk == "[DONE]":
+                continue
+            try:
+                event = json.loads(chunk)
+            except json.JSONDecodeError:
+                continue
+
+            kind = event.get("type") or ""
+
+            if kind == "response.output_text.delta":
+                text = event.get("delta")
+                if text:
+                    yield Fragment("reply", text)
+
+            elif kind in (
+                "response.reasoning_summary_text.delta",
+                # Older naming, still sent by some deployments.
+                "response.reasoning_summary.delta",
+            ):
+                text = event.get("delta")
+                if text:
+                    yield Fragment("thinking", text)
+
+            elif kind == "response.output_item.added":
+                item = event.get("item") or {}
+                if item.get("type") == "function_call":
+                    building[item.get("id") or ""] = {
+                        # call_id is what a result must come back
+                        # with, and it is a different value from
+                        # the item's own id. Mixing them up
+                        # produces a result the API rejects as
+                        # matching no call.
+                        "call_id": item.get("call_id", ""),
+                        "name": item.get("name", ""),
+                        "json": "",
+                    }
+
+            elif kind == "response.function_call_arguments.delta":
+                slot = building.get(event.get("item_id") or "")
+                if slot is not None and event.get("delta"):
+                    slot["json"] += event["delta"]
+
+            elif kind == "response.function_call_arguments.done":
+                slot = building.get(event.get("item_id") or "")
+                # The complete arguments, if the API chose to send
+                # them whole. Preferred over what was accumulated,
+                # because a dropped delta would otherwise leave a
+                # fragment that will not parse.
+                if slot is not None and isinstance(event.get("arguments"), str):
+                    slot["json"] = event["arguments"]
+
+            elif kind == "response.incomplete":
+                cut_off = True
+
+            elif kind == "response.completed":
+                body = event.get("response") or {}
+                if body.get("status") == "incomplete":
+                    cut_off = True
+
+            elif kind in ("error", "response.failed"):
+                detail = (
+                    (event.get("error") or {}).get("message")
+                    or ((event.get("response") or {}).get("error") or {})
+                    .get("message")
+                    or "the provider reported an error mid-reply"
+                )
+                raise ModelError(f"OpenAI: {detail}")
+
+        for slot in building.values():
+            if not slot["name"]:
+                continue
+            parsed = _arguments(slot["json"])
+            yield Fragment(
+                "tool_use",
+                tool_call=ToolCall(
+                    id=slot["call_id"] or f"call_{slot['name']}",
+                    name=slot["name"],
+                    arguments=parsed or {},
+                    # Severed either way: arguments that will not
+                    # parse, or the API saying it ran out of room
+                    # with a call open.
+                    truncated=(parsed is None)
+                    or (cut_off and bool(slot["json"])),
+                ),
+            )
 
 
 #: How OpenAI phrases the refusal that is worth retrying rather than showing.
@@ -395,6 +437,41 @@ def _wants_verification(body: str) -> bool:
     return "summary" in lowered and any(
         mark in lowered for mark in VERIFICATION_MARKS
     )
+
+
+#: How long to wait after a refusal that did not say. Providers usually send
+#: retry-after; this is for the ones that do not.
+DEFAULT_BACKOFF = 20.0
+
+#: How many times to wait out a rate limit before giving up on the turn.
+#: Three is enough to ride out a minute-long window twice over, and few
+#: enough that a genuinely exhausted quota still ends rather than hanging.
+RATE_LIMIT_TRIES = 3
+
+
+def _retry_after(response: Any, body: str) -> float:
+    """How long the provider asked us to wait, or a sensible guess.
+
+    Read from the header where there is one. The message sometimes carries
+    the number too -- "try again in 12.4s" -- and that is worth parsing,
+    because waiting the guess when the provider told us the answer is time
+    the owner spends watching nothing.
+    """
+    header = ""
+    try:
+        header = response.headers.get("retry-after", "") or ""
+    except Exception:                                      # noqa: BLE001
+        header = ""
+    if header.strip():
+        try:
+            return max(1.0, float(header.strip()))
+        except ValueError:
+            pass
+    found = re.search(r"try again in ([0-9.]+)\s*(ms|s)", body, re.I)
+    if found:
+        value = float(found.group(1))
+        return max(1.0, value / 1000 if found.group(2).lower() == "ms" else value)
+    return DEFAULT_BACKOFF
 
 
 def _describe(status: int, body: str) -> str:

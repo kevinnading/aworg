@@ -58,6 +58,7 @@ def _profile(
     headers: dict[str, str] | None = None,
     models: str = "list",
     tools: str = "unknown",
+    tpm: int = 0,
     note: str = "",
     generic: bool = False,
 ) -> dict[str, Any]:
@@ -73,6 +74,18 @@ def _profile(
         #: "list" -- ask the provider. "manual" -- the owner types it.
         "models": models,
         "tools": tools,
+        #: Tokens per minute this provider allows, as a starting point.
+        #:
+        #: The provider's own entry-tier figure, because that is what a new
+        #: key has and getting refused on the first real turn is a poor
+        #: introduction. An owner on a higher tier raises it once; an owner
+        #: on the entry tier never has to discover the number by being cut
+        #: off halfway through a job.
+        #:
+        #: 0 means no limit, which is right for a local model -- the only
+        #: cost there is the owner's own hardware and a ceiling would be an
+        #: invention.
+        "tpm": tpm,
         #: Shown under the field in the form, when there is something the
         #: owner would otherwise have to go and find out.
         "note": note,
@@ -86,6 +99,9 @@ PROVIDERS: dict[str, dict[str, Any]] = {
     "openai": _profile(
         "OpenAI", "openai-responses", "https://api.openai.com/v1",
         tools="yes",
+        # Tier 1, which is what a new key is. Raise it in Settings on a
+        # higher tier.
+        tpm=30_000,
         note="Speaks OpenAI's Responses API, which is what the newer models "
              "are built around. For a gateway or proxy that only offers "
              "/chat/completions, use Custom (OpenAI-compatible) instead.",

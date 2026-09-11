@@ -2048,3 +2048,14 @@ button.danger:disabled { opacity: 0.4; cursor: not-allowed; }
    or one of them is focused -- the application is the subject, not its
    chrome. */
 .pane-head .pane-action + .pane-action { margin-left: 2px; }
+
+/* Why nothing is arriving yet. Almost always a rate limit being obeyed.
+   Above the reply because that is where the owner is already looking, and
+   quiet because it is a status rather than an answer. */
+.reply-note {
+  font-size: 11.5px;
+  color: var(--muted);
+  border-left: 2px solid var(--warn);
+  padding-left: 10px;
+  margin-bottom: 8px;
+}

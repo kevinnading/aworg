@@ -26,6 +26,11 @@ CREATE TABLE IF NOT EXISTS connections (
     tags       TEXT NOT NULL DEFAULT '[]',
     reasoning  TEXT NOT NULL DEFAULT 'auto',
     context    INTEGER,
+    -- Tokens per minute this connection may spend. NULL or 0 means no
+    -- limit, which is right for a local model. A hosted one is sold by the
+    -- minute as well as by the token, and crossing the line gets the request
+    -- refused mid-turn; see aworg/ratelimit.py.
+    tokens_per_minute INTEGER,
     enabled    INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -565,6 +570,7 @@ class Store:
         ("journal", "resolved_at", "TEXT"),
         ("journal", "resolved_by", "TEXT"),
         ("journal", "resolution", "TEXT NOT NULL DEFAULT ''"),
+        ("connections", "tokens_per_minute", "INTEGER"),
     ]
 
     def _init(self) -> None:
@@ -722,12 +728,14 @@ class Store:
         reasoning: str = "auto",
         context: int | None = None,
         enabled: bool = True,
+        tokens_per_minute: int | None = None,
     ) -> dict[str, Any]:
         connection_id = uuid.uuid4().hex[:12]
         with self._connect() as conn:
             conn.execute(
                 "INSERT INTO connections (id, name, provider, model, base_url, "
-                "tags, reasoning, context, enabled) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "tags, reasoning, context, tokens_per_minute, enabled) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     connection_id,
                     name,
@@ -737,6 +745,7 @@ class Store:
                     json.dumps(tags or []),
                     reasoning,
                     context,
+                    tokens_per_minute or None,
                     1 if enabled else 0,
                 ),
             )
@@ -744,7 +753,8 @@ class Store:
 
     def update_connection(self, connection_id: str, **fields: Any) -> dict[str, Any] | None:
         allowed = {
-            "name", "provider", "model", "base_url", "tags", "reasoning", "context", "enabled",
+            "name", "provider", "model", "base_url", "tags", "reasoning",
+            "context", "tokens_per_minute", "enabled",
         }
         sets, values = [], []
         for key, value in fields.items():
@@ -753,7 +763,11 @@ class Store:
             # None means "not supplied" for every field except the context
             # ceiling, where it is a real value: unknown. Callers clear it
             # by passing 0, which is not a size any model has.
-            if key == "context":
+            if key in ("context", "tokens_per_minute"):
+                # None means "not supplied" for every field except these two
+                # ceilings, where it is a real value: unknown, and no limit.
+                # Callers clear them by passing 0, which is neither a window
+                # size nor an allowance any provider has.
                 if value is None:
                     continue
                 value = None if value == 0 else value
@@ -800,6 +814,11 @@ class Store:
             "tags": json.loads(row["tags"]),
             "reasoning": row["reasoning"],
             "context": row["context"],
+            # Absent on a database that predates the column, which reads as
+            # "nobody has said" rather than as an error.
+            "tokens_per_minute": (
+                row["tokens_per_minute"] if "tokens_per_minute" in row.keys() else None
+            ),
             "enabled": bool(row["enabled"]),
             "created_at": row["created_at"],
         }
