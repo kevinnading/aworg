@@ -309,6 +309,11 @@ class OpenAIResponsesAdapter(ModelAdapter):
         building: dict[str, dict[str, str]] = {}
         cut_off = False
 
+        # What the provider says its limits actually are, which beats the
+        # default this connection started with. Read before anything else,
+        # so it is adopted even on a response that turns out to be an error.
+        self.budget.observe(response.headers)
+
         if response.status_code >= 400:
             body = (await response.aread()).decode("utf-8", "replace")
             if self.summaries and _wants_verification(body):

@@ -72,7 +72,16 @@ class Budget:
         #: default for a local model, where the only cost is the owner's own
         #: hardware and a ceiling would be an invention.
         self.limit = limit if limit and limit > 0 else None
+        #: What Settings (or the provider profile) asked for, as opposed to
+        #: what is in force. Kept so that a rebuild can tell "the owner
+        #: changed this" from "the same value arrived again"; see budget_for.
+        self.configured = limit
         self._spent: deque[tuple[float, int]] = deque()
+        #: Whether the limit came from the provider rather than from a
+        #: default. A stated limit is used as given; a guessed one keeps its
+        #: headroom, because a guess that is too high is a guess that gets
+        #: the request refused.
+        self.stated = False
         #: One waiter at a time. Without it, ten concurrent requests each
         #: compute the same delay, all sleep it, and all wake together to
         #: blow the limit in the same instant.
@@ -99,7 +108,21 @@ class Budget:
         """Seconds until this request would fit. Zero if it fits now."""
         if self.limit is None:
             return 0.0
-        allowance = int(self.limit * HEADROOM)
+        allowance = self.limit if self.stated else int(self.limit * HEADROOM)
+
+        # A request larger than the whole allowance can never be made to fit,
+        # because waiting frees at most one window's worth. Waiting on it is
+        # a minute spent to arrive at the same place, so it goes now and the
+        # provider decides -- and a 429 is already waited out and retried.
+        #
+        # This was not theoretical. Every session began against the default
+        # limit, before any response had corrected it, and the first request
+        # of a long conversation is far bigger than that default: 222,000
+        # tokens against an assumed 30,000. So each session opened by sleeping
+        # a full minute for nothing.
+        if tokens > allowance:
+            return 0.0
+
         now = time.monotonic()
         self._prune(now)
         used = sum(t for _, t in self._spent)
@@ -117,6 +140,38 @@ class Budget:
             if freed >= needed:
                 return max(0.0, WINDOW - (now - stamp))
         return WINDOW
+
+    # -- what the provider says -----------------------------------------
+
+    def observe(self, headers: Any) -> None:
+        """Adopt the provider's own accounting, which beats any guess.
+
+        **This is the part that makes the limit right rather than cautious.**
+        A default is a guess about somebody else's tier, and the guess here
+        was 30,000 -- which on a long conversation, where a single request
+        carries twenty thousand tokens of history, allowed about one request
+        a minute. A turn that made twelve tool calls waited sixty seconds
+        twelve times: thirteen minutes to do a minute of work, obeying a
+        limit the provider may never have had.
+
+        OpenAI states the real figures on every response. Reading them turns
+        the guess into an observation on the first request, and `remaining`
+        is better than anything counted here -- it is the provider's own
+        tally, of its own tokens, including the replies that could not be
+        counted in advance.
+        """
+        limit = _header_int(headers, "x-ratelimit-limit-tokens")
+        if limit:
+            self.limit = limit
+            self.stated = True
+
+        remaining = _header_int(headers, "x-ratelimit-remaining-tokens")
+        if remaining is not None and self.limit:
+            # Replace the local tally rather than adjusting it. What is left
+            # is a fact; what has been spent is arithmetic on an estimate.
+            spent = max(0, self.limit - remaining)
+            self._spent.clear()
+            self._spent.append((time.monotonic(), spent))
 
     # -- using ----------------------------------------------------------
 
@@ -139,6 +194,24 @@ class Budget:
             self.spend(tokens)
 
 
+def _header_int(headers: Any, name: str) -> int | None:
+    """One of the provider's rate-limit headers, as a number.
+
+    Absent or unparseable means the provider did not say, which is the
+    ordinary case for everything that is not OpenAI.
+    """
+    try:
+        raw = (headers.get(name) or "").strip()
+    except Exception:                                      # noqa: BLE001
+        return None
+    if not raw:
+        return None
+    try:
+        return int(float(raw))
+    except ValueError:
+        return None
+
+
 #: Budgets by connection id. Module level because a connection's allowance
 #: belongs to the connection, and the Resident, its workers and anything else
 #: reaching the same endpoint have to spend from one pot to stay inside it.
@@ -148,15 +221,28 @@ _BUDGETS: dict[str, Budget] = {}
 def budget_for(connection_id: str, limit: int | None) -> Budget:
     """The budget for this connection, made once and kept.
 
-    The limit is re-read each time so that an owner raising it in Settings
-    takes effect on the next request rather than the next restart, which is
-    the same rule capabilities and skills already follow.
+    **A configured limit only replaces the current one when it has actually
+    changed.** The obvious version reassigned on every call, so that an owner
+    raising the figure in Settings took effect immediately -- and it also
+    undid, on every single turn, whatever the provider had told us.
+
+    That was the whole fix defeating itself. An adapter is rebuilt for every
+    turn and every worker, so the real limit learned from a response header
+    survived exactly until the next request was prepared, and the Resident
+    went on waiting against a default sixteen times too low.
+
+    So the configured figure is remembered, and only a change to it is
+    allowed to overwrite. An owner editing Settings still takes effect on the
+    next request; a rebuild with the same setting leaves what was learned
+    alone.
     """
     found = _BUDGETS.get(connection_id)
     if found is None:
-        found = _BUDGETS[connection_id] = Budget(limit)
-    else:
+        return _BUDGETS.setdefault(connection_id, Budget(limit))
+    if limit != found.configured:
+        found.configured = limit
         found.limit = limit if limit and limit > 0 else None
+        found.stated = False
     return found
 
 

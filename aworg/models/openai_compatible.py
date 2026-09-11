@@ -364,6 +364,9 @@ class OpenAICompatibleAdapter(ModelAdapter):
                         json=payload,
                         headers=headers,
                     ) as response:
+                        # The provider's own figures, which are better than
+                        # the default this connection started with.
+                        self.budget.observe(response.headers)
                         if response.status_code == 429 and attempt < RATE_LIMIT_TRIES - 1:
                             # Waited out rather than raised. See the same guard in
                             # openai_responses.py for why a rate limit must not be
