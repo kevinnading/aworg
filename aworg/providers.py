@@ -84,8 +84,11 @@ def _profile(
 PROVIDERS: dict[str, dict[str, Any]] = {
     # -- hosted ------------------------------------------------------------
     "openai": _profile(
-        "OpenAI", "openai-compatible", "https://api.openai.com/v1",
+        "OpenAI", "openai-responses", "https://api.openai.com/v1",
         tools="yes",
+        note="Speaks OpenAI's Responses API, which is what the newer models "
+             "are built around. For a gateway or proxy that only offers "
+             "/chat/completions, use Custom (OpenAI-compatible) instead.",
     ),
     "anthropic": _profile(
         "Anthropic", "anthropic", "https://api.anthropic.com",

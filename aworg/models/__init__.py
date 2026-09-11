@@ -6,13 +6,20 @@ from .. import providers
 from .anthropic import AnthropicAdapter
 from .base import Fragment, Message, ModelAdapter, ModelError, ToolCall
 from .openai_compatible import OpenAICompatibleAdapter
+from .openai_responses import OpenAIResponsesAdapter
 
 
-#: The two wire formats. Providers are chosen by name and resolved to one
-#: of these; see aworg/providers.py for why that is the right way round.
+#: The wire formats. Providers are chosen by name and resolved to one of
+#: these; see aworg/providers.py for why that is the right way round.
+#:
+#: Three now rather than two, and the third is not a third *vendor*. OpenAI
+#: speaks two different APIs and the newer models are built around the
+#: second, so "openai-compatible" keeps its meaning -- the de facto standard
+#: that most of the world implements -- and OpenAI proper gets its own.
 ADAPTERS: dict[str, type[ModelAdapter]] = {
     "anthropic": AnthropicAdapter,
     "openai-compatible": OpenAICompatibleAdapter,
+    "openai-responses": OpenAIResponsesAdapter,
 }
 
 #: Shown in the owner interface when defining a connection.
