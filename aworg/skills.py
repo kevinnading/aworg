@@ -259,6 +259,31 @@ class SkillLibrary:
         """
         return sorted(self._skills.values(), key=lambda s: s.name)
 
+    #: Why a skill is not available to the Resident, in the owner's terms.
+    #: Three situations that one "disabled" would flatten into one, and they
+    #: call for three different responses: a switch the owner could flip, a
+    #: condition that has simply passed, or the skill author's own decision.
+    OFF = "switched off by the owner"
+    RETIRED = "applies only before there is a plan"
+    OWNER_ONLY = "marked for the owner to run deliberately"
+
+    def standing(self, skill: Skill) -> tuple[bool, str]:
+        """Whether the Resident may use this skill, and if not, why not.
+
+        The one place the three rules live. `offered` filters on this and
+        list_skills explains it, so a fourth reason to hold a skill back --
+        or a change to one of these three -- lands in both without either
+        having to know about the other. They encoded the same rules
+        separately for about an hour and that was already one copy too many.
+        """
+        if not skill.model_invocable:
+            return False, self.OWNER_ONLY
+        if not self.is_enabled(skill.name):
+            return False, self.OFF
+        if not self._still_applies(skill):
+            return False, self.RETIRED
+        return True, ""
+
     def offered(self) -> list[Skill]:
         """What the Resident actually gets.
 
@@ -268,13 +293,11 @@ class SkillLibrary:
         saying this one is for a person to run deliberately; or the skill
         declared a condition that no longer holds, like advice on starting
         a project once a project has been started.
+
+        Which of the three is `standing`'s business, not this one's. Here
+        they are all simply "no".
         """
-        return [
-            s for s in self.all()
-            if s.model_invocable
-            and self.is_enabled(s.name)
-            and self._still_applies(s)
-        ]
+        return [s for s in self.all() if self.standing(s)[0]]
 
     def _still_applies(self, skill: Skill) -> bool:
         """Whether a skill's own declared condition is still met."""
@@ -310,10 +333,23 @@ class SkillLibrary:
     def prompt_block(self) -> str:
         """The skills, as the Resident is told about them every message.
 
-        Names and descriptions only -- the cheap half, present so the
-        Resident knows what exists. Bodies are read on demand with
-        read_skill. That is the whole point of the convention and it is
-        followed exactly: a dozen skills cost a paragraph, not a book.
+        Names and the standing instruction, and nothing else. The
+        descriptions used to be here too, and they are now on the read_skill
+        tool's own schema instead -- see read_skill.describe_for, which
+        argued for exactly that and then did not do it, so for a while the
+        prompt paid for them and the schema went without.
+
+        They live in one place rather than both. A description is there to
+        settle which skill applies, that choice is made while reading tool
+        schemas, and a second copy up here would be roughly seventy tokens
+        per skill per message buying nothing. What stays is the instruction
+        -- consult a skill before acting -- because that is a standing
+        instruction and this is where those live, and the bare names, so the
+        Resident knows what exists even glancing at prose.
+
+        Bodies are never here. They are read on demand with read_skill, which
+        is the whole point of the convention: a dozen skills cost a line, not
+        a book.
 
         There was briefly an `always` field here that carried a skill's whole
         body in the prompt, added because the 9B this is developed against
@@ -332,12 +368,13 @@ class SkillLibrary:
         if not skills:
             return ""
 
-        listed = "\n".join(f"  {s.name}: {s.description}" for s in skills)
+        listed = ", ".join(s.name for s in skills)
         return (
-            "SKILLS you can load. Call read_skill with the name when the job "
-            "matches one of these, before planning or acting -- a skill is "
-            "how this machine does that job, which is not always how you "
-            f"would.\n" + listed
+            "SKILLS you can load: " + listed + ".\n"
+            "Call read_skill when the job matches one of these, before "
+            "planning or acting -- a skill is how this machine does that "
+            "job, which is not always how you would. What each one is for "
+            "is on the read_skill tool itself."
         )
 
 

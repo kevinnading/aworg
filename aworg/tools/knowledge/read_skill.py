@@ -57,10 +57,15 @@ async def run(context: ToolContext, skill: str = "") -> ToolResult:
         # again.
         exists = getattr(library, "get_any", lambda _name: None)(wanted)
         if exists is not None:
+            # Which of the three, not a guess between them. The library
+            # decides this for offered() as well, so the sentence here and
+            # the skill's actual standing cannot disagree.
+            why = library.standing(exists)[1]
             raise ToolError(
-                f"{exists.name} is not available to you right now -- either "
-                "the owner has switched it off, or it only applies at a "
-                "point you are past. Carry on without it; do not ask again."
+                f"{exists.name} exists but is not available to you: {why}. "
+                "Carry on without it rather than asking again. If the job "
+                "genuinely needs it, say so to the owner -- the switch is "
+                "theirs, not yours."
             )
         known = ", ".join(s.name for s in library.offered()) or "none"
         raise ToolError(f"There is no skill called {skill!r}. You have: {known}.")
@@ -115,13 +120,30 @@ def describe_for(skills: list[dict] | None = None, **_: object) -> dict:
     if not skills:
         return {}
 
+    # The descriptions, beside the names they belong to.
+    #
+    # This is the half the paragraph above argued for and the code did not
+    # do. resident.py has always passed {name, description} here, and this
+    # function used the name and dropped the rest -- so the schema carried
+    # bare slugs and "Which skill to read." A model scanning tool schemas,
+    # which is the behaviour the whole measurement was about, got the list
+    # without a single word on when any of them applies, and had to go back
+    # to the prose the experiment had just concluded it was not reading.
+    #
+    # JSON Schema has nowhere to hang a description on an individual enum
+    # value, so they go in the field's own description, which is where the
+    # rest of these tools put the meaning of their choices.
+    catalogue = "\n".join(f"  {s['name']}: {s['description']}" for s in skills)
     schema = {
         "type": "object",
         "properties": {
             "skill": {
                 "type": "string",
                 "enum": [s["name"] for s in skills],
-                "description": "Which skill to read.",
+                "description": (
+                    "Which skill to read. Pick the one whose subject matches "
+                    "the job you are about to start:\n" + catalogue
+                ),
             },
         },
         "required": ["skill"],
