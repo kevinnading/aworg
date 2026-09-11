@@ -16,6 +16,7 @@ import re
 import secrets as secrets_module
 import shutil
 import time
+import urllib.request
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -677,7 +678,10 @@ def create_app(paths: Paths, address: str = "http://127.0.0.1:8420") -> FastAPI:
         Resident reports, because an owner who could audit the Resident's
         claims would not need AWORG in the first place.
         """
-        return lifecycle.assess(workspace_has_files(), serving_now())
+        serving = serving_now()
+        return lifecycle.assess(
+            workspace_has_files(), serving, answered_now(serving)
+        )
 
     @app.get("/api/panes")
     def status_panes() -> list[dict[str, Any]]:
@@ -1263,6 +1267,74 @@ def create_app(paths: Paths, address: str = "http://127.0.0.1:8420") -> FastAPI:
                 "uptime": record.uptime,
             }
         return None
+
+    #: The last fetch AWORG made of the served application, and what the
+    #: workspace looked like when it made it. Held rather than repeated,
+    #: because the Lifecycle stepper is polled and an outbound request per
+    #: poll would be AWORG hammering the Resident's own application.
+    last_check: dict[str, Any] = {}
+
+    #: How long a fetch of the application is allowed to take. Short: this
+    #: runs on a path the interface polls, and a hung application must not
+    #: become a hung owner interface.
+    CHECK_TIMEOUT = 2.0
+
+    def workspace_changed_at() -> float:
+        """When the Living Workspace was last touched.
+
+        The newest modification time under it. That is the moment "the
+        application as it now stands" begins, and any check older than it
+        was a check of something else.
+        """
+        workspace = paths.workspace
+        if not workspace.exists():
+            return 0.0
+        newest = 0.0
+        for item in workspace.rglob("*"):
+            try:
+                newest = max(newest, item.stat().st_mtime)
+            except OSError:
+                continue
+        return newest
+
+    def answered_now(serving: dict[str, Any] | None) -> dict[str, Any] | None:
+        """AWORG's own fetch of the application, made after the last change.
+
+        **The point is who is doing the looking.** The Resident saying it
+        checked its work is testimony from the party being judged; this is
+        AWORG opening the application itself and seeing what comes back. That
+        is the same argument the whole Lifecycle stepper is built on, carried
+        one stage further than it previously went.
+
+        Re-fetched only when the workspace has changed since the last look,
+        so an idle Aworg makes no requests at all and a busy one makes one
+        per change rather than one per poll.
+        """
+        if not serving:
+            return None
+        port = serving.get("port")
+        changed = workspace_changed_at()
+        held = last_check.get(port)
+        if held and held["changed"] >= changed:
+            return held["result"]
+
+        result: dict[str, Any] | None = None
+        try:
+            with urllib.request.urlopen(
+                f"http://127.0.0.1:{port}/", timeout=CHECK_TIMEOUT
+            ) as answer:
+                # Any 2xx. A directory listing is a served application as far
+                # as this stage is concerned -- whether it is the *right*
+                # application is the checker's job and not a stepper's.
+                result = {"status": answer.status, "at": time.time()}
+        except Exception:                                  # noqa: BLE001
+            # Refused, timed out, 500 -- all the same answer here: the thing
+            # that is running did not answer for the application as it now
+            # stands. The stage drops back and the owner sees it.
+            result = None
+
+        last_check[port] = {"changed": changed, "result": result}
+        return result
 
     @app.get("/api/preview")
     def preview() -> dict[str, Any]:

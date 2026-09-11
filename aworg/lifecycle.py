@@ -70,15 +70,19 @@ STAGE_IDS = [stage["id"] for stage in STAGES]
 #: an owner should be able to tell "my application has not got there" apart
 #: from "nothing could have got there yet".
 #:
-#: This was "building" for as long as nothing observed a running process. It
-#: moves to "running" now that AWORG holds the processes the Resident starts
-#: and can see one is alive -- and no further, because "verified" needs a
-#: check that actually ran and nothing yet records those.
-REACHABLE_THROUGH = "running"
+#: This was "building" for as long as nothing observed a running process, and
+#: then "running" once AWORG held the processes the Resident starts and could
+#: see one was alive. It reaches "verified" now that AWORG fetches the served
+#: application itself and can tell that the thing answering is the thing as
+#: it currently stands. "Watched" waits on something inspecting the Living
+#: Log on a schedule; "published" on snapshots, which are not this milestone.
+REACHABLE_THROUGH = "verified"
 
 
 def assess(
-    workspace_has_files: bool, serving: dict[str, Any] | None = None
+    workspace_has_files: bool,
+    serving: dict[str, Any] | None = None,
+    answered: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Which stage the application is at, and why.
 
@@ -89,8 +93,26 @@ def assess(
     a port, or None. It is evidence rather than testimony -- the Resident
     saying it started a server does not move this, and cannot, which is the
     whole reason the stage is derived here instead of being reported.
+
+    `answered` is the same argument one step further on. A running process is
+    not a working application: it proves something bound a port, not that the
+    thing the Resident just changed still does its job. So this is AWORG's
+    own fetch of the served application, made *after* the most recent change
+    to the workspace -- which is what turns "it is up" into "it is up, and it
+    is up as it now stands". A check made before the change would be a check
+    of the previous application.
+
+    Note that this can move backwards, and should. Break the application and
+    the next fetch fails; the stage drops to running and the owner sees it
+    without anyone having to notice and say so.
     """
-    if serving:
+    if serving and answered:
+        current = "verified"
+        reason = (
+            f"AWORG fetched it on port {serving.get('port')} after the last "
+            f"change and got {answered.get('status')}."
+        )
+    elif serving:
         current = "running"
         reason = (
             f"{serving.get('label') or 'A process'} has been up for "
