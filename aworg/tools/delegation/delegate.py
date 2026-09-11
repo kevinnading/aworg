@@ -93,14 +93,22 @@ async def run(context: ToolContext, worker: str = "", task: str = "") -> ToolRes
     return ToolResult(
         text=result.render(),
         payload=result.render(),
-        # A worker whose own tool calls failed did not do the job, whatever
-        # it says about it. Flagging the result is what makes the Resident
-        # look at the evidence rather than accept the summary.
-        is_error=bool(result.error) or bool(result.failed_calls),
+        # Only a worker that did not finish is a failure.
+        #
+        # This also flagged any worker with a single failing call, and the
+        # Living Log then recorded "delegate failed" for a builder that made
+        # five calls, had one fail, and created the file it was asked for.
+        # Three such entries sat open after a job that had gone fine.
+        #
+        # The evidence is not lost by this: render() still lists every call
+        # and marks the failed ones, and still says plainly when a worker's
+        # report does not mention a failure. What changes is the headline,
+        # which was calling a job failed on the strength of a retry.
+        is_error=bool(result.error),
         summary=(
             f"{result.worker}: {len(result.calls)} call"
             f"{'s' if len(result.calls) != 1 else ''}"
-            + (f", {len(result.failed_calls)} failed" if result.failed_calls else "")
+            + (f", {len(result.failed_calls)} retried" if result.failed_calls else "")
         ),
     )
 

@@ -21,6 +21,10 @@ const app = {
   appearanceTimer: null,
   layout: null,
   panes: [],
+  //: What each polled pane last held, so a repaint only happens when
+  //: something actually changed -- these panes carry scroll positions and
+  //: switches the owner may be reaching for.
+  paneSignatures: {},
   lifecycle: null,
   // The last answer from /api/context, plus what has been added since: the
   // draft in the composer and the reply as it streams in. The ring is exact
@@ -88,7 +92,55 @@ async function boot() {
   // waiting on it would mean boot never finishing.
   startActivities();
   startLivingLog();
+  startPanes();
   watchPreviewSize();
+}
+
+/* Keep the status panes current.
+ *
+ * /api/panes was fetched once at boot and then only when the owner toggled a
+ * skill, a worker or a capability. So the Tasks pane showed whatever the plan
+ * was at the moment the page loaded -- which is to say "No plan yet", for the
+ * whole of the first job, while the Resident wrote eight tasks and worked
+ * through them. Skills had the same silence: getting-started never visibly
+ * retired when a plan appeared.
+ *
+ * Activities streams, the Living Log polls, the workspace polls. These had
+ * neither, and they are the panes that answer what the Resident is *for*.
+ *
+ * Repainted only where something actually changed, because these panes hold
+ * scroll positions and switches the owner may be reaching for. */
+const PANES_EVERY = 2500;
+
+//: Panes painted from the /api/panes payload. The others -- Activities,
+//: Workers, the preview, the workspace -- draw themselves from their own
+//: live sources and must not be repainted from a snapshot.
+const POLLED_PANES = ["tasks", "skills", "capabilities", "system"];
+
+async function startPanes() {
+  setInterval(refreshPanes, PANES_EVERY);
+}
+
+async function refreshPanes() {
+  let panes;
+  try {
+    panes = await api("/api/panes");
+  } catch (_) {
+    // A failed poll leaves the last good picture up, which is truer than
+    // blanking a pane because one request did not land.
+    return;
+  }
+  const byId = new Map(panes.map((pane) => [pane.id, pane]));
+  for (const id of POLLED_PANES) {
+    const fresh = byId.get(id);
+    if (!fresh) continue;
+    const signature = JSON.stringify(fresh.items || []);
+    if (signature === app.paneSignatures[id]) continue;
+    app.paneSignatures[id] = signature;
+    const at = app.panes.findIndex((pane) => pane.id === id);
+    if (at >= 0) app.panes[at] = fresh;
+    repaintPane(id);
+  }
 }
 
 /* Re-fit the miniature whenever the pane's size changes.

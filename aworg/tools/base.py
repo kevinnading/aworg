@@ -153,23 +153,35 @@ class ToolContext:
         if self.activity is not None:
             self.activities.progress(self.activity, fraction, detail)
 
-    def reporting_env(self) -> dict[str, str] | None:
-        """This process's environment, with the Living Log's address added.
+    def reporting_env(self) -> dict[str, str]:
+        """The environment a started program gets.
 
-        The whole environment rather than only the two variables, because a
-        subprocess handed a bare pair loses PATH and everything else it needs
-        to run at all.
+        The whole of this process's environment, because a subprocess handed
+        a bare few variables loses PATH and everything else it needs to run.
 
-        None when there is nothing to add, which is what
-        `create_subprocess_exec` wants in order to mean "inherit" -- passing a
-        copy would be the same thing more expensively, and would quietly stop
-        tracking the parent's environment if it ever changed.
+        Two things are added to it.
+
+        The Living Log's address and token, so an application the Resident
+        built can report its own trouble without being configured -- it reads
+        them the way it reads PORT.
+
+        And PYTHONUNBUFFERED, which is not a detail. AWORG drains a program's
+        output continuously, because a process whose stdout fills blocks on
+        its next write and silently stops serving. But Python block-buffers
+        when its output is a pipe, so a server that printed "listening on
+        port 8000" at startup had that line sitting in its own buffer, and
+        AWORG saw nothing at all. Three things went wrong because of it: the
+        preview could not find the port and said nothing was running while
+        the site answered; start_process reported no output; and the Living
+        Log's alarm for a program that died had no last words to carry.
         """
-        if not self.reporting:
-            return None
         import os
 
-        return {**os.environ, **self.reporting}
+        return {
+            **os.environ,
+            "PYTHONUNBUFFERED": "1",
+            **self.reporting,
+        }
 
 
 class ToolModule(Protocol):

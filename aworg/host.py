@@ -479,6 +479,21 @@ def summary(facts: dict[str, Any], workspace: Any = None) -> str:
             if workspace else ""
         )
     )
+    if facts.get("python_executable"):
+        # Learned by watching it fail twice in a row inside one job.
+        #
+        # A model reaching for a quick check writes `python -c "for x in ...:
+        # <newline> ..."`, and through PowerShell the newline and the quoting
+        # do not survive: the interpreter receives a single line and raises a
+        # SyntaxError that names the source rather than the shell. So the
+        # second attempt is a rewrite of the Python, which fails the same way.
+        lines.append(
+            "Python note: do not pass multi-line code to python -c through "
+            "this shell -- the newlines and quoting do not survive, and the "
+            "SyntaxError names your code rather than the shell that mangled "
+            "it. Write a .py file and run it, which is also what you would "
+            "want to read back later."
+        )
     lines.extend(_shell_notes(shell, version))
     if facts["tools"]:
         lines.append(f"On PATH: {', '.join(facts['tools'])}.")
