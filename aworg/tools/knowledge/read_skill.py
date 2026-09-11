@@ -44,9 +44,25 @@ async def run(context: ToolContext, skill: str = "") -> ToolResult:
     if not str(skill).strip():
         raise ToolError("No skill was named.")
 
-    found = library.get(str(skill).strip())
+    wanted = str(skill).strip()
+    found = library.get(wanted)
     if found is None:
-        known = ", ".join(s.name for s in library.all()) or "none"
+        # Three different situations, and they used to share one sentence
+        # that was wrong in two of them. The listing came from `all()`, which
+        # is every skill discovered rather than every skill offered -- so
+        # asking for a switched-off skill produced "There is no skill called
+        # 'house-style'. You have: getting-started, house-style,
+        # web-project", naming the thing in the list of what you have while
+        # denying it exists. A model reading that tries again, and gets it
+        # again.
+        exists = getattr(library, "get_any", lambda _name: None)(wanted)
+        if exists is not None:
+            raise ToolError(
+                f"{exists.name} is not available to you right now -- either "
+                "the owner has switched it off, or it only applies at a "
+                "point you are past. Carry on without it; do not ask again."
+            )
+        known = ", ".join(s.name for s in library.offered()) or "none"
         raise ToolError(f"There is no skill called {skill!r}. You have: {known}.")
 
     body = found.body()
