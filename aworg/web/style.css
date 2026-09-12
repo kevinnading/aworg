@@ -849,9 +849,12 @@ body.has-maximised-pane .resizer { pointer-events: none; }
   justify-content: safe center;
   gap: 6px;
   text-align: center;
+  /* No edge of its own. It had one when a pane did not -- an empty state
+     needed some shape to be on a flat wall. The pane is the container now,
+     and a bordered box inside a bordered box is one container too many. The
+     console had already worked this out and was overriding it away; this is
+     that override, generalised and the special case deleted. */
   padding: 12px 14px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
 }
 .pane-empty strong {
   color: var(--text);
@@ -953,7 +956,6 @@ body.has-maximised-pane .resizer { pointer-events: none; }
   overflow: auto;
 }
 .console .pane-empty {
-  border: none;
   font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
 }
 .console .pane-empty strong { font-weight: 500; }
