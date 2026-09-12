@@ -367,6 +367,11 @@ def create_app(paths: Paths, address: str = "http://127.0.0.1:8420") -> FastAPI:
             "primary_connection_id": config["primary_connection_id"],
             "worker_connection_id": config["worker_connection_id"],
             "system_prompt": config["system_prompt"],
+            # Here rather than in /api/meta, which is read once at boot. The
+            # Resident can rename the project mid-conversation, and a header
+            # that only catches up on reload would be showing the owner a
+            # name their Resident has already stopped using.
+            "project": store.get_project(),
         }
 
     # -- the Model Pool -------------------------------------------------

@@ -48,6 +48,16 @@ If you assumed something, say which. "I am assuming this is just for you and
 does not need accounts" gives them one easy thing to correct, where silence
 gives them nothing until it is built.
 
+## Name it
+
+Once you know what the thing is, call `name_project` with a name in the
+owner's words — "Chilean Soccer Game", not "soccer-game". They see it at the
+top of the Application pane, and an owner who has just explained what they
+want should not still be looking at "Unnamed Project".
+
+A name is not a claim that anything works. The Lifecycle beside it answers
+that, from what was observed.
+
 ## Then plan, and start
 
 Write the tasks down with add_tasks and begin. Do not wait for approval of

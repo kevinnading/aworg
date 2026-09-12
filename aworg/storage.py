@@ -52,6 +52,24 @@ CREATE TABLE IF NOT EXISTS appearance (
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- What the Resident is building, by name.
+--
+-- One row, like appearance and layout, because an Aworg has one Living
+-- Workspace and therefore one project in it. The default is honest: an
+-- unnamed project is what this is until the Resident learns enough about
+-- the job to call it something, and "Unnamed Project" says so rather than
+-- inventing a title nobody chose.
+--
+-- The Resident owns both fields -- there is no settings form for them. It
+-- names the thing it is building the way it writes its own plan, which is
+-- the arrangement the rest of this product runs on.
+CREATE TABLE IF NOT EXISTS project (
+    id         INTEGER PRIMARY KEY CHECK (id = 1),
+    name       TEXT NOT NULL DEFAULT 'Unnamed Project',
+    version    TEXT NOT NULL DEFAULT '1.0',
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS layout (
     id         INTEGER PRIMARY KEY CHECK (id = 1),
     sizes      TEXT NOT NULL DEFAULT '{}',
@@ -661,6 +679,9 @@ class Store:
                 "INSERT INTO appearance (id) VALUES (1) ON CONFLICT(id) DO NOTHING"
             )
             conn.execute(
+                "INSERT INTO project (id) VALUES (1) ON CONFLICT(id) DO NOTHING"
+            )
+            conn.execute(
                 "INSERT INTO layout (id) VALUES (1) ON CONFLICT(id) DO NOTHING"
             )
             self._refresh_default_prompt(conn)
@@ -970,6 +991,53 @@ class Store:
         return self.get_resident()
 
     # -- appearance -----------------------------------------------------
+
+    #: How much of a name and a version to keep. Both are written by a model
+    #: and both are rendered into a pane header that has one line to give
+    #: them, so the bound is the interface's rather than the database's.
+    MAX_PROJECT_NAME = 60
+    MAX_PROJECT_VERSION = 16
+
+    def get_project(self) -> dict[str, Any]:
+        """What the Resident is building, by name."""
+        with self._connect() as conn:
+            row = conn.execute("SELECT * FROM project WHERE id = 1").fetchone()
+        if row is None:
+            return {"name": "Unnamed Project", "version": "1.0"}
+        return {"name": row["name"], "version": row["version"]}
+
+    def set_project(
+        self, name: str | None = None, version: str | None = None
+    ) -> dict[str, Any]:
+        """Rename it, re-version it, or both.
+
+        Either may be omitted, and omitting one leaves it alone -- a Resident
+        that has decided what the thing is called should not have to restate
+        its version to say so, and a version bump should not be a chance to
+        lose the name.
+
+        Blank is the same as omitted rather than the same as empty. A header
+        reading "Project: v1.0" would be a worse answer than the name it
+        already had, and a model that sends an empty string usually means it
+        had nothing to add.
+        """
+        fields: list[str] = []
+        values: list[Any] = []
+        if name is not None and name.strip():
+            fields.append("name = ?")
+            values.append(name.strip()[: self.MAX_PROJECT_NAME])
+        if version is not None and version.strip():
+            fields.append("version = ?")
+            values.append(version.strip()[: self.MAX_PROJECT_VERSION])
+        if not fields:
+            return self.get_project()
+        with self._connect() as conn:
+            conn.execute(
+                f"UPDATE project SET {', '.join(fields)}, "
+                "updated_at = datetime('now') WHERE id = 1",
+                values,
+            )
+        return self.get_project()
 
     def get_appearance(self) -> dict[str, Any]:
         """The owner's chosen scheme: a preset, plus any colours they changed.

@@ -340,6 +340,27 @@ class Resident:
             "start one and done once you have watched it succeed."
         )
 
+    def project_block(self) -> str:
+        """What the thing being built is called, and a nudge while it is not.
+
+        One line, and it earns its place twice over. A Resident cannot sensibly
+        rename a project without knowing what it is called now, and an owner
+        still looking at "Unnamed Project" after describing what they want is
+        looking at an Aworg that did not appear to listen.
+
+        The nudge goes away the moment there is a name. A standing instruction
+        to do something already done is a standing instruction to ignore, and
+        this prompt cannot afford any of those.
+        """
+        project = self.store.get_project()
+        line = f"THIS PROJECT -- {project['name']}, version {project['version']}."
+        if project["name"] == "Unnamed Project":
+            line += (
+                " Nobody has named it yet. Once you know what the owner wants "
+                "built, name it with name_project."
+            )
+        return line
+
     def system_prompt(self) -> str:
         """What the model is told about itself, where it is, and what it is doing.
 
@@ -377,7 +398,7 @@ class Resident:
             self.store.get_resident().get("persona")
         )
 
-        parts = [instructions, who, block, known, plan]
+        parts = [instructions, who, block, known, self.project_block(), plan]
         return "\n\n---\n\n".join(part for part in parts if part).strip()
 
     def _result_limit(self, budget: int | None) -> int | None:

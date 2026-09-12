@@ -344,6 +344,7 @@ async function refresh() {
   renderResetView();
   refreshContext();
   renderLifecycle();
+  renderProject();
 }
 
 /* A failed turn leaves the owner's message with no answer under it. Putting
@@ -1411,11 +1412,13 @@ const FIXED_PANES = {
   // the column's width -- so it carries no stored size and offers no divider
   // of its own. Dragging the column is how you make the picture bigger.
   preview: {
-    label: "Application",
-    hint: "The software the Resident is responsible for.",
+    // A placeholder until the first /api/state lands and renderProject puts
+    // the real name in. The pane is named for the project because that is
+    // what it holds -- the picture, and the stage that picture is at.
+    label: "Project",
+    hint: "The software the Resident is responsible for, and how far along it is.",
     derived: true,
   },
-  lifecycle: { label: "Lifecycle", hint: "How far along that software is." },
 };
 
 /* Which pane goes where, and in what order within its region.
@@ -1428,7 +1431,9 @@ const REGIONS = [
   // do on it, and it is read once rather than worked in. Capabilities and
   // Skills sit below it, where the owner reaches for them deliberately.
   { id: "faculties", element: "faculties", axis: "column", panes: ["system", "capabilities", "skills"] },
-  { id: "side", element: "side", axis: "column", panes: ["preview", "lifecycle", "workspace"] },
+  // Lifecycle is not a pane any more. It lives inside the preview, under the
+  // picture, because all six of its stages describe the thing in the picture.
+  { id: "side", element: "side", axis: "column", panes: ["preview", "workspace"] },
   { id: "activity", element: "activity", axis: "row", panes: ["tasks", "workers"] },
   // What happened, then what is happening. Reading order follows the way
   // work actually moves: an Activity that turns out to matter becomes a
@@ -2475,12 +2480,30 @@ function renderLifecycle() {
     list.appendChild(item);
   }
 
+  // The sentence that used to sit under the stepper has nowhere to go in a
+  // single row, so it moves onto the row itself. Nothing is lost that was
+  // being read -- the detail and the evidence are both still one hover away,
+  // and the stage an owner is actually at is named in full beneath its mark.
   const current = app.lifecycle.stages.find((s) => s.state === "current");
-  const caption = el("stage-detail");
-  caption.textContent = current ? current.detail : app.lifecycle.reason;
-  // The evidence, for an owner who wants to know why it says that. It is not
-  // in the caption because for the early stages it only restates it.
-  caption.title = app.lifecycle.reason;
+  const strip = el("lifecycle");
+  if (strip) {
+    strip.title = current
+      ? `${current.detail}\n\nReached when: ${app.lifecycle.reason}`
+      : app.lifecycle.reason;
+  }
+}
+
+/* What the Resident is building, by name, in the pane that holds it.
+ *
+ * Written straight into the header rather than through buildPanes, which
+ * tears down and rebuilds every pane in the region -- a rename is one string
+ * changing, and rebuilding nine panes to show it would throw away the
+ * Activities list and every scroll position in the column. */
+function renderProject() {
+  const project = app.state && app.state.project;
+  const heading = document.querySelector("#pane-preview .pane-head h2");
+  if (!project || !heading) return;
+  heading.textContent = `Project: ${project.name} v${project.version}`;
 }
 
 /* ---------- resizing ---------- */

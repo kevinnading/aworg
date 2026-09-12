@@ -70,8 +70,10 @@ PANES: dict[str, dict[str, Any]] = {
     #: The preview has no height here on purpose. It is a screen, so it keeps
     #: a screen's shape: its height follows the column's width at 16:9. One
     #: box with a fixed ratio has one dimension worth dragging, and it is the
-    #: column's.
-    "lifecycle-height": {"default": 132, "min": 96, "max": 300},
+    #: column's. The Lifecycle rides under it as a row and has no height of
+    #: its own either, which is why "lifecycle-height" is gone from here --
+    #: sanitize drops a stored one, so an owner who had dragged it loses a
+    #: setting rather than a working interface.
     #: The observed facts about this machine. Read once and then glanced at,
     #: so it sits above the things the owner actually operates.
     "system-height": {"default": 150, "min": 80, "max": 500},
