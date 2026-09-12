@@ -1087,9 +1087,24 @@ body.has-maximised-pane .resizer { pointer-events: none; }
 }
 
 @media (max-width: 900px) {
+  /* The page scrolls as one thing.
+
+     Without this the interface is unreachable down here, and has been: the
+     body is a 100%-height flex column, so a console that has been told to
+     take its content's height takes all of it. With five thousand pixels of
+     Living Log in it, the workbench above was flexed to exactly zero and the
+     owner got a full screen of log and nothing else -- no conversation, no
+     panes, no way to scroll to them.
+
+     Letting the document grow past the viewport is what "one column of
+     everything" needed all along. Nothing inside scrolls on its own any
+     more, so the regions cannot fight each other for the height. */
+  html, body { height: auto; }
+  body { min-height: 100%; }
+
   /* One column of everything. Regions keep their order, so what was on the
      left is now on top and the conversation still comes before the log. */
-  .workbench { flex-direction: column; overflow-y: auto; }
+  .workbench { flex-direction: column; overflow-y: visible; }
 
   /* No rule under each region: stacked, the panes are still objects on the
      ground and separate themselves. */
