@@ -52,6 +52,13 @@
   --skills-height: 190px;
   --activity-height: 186px;
   --log-height: 172px;
+
+  /* The gutter a region holds around and between its panes.
+     Not in layout.py, and deliberately: everything there is something the
+     owner drags, and this is not. It is the width of the seam a resizer
+     lives in, so it has to equal the resizer's own thickness or the handle
+     stops lining up with the gap it is supposed to be grabbing. */
+  --pane-gap: 9px;
 }
 
 * { box-sizing: border-box; }
@@ -635,25 +642,33 @@ button.tiny { padding: 5px 11px; font-size: 13px; }
    a width: when the window gets small enough that the shares would squeeze
    the conversation past its floor, all three give ground together instead of
    the middle collapsing on its own. */
+/* A region is the ground its panes sit on, not a surface with panes drawn
+   onto it. That is the whole of the change: the column takes --bg, the same
+   ground the conversation sits on, and each pane is an object laid on it.
+   Before this, a column was one flat --panel rectangle with hairlines ruled
+   across it, and it read as exactly that -- the Living Log looked like a
+   container only because its contents are dense enough to imply one. */
 .column {
   flex: 0 1 auto;
   display: flex;
   flex-direction: column;
   min-height: 0;
-  background: var(--panel);
+  background: var(--bg);
   overflow-y: auto;
+  padding: var(--pane-gap);
 }
 
-/* Each column's border faces the middle, where the conversation is. */
+/* No border facing the middle any more. The column and the conversation are
+   the same ground now, and the resizer between them already draws the seam --
+   a border here as well would be two lines with a nine-pixel gutter between
+   them. */
 .side {
   flex-basis: var(--side-width);
   min-width: 240px;
-  border-right: 1px solid var(--line);
 }
 .faculties {
   flex-basis: var(--faculties-width);
   min-width: 170px;
-  border-left: 1px solid var(--line);
 }
 
 /* The conversation is the remainder, not a share of its own: 33 and 27 leave
@@ -672,7 +687,8 @@ button.tiny { padding: 5px 11px; font-size: 13px; }
   height: var(--activity-height);
   display: flex;
   min-height: 0;
-  background: var(--panel);
+  background: var(--bg);
+  padding: var(--pane-gap);
 }
 /* Tasks takes a share of the row for the same reason, so Workers is not the
    only one of the pair that grows when the window does. */
@@ -687,8 +703,8 @@ button.tiny { padding: 5px 11px; font-size: 13px; }
   height: var(--log-height);
   display: flex;
   min-height: 0;
-  background: var(--panel);
-  border-top: 1px solid var(--line);
+  background: var(--bg);
+  padding: var(--pane-gap);
 }
 /* The Living Log takes a share, so Activities is not the only half that
    grows with the window. Same reasoning as Tasks in the activity row. */
@@ -714,24 +730,46 @@ button.tiny { padding: 5px 11px; font-size: 13px; }
    or one would quietly eat the space meant for another -- except the last in
    each region, which takes what is left so a region always fills exactly. */
 
+/* A titled object: its own surface, its own edge, and a header band that is
+   a different surface again. The band is what separates one pane from the
+   next -- an edge where two surfaces meet rather than a line drawn on one,
+   which is the thing a hairline could never do. --panel-2 is already named
+   "Raised surface" in theme.py; this is what it is for. */
 .pane {
   flex: none;
   display: flex;
   flex-direction: column;
-  padding: 14px 16px;
   min-height: 0;
   min-width: 0;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  /* So the header band is clipped by the corners rather than squaring them
+     off, and so a long list cannot paint over the pane's own edge. */
+  overflow: hidden;
 }
 
 .pane.fills { flex: 1; }
+
+/* Two panes with no resizer between them -- which happens where one sizes
+   itself and has nothing to drag -- still need the seam. Everything else
+   gets it from the resizer, which is exactly --pane-gap wide. */
+.region-column > .pane + .pane { margin-top: var(--pane-gap); }
+.region-row > .pane + .pane { margin-left: var(--pane-gap); }
 
 .pane-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  margin-bottom: 10px;
   flex: none;
+  /* Tighter than it looks like it wants to be. The band already separates
+     the header from the body, so the padding that used to do that job is
+     height taken from a pane that has little to spare -- the activity row is
+     186px and two of its panes are mostly prose. */
+  padding: 7px 12px;
+  background: var(--panel-2);
+  border-bottom: 1px solid var(--line);
 }
 .pane-head h2 { margin: 0; font-size: 13px; font-weight: 600; }
 
@@ -740,6 +778,7 @@ button.tiny { padding: 5px 11px; font-size: 13px; }
   min-height: 0;
   display: flex;
   flex-direction: column;
+  padding: 9px 12px 11px;
 }
 
 /* Controls that belong to a pane rather than to the thing inside it. Quiet
@@ -763,6 +802,8 @@ button.tiny { padding: 5px 11px; font-size: 13px; }
 /* Expanded, the preview takes everything under the top bar. The top bar
    stays: the owner should always be able to see that they are still in
    AWORG and get back out, and Escape does the same. */
+/* Full-bleed, so it gives up the things that made it an object in a column:
+   the corners, the edge, and the gutter around it. */
 .pane.maximised {
   position: fixed;
   inset: 56px 0 0 0;
@@ -770,8 +811,12 @@ button.tiny { padding: 5px 11px; font-size: 13px; }
   height: auto !important;
   width: auto !important;
   background: var(--panel);
-  padding: 14px 18px 18px;
+  border: none;
+  border-radius: 0;
+  margin: 0;
 }
+.pane.maximised > .pane-head { padding: 11px 18px; }
+.pane.maximised > .pane-body { padding: 14px 18px 18px; }
 body.has-maximised-pane .resizer { pointer-events: none; }
 
 /* A pane whose ability does not exist yet says so in its own header, so the
@@ -795,7 +840,13 @@ body.has-maximised-pane .resizer { pointer-events: none; }
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  /* `safe` matters here and is not decoration. Plain `center` on an
+     overflowing flex container pushes the first line out past the top edge,
+     where it cannot be scrolled back to -- so a pane too short for its own
+     empty text loses the heading that says what is empty, which is the one
+     line worth keeping. `safe` falls back to start alignment at exactly the
+     point centring would start hiding something. */
+  justify-content: safe center;
   gap: 6px;
   text-align: center;
   padding: 12px 14px;
@@ -1040,10 +1091,11 @@ body.has-maximised-pane .resizer { pointer-events: none; }
      left is now on top and the conversation still comes before the log. */
   .workbench { flex-direction: column; overflow-y: auto; }
 
+  /* No rule under each region: stacked, the panes are still objects on the
+     ground and separate themselves. */
   .column, .activity, .console {
     width: 100%;
     flex: none;
-    border-bottom: 1px solid var(--line);
     overflow-y: visible;
   }
 
@@ -1055,8 +1107,10 @@ body.has-maximised-pane .resizer { pointer-events: none; }
   /* Side by side stops meaning anything in a single column. */
   .activity, .console { flex-direction: column; height: auto; }
   .activity .pane, .console .pane { width: 100% !important; }
-  .activity .pane + .pane,
-  .console .pane + .pane { border-top: 1px solid var(--line); }
+  /* The row became a column, so its seam did too. The vertical handles that
+     used to hold these apart are hidden down here, which is what leaves the
+     two panes adjacent and this rule doing the work. */
+  .region-row > .pane + .pane { margin-left: 0; margin-top: var(--pane-gap); }
   /* The share is a horizontal one, so it means nothing stacked. */
   .console > .pane:first-child { flex: none; flex-basis: auto; }
 
@@ -1211,11 +1265,11 @@ body.has-maximised-pane .resizer { pointer-events: none; }
 
 /* ---- resizing ---- */
 
-/* A one-pixel border is a fair divider and a poor handle. The handle straddles
-   the border with negative margins so it is a comfortable target without
-   changing where anything sits, and it shows itself only when reached for --
-   an interface covered in visible grab bars is telling the owner about its own
-   construction, which is not what they came here to look at. */
+/* The handle is the gutter. It is exactly as wide as the seam between two
+   panes, so it is a comfortable target without overlapping anything, and it
+   shows itself only when reached for -- an interface covered in visible grab
+   bars is telling the owner about its own construction, which is not what
+   they came here to look at. */
 
 .resizer {
   flex: none;
@@ -1227,26 +1281,38 @@ body.has-maximised-pane .resizer { pointer-events: none; }
   touch-action: none;
 }
 
-.resizer.vertical { width: 9px; margin: 0 -5px; cursor: col-resize; }
-.resizer.horizontal { height: 9px; margin: -5px 0; cursor: row-resize; }
+/* Exactly the width of the gutter, and no negative margin any more.
 
-/* The divider draws the line, rather than the panes either side drawing
-   their own borders.
-   
-   They cannot: the negative margin above makes the grab target overlap its
-   neighbour by five pixels, and a neighbour with an opaque background then
-   paints over the border. That is exactly what removed the line between the
-   Application column and Tasks -- the activity row covered it, while the
-   conversation below, having no background of its own, left it showing.
-   
-   One element owning the seam cannot have that problem, and it sits above
-   everything, so the line is always visible and always in the same place. */
+   It used to overlap its neighbours by five pixels to widen the grab target,
+   and that overlap is what stopped the panes drawing their own borders: a
+   neighbour with an opaque background painted over them. It removed the line
+   between the Application column and Tasks once -- the activity row covered
+   it, while the conversation below, having no background of its own, left it
+   showing.
+
+   Panes are objects with edges now, so the handle sits in the gap between two
+   of them instead of on top of both. The overlap is not needed to find it:
+   the gap it lives in is the same nine pixels wide, and it is the only thing
+   in there. */
+.resizer.vertical { width: var(--pane-gap); margin: 0; cursor: col-resize; }
+.resizer.horizontal { height: var(--pane-gap); margin: 0; cursor: row-resize; }
 .resizer::after {
   content: "";
   position: absolute;
   background: var(--line);
   transition: background 120ms ease, inset 120ms ease;
 }
+
+/* A handle between two panes has nothing left to draw: the gap it sits in
+   already separates them, and a line down the middle of that gap is a third
+   edge between two objects that each have one. It stays a full-size grab
+   target and still lights up when reached for -- see below -- so what is
+   lost is decoration, not the affordance.
+
+   The handles between whole regions keep their line. There the two sides are
+   the same ground with no card edges to speak for them, so the seam has to
+   be drawn. */
+.region > .resizer::after { background: transparent; }
 .resizer.vertical::after { top: 0; bottom: 0; left: 4px; right: 4px; }
 .resizer.horizontal::after { left: 0; right: 0; top: 4px; bottom: 4px; }
 
