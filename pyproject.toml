@@ -1,6 +1,6 @@
 [project]
 name = "aworg"
-version = "0.1.0"
+version = "0.7.0"
 description = "Autonomous Workspace Organism - a persistent AI Resident for your machine"
 requires-python = ">=3.10"
 dependencies = [
