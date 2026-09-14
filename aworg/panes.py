@@ -152,7 +152,10 @@ def capabilities(
         # something.
         if capability.internal:
             continue
-        on = enabled(capability.id) if enabled else True
+        # A required capability is on regardless of what the store says --
+        # including an Aworg whose owner switched Filesystem off before it
+        # stopped being switchable.
+        on = True if capability.required else (enabled(capability.id) if enabled else True)
         tools = [
             {"name": spec.name, "description": spec.description}
             for spec in capability.tools
@@ -164,6 +167,9 @@ def capabilities(
             "detail": capability.description,
             "state": "ok" if on else "off",
             "enabled": on,
+            #: No switch. The interface shows what it is and what it costs,
+            #: and offers nothing to press -- see Capability.required.
+            "required": capability.required,
             "builtin": capability.builtin,
             "tools": tools,
             # What offering this costs on every request, whether or not the

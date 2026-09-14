@@ -40,6 +40,7 @@ class Capability:
         path: Path,
         builtin: bool = True,
         internal: bool = False,
+        required: bool = False,
     ):
         self.id = identifier
         self.label = label
@@ -56,6 +57,30 @@ class Capability:
         #: owner turning it off would be disabling machinery rather than
         #: reach -- the things it exposes are configured elsewhere.
         self.internal = internal
+        #: Shown, priced, and not switchable. The third state, and it exists
+        #: because two were not enough.
+        #:
+        #: Filesystem had a switch, and the switch was worse than useless.
+        #: Turning it off does not stop a Resident manipulating files -- with
+        #: Shell still on it falls back to Get-Content and Set-Content, doing
+        #: the same work unnamed and in a shell string. Turn both off and
+        #: what is left cannot read, write or run anything: an Aworg that
+        #: talks and plans and never touches the machine it lives on.
+        #:
+        #: So the control offered a choice between working and not working,
+        #: dressed as a safety decision. A control that looks meaningful and
+        #: is not is worse than no control at all.
+        #:
+        #: Not internal, though, and the difference matters. Internal means
+        #: machinery the owner has no business seeing here; this is reach the
+        #: owner should absolutely see, and should see the price of, because
+        #: it rides along with every message. They simply should not be
+        #: handed a switch that breaks their Aworg.
+        #:
+        #: Shell and HTTP stay switchable, because those switches mean
+        #: something: Shell off is a real posture -- writes files, runs
+        #: nothing -- and HTTP off is degraded rather than broken.
+        self.required = required
         self.tools: list[ToolSpec] = []
         #: Recorded per tool file that would not parse, so the pane can say
         #: which one and why instead of the tool merely being absent.
@@ -96,6 +121,7 @@ class Registry:
             description=meta.get("DESCRIPTION", ""),
             path=folder,
             internal=bool(meta.get("INTERNAL")),
+            required=bool(meta.get("REQUIRED")),
         )
         for file in sorted(folder.glob("*.py")):
             if file.name in SKIP or file.name.startswith("_"):
@@ -153,7 +179,14 @@ class Registry:
             # about -- there is nowhere in the interface to have turned one
             # off, and treating an absent answer as "disabled" would make
             # delegation vanish silently.
-            if not capability.internal and not self.is_enabled(capability.id):
+            # Required ones are never asked about either. There is no
+            # switch to have turned off, and an absent answer read as
+            # "disabled" would take the filesystem away silently.
+            if (
+                not capability.internal
+                and not capability.required
+                and not self.is_enabled(capability.id)
+            ):
                 continue
             for spec in capability.tools:
                 if wanted is None or spec.name in wanted or capability.id in wanted:

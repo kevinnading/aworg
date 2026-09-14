@@ -757,8 +757,20 @@ def create_app(paths: Paths, address: str = "http://127.0.0.1:8420") -> FastAPI:
         Takes effect on the next tool call rather than the next restart,
         because the registry asks the store on every use.
         """
-        if resident.registry.get_capability(capability_id) is None:
+        existing = resident.registry.get_capability(capability_id)
+        if existing is None:
             raise HTTPException(404, f"No capability called {capability_id!r}")
+        # The interface offers no switch for these, so reaching here means
+        # something other than the interface asked. Refused rather than
+        # quietly ignored: the registry would override the stored value
+        # anyway, and a request that appears to succeed while changing
+        # nothing is the worst of the three possible answers.
+        if existing.required and not body.enabled:
+            raise HTTPException(
+                409,
+                f"{existing.label} cannot be switched off. Without it your "
+                "Resident could not read or write a single file.",
+            )
         store.set_capability_enabled(capability_id, body.enabled)
         # An owner decision that changes what the Resident can do. Worth
         # keeping precisely because it is invisible afterwards: a Resident

@@ -1800,6 +1800,21 @@ body.resizing.row * { cursor: row-resize !important; }
 }
 .capability-toggle:hover { border-color: var(--accent); color: var(--text); }
 
+/* Where the switch would be, on a capability that has none. Deliberately not
+   a disabled toggle: a greyed-out control asks the owner to work out why
+   they cannot press it, where a word tells them there was never a decision
+   here. No border either, so it does not read as a button at all. */
+.capability-fixed {
+  flex: none;
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 1px 7px;
+  color: var(--muted);
+  opacity: 0.8;
+  white-space: nowrap;
+}
+
 .capability-tools { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
 
 /* Tools are named rather than counted. "3 tools" tells an owner nothing they

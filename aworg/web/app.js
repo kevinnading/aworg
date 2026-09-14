@@ -2201,15 +2201,29 @@ function capabilityRow(item) {
   name.className = "pane-item-name";
   name.textContent = item.name;
 
-  const toggle = document.createElement("button");
-  toggle.type = "button";
-  toggle.className = "capability-toggle";
-  toggle.setAttribute("aria-pressed", String(item.enabled));
-  toggle.textContent = item.enabled ? "On" : "Off";
-  toggle.title = item.enabled
-    ? `Turn ${item.name} off. Its tools disappear from the Resident immediately.`
-    : `Turn ${item.name} back on.`;
-  toggle.onclick = () => setCapability(item.id, !item.enabled);
+  // A required capability gets a label where the switch would be, not a
+  // disabled-looking switch. A greyed control invites the owner to work out
+  // why they cannot press it; a word tells them there was never a decision
+  // here. What it costs still shows, because that is information rather than
+  // a choice, and it is the half of this pane that still applies.
+  const control = document.createElement(item.required ? "span" : "button");
+  if (item.required) {
+    control.className = "capability-fixed";
+    control.textContent = "Always on";
+    control.title =
+      `${item.name} cannot be switched off. Without it your Resident could ` +
+      `not read or write a single file, which is most of what it is for.`;
+  } else {
+    control.type = "button";
+    control.className = "capability-toggle";
+    control.setAttribute("aria-pressed", String(item.enabled));
+    control.textContent = item.enabled ? "On" : "Off";
+    control.title = item.enabled
+      ? `Turn ${item.name} off. Its tools disappear from the Resident immediately.`
+      : `Turn ${item.name} back on.`;
+    control.onclick = () => setCapability(item.id, !item.enabled);
+  }
+  const toggle = control;
 
   // What it costs to leave switched on. Tool schemas ride along with every
   // single request, so an owner who enables everything and forgets is paying
