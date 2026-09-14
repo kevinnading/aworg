@@ -70,6 +70,28 @@ class Paths:
         return self.home / "logs"
 
     @property
+    def trash(self) -> Path:
+        """Where deleted things go instead of ceasing to exist.
+
+        Deleting is the one file operation with no way back, and History
+        and Reversibility -- the part of the spec that would provide one --
+        are deliberately not built yet. A Resident that can permanently
+        destroy an owner's work in a product with no undo anywhere is not
+        a trade worth making for the sake of freeing disk.
+
+        So delete_file moves things here, one folder per deletion, each
+        holding what was deleted and a note of where it came from. That is
+        enough to put it back, which is what makes this a down payment on
+        Reversibility rather than a bin nobody can reach into.
+
+        Outside the workspace on purpose. What is in the workspace is what
+        the Resident is building; a trash folder among it would be
+        something the Resident has to be told to ignore, and would land in
+        any snapshot taken of the work.
+        """
+        return self.home / "trash"
+
+    @property
     def skills(self) -> Path:
         """Procedures this Aworg knows, beyond the ones it shipped with.
 
@@ -95,6 +117,7 @@ class Paths:
         self.home.mkdir(parents=True, exist_ok=True)
         self.workspace.mkdir(exist_ok=True)
         self.logs.mkdir(exist_ok=True)
+        self.trash.mkdir(exist_ok=True)
         self.skills.mkdir(exist_ok=True)
         self.personas.mkdir(exist_ok=True)
         return self
