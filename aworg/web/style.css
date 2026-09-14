@@ -1072,7 +1072,30 @@ body.has-maximised-pane .resizer { pointer-events: none; }
   border: 1px solid var(--line);
   border-radius: 8px;
   margin-bottom: 16px;
+  /* So a file dragged over it has somewhere to land that is visibly a
+     target, rather than the owner guessing whether this pane takes drops. */
+  transition: border-color 120ms ease, background 120ms ease;
 }
+
+/* Carrying a file. Dashed rather than merely tinted: a dashed edge is the one
+   border style nothing else in this interface uses, so it cannot be mistaken
+   for a pane that happens to be focused. */
+.files.dropping {
+  border-style: dashed;
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+}
+
+/* What just happened to the workspace. Sits between the crumbs and the
+   listing, where the thing it is about is. */
+.workspace-note {
+  flex: none;
+  margin: 0 0 8px;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--accent);
+}
+.workspace-note.problem { color: var(--warn); }
 
 .file {
   display: grid;

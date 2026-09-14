@@ -1287,6 +1287,112 @@ def create_app(paths: Paths, address: str = "http://127.0.0.1:8420") -> FastAPI:
             "root": str(root),
         }
 
+    #: The largest single file an owner may drop in.
+    #:
+    #: Bounded because a browser will cheerfully offer a four-gigabyte video
+    #: and the stream is written straight to disk. Generous enough for what
+    #: this is actually for: a logo, a spreadsheet, a spec, a sample database
+    #: the Resident is meant to work from.
+    MAX_UPLOAD_BYTES = 100 * 1024 * 1024
+
+    def _safe_name(raw: str) -> str:
+        """A filename that cannot be a path.
+
+        Only the last component survives, so `../../.ssh/authorized_keys`
+        becomes `authorized_keys` and lands where the owner was looking. The
+        containment check on the folder is the real boundary; this is what
+        stops a name being a path at all.
+        """
+        name = (raw or "").replace("\\", "/").split("/")[-1].strip()
+        # Control characters and the Windows-reserved set, which would make a
+        # file that cannot be opened or, worse, one whose name is a stream.
+        name = "".join(c for c in name if c.isprintable() and c not in '<>:"|?*')
+        return name.strip(". ")[:120]
+
+    def _free_name(folder: Path, name: str) -> Path:
+        """A path that does not exist yet, near the name that was asked for.
+
+        Never overwrites. The Resident's files and the owner's drops share one
+        directory, and silently replacing something a worker spent its whole
+        context writing is not a cost worth paying to save the owner a rename.
+        The interface says which name it actually got.
+        """
+        target = folder / name
+        if not target.exists():
+            return target
+        stem, dot, suffix = name.partition(".")
+        for n in range(2, 1000):
+            candidate = folder / f"{stem} ({n}){dot}{suffix}"
+            if not candidate.exists():
+                return candidate
+        raise HTTPException(409, "There are too many files by that name already.")
+
+    @app.post("/api/workspace/upload")
+    async def upload_to_workspace(
+        request: Request, path: str = "", name: str = ""
+    ) -> dict[str, Any]:
+        """Take a file the owner dropped onto the Living Workspace.
+
+        **The raw body carries the file, not a multipart form.** That is a
+        dependency decision rather than a stylistic one: FastAPI's UploadFile
+        needs python-multipart, which would be a fourth dependency for
+        something a browser can already express as a POST with bytes in it.
+        One request per file, and the name rides in the query string.
+
+        Streamed to disk rather than read whole, so the cap is enforced as it
+        arrives instead of after the machine has already held all of it.
+
+        Written under a dotted temporary name and moved into place at the end.
+        The workspace is polled every second by the owner's own interface and
+        read by the Resident, and a half-written file that appears in either as
+        though it were finished is a file somebody acts on too early.
+        """
+        root = paths.workspace.resolve()
+        folder = (root / path).resolve() if path else root
+        if folder != root and root not in folder.parents:
+            raise HTTPException(400, "Outside the Living Workspace")
+        if not folder.is_dir():
+            raise HTTPException(404, "No such directory")
+
+        safe = _safe_name(name)
+        if not safe:
+            raise HTTPException(400, "That file needs a name.")
+
+        target = _free_name(folder, safe)
+        partial = folder / f".{target.name}.part"
+        written = 0
+        try:
+            with partial.open("wb") as handle:
+                async for chunk in request.stream():
+                    written += len(chunk)
+                    if written > MAX_UPLOAD_BYTES:
+                        raise HTTPException(
+                            413,
+                            "That file is larger than "
+                            f"{MAX_UPLOAD_BYTES // (1024 * 1024)} MB.",
+                        )
+                    handle.write(chunk)
+            partial.replace(target)
+        except HTTPException:
+            partial.unlink(missing_ok=True)
+            raise
+        except OSError as exc:
+            partial.unlink(missing_ok=True)
+            raise HTTPException(500, f"It could not be written: {exc}") from None
+
+        # So the Resident finds out. An owner who drops a spec into the
+        # workspace and says nothing has still told it something, and without
+        # this the file sits there until somebody mentions it in conversation.
+        where = target.relative_to(root).as_posix()
+        resident.journal.record(
+            f"You added {target.name}",
+            kind="workspace",
+            source="owner",
+            detail=f"Dropped into the Living Workspace at {where}, {written:,} bytes.",
+        )
+
+        return {"name": target.name, "path": where, "size": written}
+
     #: Ports a served application is most likely to be on. Guessing is
     #: acceptable here in a way it is not elsewhere, because being wrong
     #: costs a preview that does not appear rather than a false claim -- and

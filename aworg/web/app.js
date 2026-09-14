@@ -1466,6 +1466,9 @@ function buildPanes() {
   // what stops a capability toggle wiping the running Activities list.
   paintActivities();
   paintWorkers();
+  // The listing is cloned fresh from its template here, so the drop handlers
+  // have to be put back on the copy that is actually in the page.
+  wireWorkspaceDrop();
 }
 
 /* ---------- Activities ---------- */
@@ -2986,8 +2989,127 @@ function startWorkspaceWatch() {
     // application every two seconds and throw away whatever the owner had
     // scrolled to.
     loadPreview();
-  }, 2000);
+  }, 1000);
   el("workspace-live").hidden = false;
+}
+
+/* Files the owner drops onto the listing.
+ *
+ * The workspace is the Resident's territory, but the owner has things it
+ * needs -- a logo, a spreadsheet, the spec they were describing in words. The
+ * alternative is telling someone to open a file manager and find a path,
+ * which is precisely the kind of thing they installed an Aworg to stop doing.
+ *
+ * Wired from buildPanes rather than once at boot: #files lives in a template
+ * that is cloned each time the panes are assembled, so handlers attached to
+ * an earlier copy are attached to an element no longer in the page.
+ */
+function wireWorkspaceDrop() {
+  const zone = el("files");
+  if (!zone || zone.dataset.dropWired) return;
+  zone.dataset.dropWired = "1";
+
+  // Both are needed and neither is optional: without preventDefault on
+  // dragover the browser refuses the drop, and without it on drop the browser
+  // navigates away to the file instead, throwing the page away.
+  zone.addEventListener("dragover", (event) => {
+    if (!event.dataTransfer.types.includes("Files")) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+    zone.classList.add("dropping");
+  });
+  // dragleave fires when crossing onto a child, so the pointer position is
+  // checked rather than trusted -- otherwise the highlight flickers off every
+  // time the cursor passes over a row.
+  zone.addEventListener("dragleave", (event) => {
+    if (zone.contains(event.relatedTarget)) return;
+    zone.classList.remove("dropping");
+  });
+  zone.addEventListener("drop", async (event) => {
+    if (!event.dataTransfer.types.includes("Files")) return;
+    event.preventDefault();
+    zone.classList.remove("dropping");
+    await acceptDrop([...event.dataTransfer.items], event.dataTransfer.files);
+  });
+}
+
+async function acceptDrop(items, files) {
+  // A dropped folder arrives as one entry with an empty type and no usable
+  // bytes. Uploading it would silently write a zero-byte file named after the
+  // directory, so it is refused by name instead -- an owner told "folders are
+  // not supported yet" can zip it; one given an empty file finds out later.
+  const folders = items
+    .map((item) => (item.webkitGetAsEntry ? item.webkitGetAsEntry() : null))
+    .filter((entry) => entry && entry.isDirectory)
+    .map((entry) => entry.name);
+
+  const sent = [];
+  for (const file of files) {
+    if (folders.includes(file.name)) continue;
+    try {
+      const result = await uploadFile(file);
+      sent.push(result.name);
+    } catch (error) {
+      workspaceNote(`${file.name} was not added — ${error.message}`, true);
+      break;
+    }
+  }
+
+  if (folders.length) {
+    workspaceNote(
+      `Folders cannot be dropped yet — ${folders.join(", ")} ${
+        folders.length === 1 ? "was" : "were"
+      } skipped. Add it as a zip and ask your Resident to unpack it.`,
+      true,
+    );
+  } else if (sent.length) {
+    // Named, because _free_name may have renamed it around something the
+    // Resident already had there, and an owner who is not told will look for
+    // the name they dropped.
+    workspaceNote(`Added ${sent.join(", ")}.`);
+  }
+
+  // Straight away rather than on the next tick: the owner just did something
+  // and should see it land.
+  app.workspaceSignature = null;
+  loadWorkspace();
+}
+
+async function uploadFile(file) {
+  const query = new URLSearchParams({
+    path: app.workspacePath || "",
+    name: file.name,
+  });
+  const response = await fetch(`/api/workspace/upload?${query}`, {
+    method: "POST",
+    // The file itself, with no form around it. The server reads the stream.
+    body: file,
+  });
+  if (!response.ok) {
+    let detail = `the server said ${response.status}`;
+    try {
+      detail = (await response.json()).detail || detail;
+    } catch (_) {
+      /* a non-JSON error body is still an error; the status will do */
+    }
+    throw new Error(detail);
+  }
+  return response.json();
+}
+
+/* One line under the crumbs, for something that just happened to the
+ * workspace. Cleared on a timer because it reports an event, not a state --
+ * a message that outlives what it describes becomes furniture. */
+function workspaceNote(text, isProblem = false) {
+  const note = el("workspace-note");
+  if (!note) return;
+  note.textContent = text;
+  note.classList.toggle("problem", isProblem);
+  note.hidden = false;
+  clearTimeout(app.workspaceNoteTimer);
+  app.workspaceNoteTimer = setTimeout(() => {
+    note.hidden = true;
+  }, isProblem ? 9000 : 4000);
 }
 
 function stopWorkspaceWatch() {
