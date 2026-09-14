@@ -174,6 +174,29 @@ def _default_shell() -> str:
     return os.environ.get("SHELL") or ("bash" if found.get("bash") else "sh")
 
 
+def _aworg_version() -> str:
+    """Which AWORG this is.
+
+    Worth telling the Resident, and the reason is particular to this project
+    being open source. Once AWORG's own source is in a model's training data,
+    a Resident that knows it is running 0.4.2 can draw on whatever it learned
+    about 0.4.2 -- its tools, its conventions, the shape of its APIs. A
+    Resident told nothing has to discover all of that from the inside every
+    time.
+
+    It pairs with something the standing instructions already say. They warn
+    that training stopped at some point and that the gap cannot be felt from
+    within; a version the Resident either recognises or does not is the first
+    piece of evidence it has ever been given about the size of that gap.
+
+    Imported here rather than at module scope so that host.py does not drag
+    the package __init__ in behind it.
+    """
+    from . import __version__
+
+    return __version__
+
+
 def observe() -> dict[str, Any]:
     """Everything AWORG reports about where it is, right now.
 
@@ -218,6 +241,12 @@ def observe() -> dict[str, Any]:
         "memory_available": available_memory,
         "disk_free": disk_free,
         "disk_total": disk_total,
+        #: Which AWORG this is. Not a machine reading, and here anyway: it is
+        #: a fact about the installation, it belongs with the interpreter it
+        #: runs on, and /api/host is where anything asking "what is this"
+        #: already looks. Imported inside the call to keep aworg/__init__ off
+        #: this module's import path.
+        "aworg": _aworg_version(),
         "python": platform.python_version(),
         "python_executable": sys.executable,
         #: Gathered, never shown. execute_command and start_process read it
@@ -282,6 +311,7 @@ def environment(facts: dict[str, Any], workspace: Any = None) -> list[tuple[str,
     # that never have, so they trail. This matters twice over -- it is the
     # order a model reads, and it decides what falls below the fold in a pane
     # the owner has not dragged taller.
+    pairs.append(("AWORG", f"version {facts.get('aworg', 'unknown')}"))
     pairs.append(("Python", f"{facts['python']} at {facts['python_executable']}"))
     pairs.append(("Machine", f"{facts['os']} {facts['release']} ({facts['version']})"))
     pairs.append((

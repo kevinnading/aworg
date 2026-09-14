@@ -26,6 +26,7 @@ from fastapi.responses import Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from . import __version__
 from .models import CAPABILITY_TAGS, PROVIDER_LABELS, ModelError, build_adapter
 from .paths import Paths
 from .journal import Journal
@@ -327,7 +328,7 @@ def create_app(paths: Paths, address: str = "http://127.0.0.1:8420") -> FastAPI:
         model = (connection or {}).get("model") or "no model connected"
         return f"On {machine}, with {model}."
 
-    app = FastAPI(title="AWORG", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(title="AWORG", version=__version__, lifespan=lifespan)
 
     def present(connection: dict[str, Any]) -> dict[str, Any]:
         """Shape a connection for the owner interface.
