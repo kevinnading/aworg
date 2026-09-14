@@ -3072,30 +3072,47 @@ async function acceptDrop(items, files) {
     .filter((entry) => entry && entry.isDirectory)
     .map((entry) => entry.name);
 
+  // Every file is attempted, and one failing does not stop the rest. An
+  // owner who drags in a folder's worth of material and has the third item
+  // rejected should not silently lose the other seven -- they would have no
+  // way of telling which landed except by counting the listing.
+  //
+  // Sequential rather than in parallel on purpose: the server picks a free
+  // name by looking for one, so two uploads of the same name racing each
+  // other could both decide on "notes (2).md".
   const sent = [];
+  const failed = [];
   for (const file of files) {
     if (folders.includes(file.name)) continue;
     try {
       const result = await uploadFile(file);
       sent.push(result.name);
     } catch (error) {
-      workspaceNote(`${file.name} was not added — ${error.message}`, true);
-      break;
+      failed.push(`${file.name} (${error.message})`);
     }
   }
 
+  // One note covering everything that happened, because they can happen
+  // together. Composed rather than branched: an earlier version wrote the
+  // failure and then overwrote it with the success, so a drop where one file
+  // failed and another worked reported only the good news.
+  const parts = [];
+  if (sent.length) {
+    // Named, because the server may have renamed one around something the
+    // Resident already had there, and an owner who is not told will go
+    // looking for the name they dropped.
+    parts.push(`Added ${sent.join(", ")}.`);
+  }
+  if (failed.length) parts.push(`Not added: ${failed.join("; ")}.`);
   if (folders.length) {
-    workspaceNote(
-      `Folders cannot be dropped yet — ${folders.join(", ")} ${
+    parts.push(
+      `Folders cannot be dropped yet, so ${folders.join(", ")} ${
         folders.length === 1 ? "was" : "were"
-      } skipped. Add it as a zip and ask your Resident to unpack it.`,
-      true,
+      } skipped — add it as a zip and ask your Resident to unpack it.`,
     );
-  } else if (sent.length) {
-    // Named, because _free_name may have renamed it around something the
-    // Resident already had there, and an owner who is not told will look for
-    // the name they dropped.
-    workspaceNote(`Added ${sent.join(", ")}.`);
+  }
+  if (parts.length) {
+    workspaceNote(parts.join(" "), failed.length > 0 || folders.length > 0);
   }
 
   // Straight away rather than on the next tick: the owner just did something

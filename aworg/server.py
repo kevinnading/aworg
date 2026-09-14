@@ -1360,7 +1360,12 @@ def create_app(paths: Paths, address: str = "http://127.0.0.1:8420") -> FastAPI:
             raise HTTPException(400, "That file needs a name.")
 
         target = _free_name(folder, safe)
-        partial = folder / f".{target.name}.part"
+        # Unique per request, not per target name. Two uploads of the same
+        # filename arriving together both find the same free name -- the
+        # interface sends them one at a time so this does not happen from one
+        # tab, but two tabs or anything scripted would, and a shared partial
+        # would have them writing into each other's file.
+        partial = folder / f".{target.name}.{secrets_module.token_hex(4)}.part"
         written = 0
         try:
             with partial.open("wb") as handle:
