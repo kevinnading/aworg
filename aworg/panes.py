@@ -22,6 +22,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from . import host
+
 
 #: Every pane in the status column, top to bottom.
 #:
@@ -88,9 +90,13 @@ PANES: list[dict[str, Any]] = [
         "blocked": None,
     },
     {
-        "id": "system",
-        "label": "System",
-        "hint": "Where this Aworg is, and what is on this machine.",
+        "id": "environment",
+        "label": "Environment",
+        # Named for what it holds rather than for half of it. "System"
+        # covers the machine and says nothing about the workspace, the
+        # interpreter or the shell -- which are the items here that have
+        # actually changed what a Resident did.
+        "hint": "Where this Aworg is, and what it has to work with -- the same facts the Resident is given.",
         "available": True,
         "empty": ("Nothing observed.", ""),
         "blocked": None,
@@ -129,7 +135,7 @@ def capabilities(
     are two halves of one question. They are -- but they are also two
     different *kinds* of thing, one the owner decides and one the owner
     merely learns, and mixing them made the pane hard to scan and gave the
-    switches somewhere to hide. The facts now live in System.
+    switches somewhere to hide. The facts now live in Environment.
 
     Each Capability carries what it costs. Tool schemas are sent on every
     single request, and the Resident's five capabilities came to more tokens
@@ -202,15 +208,7 @@ def system(
     question, and two panes counting the same files is two panes that can
     disagree.
     """
-    items: list[dict[str, Any]] = []
-    if workspace:
-        items.append({
-            "kind": "fact",
-            "name": "Living Workspace",
-            "detail": str(workspace),
-            "state": "ok",
-        })
-    return items + _machine_facts(facts)
+    return _machine_facts(facts, workspace)
 
 
 #: Characters per token, matching Resident.CHARS_PER_TOKEN. Duplicated
@@ -241,32 +239,36 @@ def schema_tokens(specs: list[Any]) -> int:
     return int(len(payload) / CHARS_PER_TOKEN)
 
 
-def _machine_facts(facts: dict[str, Any]) -> list[dict[str, Any]]:
-    """What was observed about this machine, as items for the same pane."""
-    elevated = facts["elevated"]
-    privilege = (
-        ("Elevated", "Running with root or administrator rights.")
-        if elevated
-        else ("Not elevated", "Anything needing root or administrator will fail.")
-        if elevated is False
-        else ("Privilege unknown", "AWORG could not determine what it is allowed to do.")
-    )
-    items = [
-        {"kind": "fact", "name": f"{facts['os']} {facts['release']}",
-         "detail": f"{facts['arch']}, {facts['cpus']} CPUs", "state": "fact"},
-        {"kind": "fact", "name": f"Running as {facts['user']}",
-         "detail": privilege[1], "state": "ok" if elevated else "warn"},
-        {"kind": "fact", "name": privilege[0],
-         "detail": f"on {facts['hostname']}", "state": "hidden"},
+def _machine_facts(facts: dict[str, Any], workspace: Any = None) -> list[dict[str, Any]]:
+    """The environment, exactly as the Resident is given it.
+
+    Built from host.environment rather than assembled here, and that is the
+    point of the pane. An owner looking at this is looking at the Resident's
+    own briefing, item for item and in the same order -- so when it does
+    something that makes no sense, they can see whether it was told something
+    wrong or understood something wrong.
+
+    A second rendering of the same facts would drift, and a pane that drifts
+    from the prompt is worse than no pane: it would let an owner rule out a
+    cause that was in fact the cause.
+    """
+    elevated = facts.get("elevated")
+    # Only one of these is a condition rather than a reading. Not being
+    # elevated is not a fault -- most Aworgs should not be -- but it is the
+    # line that explains a whole class of refusals, so it is marked.
+    states = {
+        "Privileges": "ok" if elevated else "warn" if elevated is False else "warn",
+        "Address": "ok" if facts.get("ip") else "warn",
+    }
+    return [
+        {
+            "kind": "fact",
+            "name": label,
+            "detail": value,
+            "state": states.get(label, "fact"),
+        }
+        for label, value in host.environment(facts, workspace)
     ]
-    if facts["package_manager"]:
-        items.append({"kind": "fact", "name": f"{facts['package_manager']} available",
-                      "detail": "System packages can be installed.", "state": "ok"})
-    else:
-        items.append({"kind": "fact", "name": "No system package manager",
-                      "detail": "Nothing on PATH to install system packages with.",
-                      "state": "warn"})
-    return [item for item in items if item["state"] != "hidden"]
 
 
 def workers(crew: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -401,7 +403,7 @@ def describe(
         items: list[dict[str, Any]] = []
         if pane["id"] == "capabilities":
             items = capabilities(facts or {}, registry, enabled)
-        elif pane["id"] == "system" and facts:
+        elif pane["id"] == "environment" and facts:
             items = system(facts, workspace=workspace)
         elif pane["id"] == "workers" and crew:
             items = workers(crew)

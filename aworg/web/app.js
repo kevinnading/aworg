@@ -115,7 +115,7 @@ const PANES_EVERY = 2500;
 //: Panes painted from the /api/panes payload. The others -- Activities,
 //: Workers, the preview, the workspace -- draw themselves from their own
 //: live sources and must not be repainted from a snapshot.
-const POLLED_PANES = ["tasks", "skills", "capabilities", "system"];
+const POLLED_PANES = ["tasks", "skills", "capabilities", "environment"];
 
 async function startPanes() {
   setInterval(refreshPanes, PANES_EVERY);
@@ -1430,7 +1430,7 @@ const REGIONS = [
   // System first: what this machine *is* frames what any capability could
   // do on it, and it is read once rather than worked in. Capabilities and
   // Skills sit below it, where the owner reaches for them deliberately.
-  { id: "faculties", element: "faculties", axis: "column", panes: ["system", "capabilities", "skills"] },
+  { id: "faculties", element: "faculties", axis: "column", panes: ["environment", "capabilities", "skills"] },
   // Lifecycle is not a pane any more. It lives inside the preview, under the
   // picture, because all six of its stages describe the thing in the picture.
   { id: "side", element: "side", axis: "column", panes: ["preview", "workspace"] },
@@ -2141,15 +2141,28 @@ function openResolver(row, item) {
   field.focus();
 }
 
+/* One observed fact: a label and its reading.
+ *
+ * Laid out as a pair on one line rather than stacked, because that is what
+ * these are. The stacked form is right for a Capability, where the detail is
+ * a sentence explaining a switch; here the detail is `AMD64` or `12 CPUs`,
+ * and giving it its own line cost the pane four hundred pixels to say ten
+ * short things. A label beside its value also reads as a spec sheet, which
+ * is the correct impression: these are readings, not entries.
+ */
 function factRow(item) {
   const row = document.createElement("div");
-  row.className = `pane-item ${item.state || ""}`;
+  row.className = `pane-item fact ${item.state || ""}`;
   const name = document.createElement("span");
   name.className = "pane-item-name";
   name.textContent = item.name;
   const detail = document.createElement("span");
   detail.className = "pane-item-detail";
   detail.textContent = item.detail || "";
+  // The whole reading, for the ones that are too long for the column -- a
+  // truncated path is worse than no path, and this pane exists so the owner
+  // can check what their Resident was told.
+  detail.title = item.detail || "";
   row.append(name, detail);
   return row;
 }

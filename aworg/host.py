@@ -1,27 +1,35 @@
-"""What AWORG can observe about the machine it lives on.
+"""Where AWORG is, as observed rather than assumed.
 
-A Resident that installs things has to know what it is installing onto. Which
-package manager exists, whether it can elevate, what is already present, how
-much disk there is to use. Without that it guesses, and a guess about a host
-is a command that fails in a way the owner has to interpret.
+A Resident acting on a machine has to know what it is acting on -- where its
+work lands, what interpreter will actually run, whether it can elevate.
+Without that it guesses, and a guess about a host is a command that fails in
+a way the owner has to interpret.
 
-So the facts are gathered rather than assumed, and gathered from the machine
-rather than from the Resident's expectations of it.
+**The same eighteen facts go to both audiences, and that is the design.** The
+owner reads them in the Environment pane; the Resident reads them in its
+prompt. An owner who can see exactly what their Resident was told can tell a
+mistake from a misunderstanding, and learns over time what the thing living
+on their machine is working with. Showing one of them less would make the
+other's picture unauditable.
 
-Everything here comes from the standard library. AWORG has four dependencies
-and adding a fifth to answer "how much memory is there" would be a poor
-trade; the two facts the stdlib will not give portably -- total memory, and
-whether we are elevated -- are small enough to reach for directly. Measured
-at about 700ms in total, most of it spent proving that the placeholder
-programs Windows puts on PATH will not actually run (see _is_stub). Done at
-startup rather than once at install: a machine surveyed at install time is
-wrong the first time its owner installs anything.
+That shared audience is also what keeps the list short. There is no longer
+anywhere to hide a fact nobody reads: anything here is on screen and in every
+prompt, so it has to earn both. The test applied was whether a fact has ever
+changed what a Resident did. Capacity figures and a hostname never have; the
+workspace, the interpreter and the shell demonstrably have.
 
-Startup is not enough either. An Aworg is started once and then runs for
-weeks -- that is the point of it -- so facts gathered at boot are stale by
-the second day. They are re-gathered whenever they are older than a few
-hours, which costs about two-thirds of a second somewhere between one
-owner's message and the next.
+Everything comes from the standard library. The two facts stdlib will not
+give portably -- total memory, and whether we are elevated -- are reached for
+with ctypes, which is also stdlib, so the cost is a platform branch rather
+than a dependency. Both together take about 2ms; the whole observation takes
+about 80ms, down from 550-640ms when it was also scanning PATH for forty
+named programs and running the ones that looked like Windows stubs.
+
+Done at startup rather than once at install: a machine surveyed at install
+time is wrong the first time its owner installs anything. Startup is not
+enough either -- an Aworg is started once and then runs for weeks, which is
+the point of it -- so the facts are re-gathered whenever they are older than
+a few hours.
 
 Nothing here is a boundary. AWORG runs with exactly the privileges of the
 account that started it -- run it as yourself and it is you, run it as root
@@ -36,7 +44,6 @@ import time
 import os
 import platform
 import shutil
-import subprocess
 import socket
 import sys
 from typing import Any
@@ -49,115 +56,38 @@ from typing import Any
 STALE_AFTER = 3 * 60 * 60
 
 
-#: Programs worth knowing about before planning any work.
-#:
-#: Presence is not the same as usability, and this list no longer pretends
-#: otherwise: anything found here that turns out to be a placeholder is
-#: reported separately as a stub. Leaving that to the Resident to discover
-#: was the old approach and it does not survive contact with a small model --
-#: see _is_stub.
-KNOWN_TOOLS = [
-    # version control and fetching
-    "git", "curl", "wget",
-    # runtimes
-    "python3", "python", "node", "deno", "bun", "go", "cargo", "java", "ruby", "php",
-    # package managers for those runtimes
-    "npm", "pnpm", "yarn", "pip", "uv", "poetry",
-    # building
-    "make", "cmake", "gcc", "clang", "msbuild",
-    # containers and services
-    "docker", "podman", "systemctl", "sc",
-    # data
-    "sqlite3", "psql", "mysql", "redis-cli",
-    # shells
-    "bash", "zsh", "fish", "pwsh", "powershell",
-    # elevation
-    "sudo", "doas",
-    # hardware
-    "nvidia-smi",
-]
-
-#: System package managers, in the order they should be preferred when a
-#: machine has more than one. The first match is the one to reach for.
-PACKAGE_MANAGERS = [
-    ("apt-get", "apt"),
-    ("dnf", "dnf"),
-    ("yum", "yum"),
-    ("pacman", "pacman"),
-    ("zypper", "zypper"),
-    ("apk", "apk"),
-    ("brew", "brew"),
-    ("winget", "winget"),
-    ("choco", "choco"),
-    ("scoop", "scoop"),
-]
+#: Where a route probe is aimed. RFC 5737 TEST-NET-1: reserved for
+#: documentation, guaranteed never routed, and nobody's real address -- so
+#: nothing here needs explaining to somebody reading the source and wondering
+#: why their Aworg is touching a public DNS server.
+_ROUTE_PROBE = "192.0.2.1"
 
 
-def _is_stub(path: str) -> bool:
-    """Whether something on PATH is a placeholder that will not run.
+def _ip() -> str | None:
+    """The address another machine on this network would reach here at.
 
-    Windows ships "app execution aliases" in WindowsApps: zero-byte reparse
-    points that exist so that typing `python` at an interactive prompt opens
-    the Microsoft Store. Launched any other way they fail with "Python was
-    not found", which reads like Python is missing on a machine that has
-    three of them.
+    A routing-table lookup wearing a socket. UDP connect() sends no datagram
+    -- it only asks the kernel which interface would carry traffic to that
+    address and binds the local side to it. Nothing reaches the wire, so a
+    packet filter has nothing to filter and this works behind a firewall.
 
-    This is worth detecting rather than leaving to the Resident to discover.
-    Observed live: told `python` was on PATH, a 9B spent its entire round
-    budget hunting for an interpreter -- `python --version`, `python3
-    --version`, `where python`, searching Program Files -- and never wrote
-    the answer it had been asked for. The facts said the tool was there. The
-    facts were wrong, and being wrong about the machine is the one thing
-    AWORG owes the owner not to be.
+    AWORG binds 127.0.0.1, so this is the fact that tells an owner their
+    application could be opened from their phone. It is also the only part of
+    the block that can be wrong in an interesting way: a VPN changes it, and a
+    machine with several interfaces has several answers and this returns the
+    one the default route prefers.
 
-    Not a translation of the environment: nothing here rewrites a command or
-    substitutes an interpreter. It only stops AWORG claiming something is
-    available when it is not.
-
-    Two steps, because the cheap test alone is wrong. Every one of these
-    aliases is a zero-byte reparse point, including the ones that work --
-    `winget` on this machine is exactly that shape and answers `v1.29.290`
-    quite happily. So the file test only narrows the field, and each
-    candidate is then actually run. A broken alias exits 9009, the shell's
-    "command not found"; anything that gets far enough to return any other
-    code has really executed and is not a stub.
-
-    Only the candidates are run, which is typically two or three programs out
-    of the twenty-odd looked for. Running all of them to find out would cost
-    more than the whole rest of the observation.
+    None when there is no route at all, which is the honest answer for a
+    machine with nothing connected.
     """
-    if sys.platform != "win32":
-        return False
+    probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
-        stat = os.lstat(path)
+        probe.connect((_ROUTE_PROBE, 80))
+        return probe.getsockname()[0]
     except OSError:
-        return False
-    reparse = bool(getattr(stat, "st_file_attributes", 0) & _REPARSE_POINT)
-    if not (reparse and stat.st_size == 0):
-        return False
-
-    try:
-        result = subprocess.run(
-            [path, "--version"],
-            capture_output=True,
-            # A program that decides to wait for input would otherwise hang
-            # the observation, and with it the start of the Aworg.
-            stdin=subprocess.DEVNULL,
-            timeout=5,
-        )
-    except (OSError, subprocess.SubprocessError):
-        # It would not start at all, which is the thing being detected.
-        return True
-    return result.returncode == _COMMAND_NOT_FOUND
-
-
-#: FILE_ATTRIBUTE_REPARSE_POINT.
-_REPARSE_POINT = 0x400
-
-#: What cmd returns when the name resolved to nothing runnable. A program
-#: that does not understand `--version` returns its own error instead, which
-#: still means it ran.
-_COMMAND_NOT_FOUND = 9009
+        return None
+    finally:
+        probe.close()
 
 
 def _memory_bytes() -> tuple[int | None, int | None]:
@@ -214,54 +144,56 @@ def _elevated() -> bool | None:
         return None
 
 
-def _shell_version(shell: str) -> str | None:
-    """Which version of that shell, when knowing makes a difference.
+#: The only programs this module looks for, and it looks for them for one
+#: reason: to decide which shell a command runs through.
+#:
+#: There used to be forty, scanned to tell the Resident what was installed.
+#: That list was a whitelist, and the block it fed said "do not assume
+#: anything not listed is installed" -- so a machine with ffmpeg, dotnet, tar
+#: and ssh on PATH reported none of them and instructed the Resident to treat
+#: them as absent. A confident wrong answer, which is worse than no answer.
+#: Enumerating PATH outright finds a thousand executables in 16ms against the
+#: 248ms that whitelist cost, and when something needs to know whether a
+#: program exists it can ask then, about that program.
+_SHELL_CANDIDATES = ("pwsh", "powershell", "bash")
 
-    Only asked of PowerShell, and only because the answer changes what a
-    Resident should write: 5.1 and 7 differ on chaining and on what encoding
-    a redirect produces. Nothing else here is worth a subprocess.
+
+def _default_shell() -> str:
+    """The shell a command should be run through on this machine.
+
+    Not reported to anyone, and still gathered. execute_command and
+    start_process read the shell out of these facts rather than deciding for
+    themselves, so the shell chosen here and the shell commands actually run
+    through are the same one by construction.
     """
-    if shell not in ("powershell", "pwsh"):
-        return None
-    try:
-        found = subprocess.run(
-            [shell, "-NoProfile", "-NonInteractive", "-Command",
-             "$PSVersionTable.PSVersion.ToString()"],
-            capture_output=True, text=True, timeout=15,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return None
-    version = (found.stdout or "").strip()
-    return version or None
-
-
-def _default_shell(tools: dict[str, str]) -> str:
-    """The shell a command should be run through on this machine."""
+    found = {name: shutil.which(name) for name in _SHELL_CANDIDATES}
     if sys.platform == "win32":
-        # The newer one when it is there. This is now load-bearing rather
-        # than anticipatory: execute_command reads the shell out of these
-        # facts instead of deciding for itself, so the shell the Resident
-        # is told about and the shell its commands run through are the
-        # same one by construction. A fact block naming a different shell
-        # from the one running the commands would be worse than none.
-        if tools.get("pwsh"):
+        if found.get("pwsh"):
             return "pwsh"
-        return "powershell" if tools.get("powershell") else "cmd"
-    return os.environ.get("SHELL") or ("bash" if tools.get("bash") else "sh")
+        return "powershell" if found.get("powershell") else "cmd"
+    return os.environ.get("SHELL") or ("bash" if found.get("bash") else "sh")
 
 
 def observe() -> dict[str, Any]:
-    """Everything AWORG can see about its host, right now."""
-    # The package managers are scanned alongside the rest, or the search
-    # below would look for them in a set they were never in -- which is
-    # exactly what happened, reporting "no package manager" on a machine
-    # with winget on PATH.
-    wanted = KNOWN_TOOLS + [exe for exe, _ in PACKAGE_MANAGERS]
-    found = {name: path for name in wanted if (path := shutil.which(name))}
-    # Present on PATH and present in a useful sense are different things, and
-    # the difference is not academic: see _is_stub.
-    stubs = {name: path for name, path in found.items() if _is_stub(path)}
-    tools = {name: path for name, path in found.items() if name not in stubs}
+    """Everything AWORG reports about where it is, right now.
+
+    Eighteen fields, and the list was cut to them deliberately rather than
+    grown to them. The test each one had to pass was whether it has ever
+    changed what a Resident did -- not whether it was interesting, and not
+    whether it was cheap. Most of what used to be here was neither.
+
+    What went, and why it is not missed: the forty-name tool scan, because a
+    whitelist paired with "assume nothing else exists" is a confident wrong
+    answer; the stub detection, because it only ever corrected a claim that
+    scan made, and nothing advertises a broken `python` any more; the shell
+    version, because it cost a subprocess to tune advice that is better
+    delivered when a command actually fails; and the package manager, because
+    it matters only at the moment something is installed, which is the moment
+    to go and look.
+
+    Cost: about 80ms, against 550-640ms before. That figure is the reason the
+    second timestamp went too -- see is_stale.
+    """
     total_memory, available_memory = _memory_bytes()
 
     try:
@@ -270,8 +202,6 @@ def observe() -> dict[str, Any]:
     except OSError:
         disk_free = disk_total = None
 
-    shell = _default_shell(tools)
-
     return {
         "os": platform.system(),
         "release": platform.release(),
@@ -279,252 +209,139 @@ def observe() -> dict[str, Any]:
         "arch": platform.machine(),
         "hostname": socket.gethostname(),
         "user": os.environ.get("USER") or os.environ.get("USERNAME"),
+        #: What another machine on this network would reach this one at.
+        #: None when nothing is connected.
+        "ip": _ip(),
         "elevated": _elevated(),
         "cpus": os.cpu_count(),
         "memory_total": total_memory,
         "memory_available": available_memory,
         "disk_free": disk_free,
         "disk_total": disk_total,
-        "package_manager": next(
-            (label for exe, label in PACKAGE_MANAGERS if exe in tools), None
-        ),
-        "shell": shell,
-        "shell_version": _shell_version(shell),
         "python": platform.python_version(),
         "python_executable": sys.executable,
-        "tools": sorted(tools),
-        #: On PATH, and not usable. Kept apart from `tools` rather than
-        #: dropped, because "there is no python here" and "there is
-        #: something called python that will not run" lead to different
-        #: next steps.
-        "stubs": sorted(stubs),
-        #: When this was taken, so anything holding on to it can tell how
-        #: old it is -- and so the interface can say so rather than
-        #: presenting a week-old reading as though it were current.
+        #: Gathered, never shown. execute_command and start_process read it
+        #: to decide what to invoke; see _default_shell.
+        "shell": _default_shell(),
+        #: When this was taken, so anything holding on to it can tell how old
+        #: it is -- and so the interface can say so rather than presenting a
+        #: week-old reading as though it were current.
         "observed_at": time.time(),
-        "observed_monotonic": time.monotonic(),
     }
 
 
 def is_stale(facts: dict[str, Any] | None, max_age: float = STALE_AFTER) -> bool:
     """Whether an observation is old enough to be worth taking again.
 
-    Measured on the monotonic clock, so that the machine's wall clock being
-    corrected -- or the laptop waking from sleep -- cannot make a fresh
-    reading look ancient or an ancient one look fresh.
+    Wall clock, and only wall clock. There used to be a monotonic reading
+    beside it so that a corrected clock or a laptop waking from sleep could
+    not make a fresh observation look ancient. That was worth a second field
+    when taking one cost two-thirds of a second; at 80ms the worst a confused
+    clock can do is buy an observation nobody needed, which is cheaper than
+    carrying a number to prevent it.
     """
     if not facts:
         return True
-    taken = facts.get("observed_monotonic")
+    taken = facts.get("observed_at")
     if taken is None:
         return True
-    return (time.monotonic() - taken) > max_age
+    return abs(time.time() - taken) > max_age
 
 
 def _gb(value: int | None) -> str:
     return f"{value / 1_000_000_000:.0f} GB" if value else "unknown"
 
 
-def _shell_notes(shell: str, version: str | None) -> list[str]:
-    """The handful of things about this shell that cost a wasted step.
+def environment(facts: dict[str, Any], workspace: Any = None) -> list[tuple[str, str]]:
+    """The eighteen, as label and value pairs.
 
-    Not a tutorial. Every line was earned by watching a Resident get it
-    wrong, and each is measured on the machine rather than recalled: the
-    defaults below differ between an interactive shell and the one AWORG
-    runs, which is how the first draft of this advice came out wrong.
+    One function, two audiences. The owner reads these in the Environment
+    pane and the Resident reads them in its prompt, and they are the same
+    eighteen facts in the same order on purpose: an owner who can see exactly
+    what their Resident was told can tell a mistake from a misunderstanding,
+    and learns over time what it is working with and what it is short of.
 
-    The encoding line is the one that matters most, and it is the least
-    obvious. Under Windows PowerShell 5.1, `>` and `Out-File` write UTF-16 --
-    so a Resident that creates a source file the way it has seen a thousand
-    times produces something git, node, python and every compiler will refuse.
-    Worse, `Set-Content -Encoding utf8` is not the fix: it adds a byte-order
-    mark, where plain `Set-Content` does not.
-
-    And the failure is invisible from inside. `Get-Content` decodes UTF-16
-    happily, so a Resident that writes a file and reads it back to check its
-    work sees exactly what it expected. Verifying through the tool that wrote
-    something is not verification, and it is worth saying so where the
-    Resident will read it before it trusts its own confirmation.
+    Pairs rather than prose, because the two renderings want different
+    punctuation and neither wants to re-derive the content.
     """
-    if shell not in ("powershell", "pwsh"):
-        return []
+    pairs: list[tuple[str, str]] = []
 
-    # True of every PowerShell, so it sits outside the 5.1 guard below.
+    # First, because it is the one location that decides where work lands.
     #
-    # Earned exactly like the rest. A checker worker sent to find out whether
-    # a script ran quoted the interpreter path -- which is the natural thing
-    # to do with a path full of backslashes -- got a ParserError, and reported
-    # that the *script* had invalid syntax. The script's actual fault was a
-    # NameError at runtime. So the failure was caught, which is what matters
-    # most, but the diagnosis handed to the owner was invented, and a
-    # confidently wrong diagnosis is its own kind of damage.
-    notes = [
-        "PowerShell note: a quoted path is a string, not a command. "
-        "`\"C:\\path\\to\\prog.exe\" arg` is a parse error; write "
-        "`& \"C:\\path\\to\\prog.exe\" arg` with the call operator, or leave "
-        "the path unquoted when it has no spaces. A ParserError means the "
-        "command line itself was wrong -- it says nothing at all about the "
-        "program or file you were trying to run.",
-    ]
+    # It was missing entirely once, and the omission was not neutral. The only
+    # absolute path the Resident was ever shown is AWORG's own interpreter,
+    # which lives inside the source checkout -- so the only directory it had
+    # evidence for was that checkout, and it concluded that was "the project".
+    # Residents then wrote files into the source tree. Three reached a commit.
+    if workspace:
+        pairs.append(("Living Workspace", str(workspace)))
 
-    # PowerShell 7 writes UTF-8 without a BOM everywhere and has `&&`. None
-    # of what follows applies to it, and claiming otherwise would send a
-    # Resident around an obstacle that is not there.
-    if not (version or "").startswith("5."):
-        return notes
-
-    return notes + [
-        "PowerShell note: this is Windows PowerShell 5.1. `&&` and `||` are "
-        "parse errors here -- chain with `;`, or test $? between commands "
-        "when the second should only run if the first worked.",
-
-        "PowerShell note: `>` and `Out-File` write UTF-16 here, which git, "
-        "compilers and most parsers cannot read. `Set-Content -Encoding utf8` "
-        "adds a byte-order mark and is not the fix. To write a text file use "
-        "plain `Set-Content`, or [IO.File]::WriteAllText($path, $text) when "
-        "the exact bytes matter. Note that `Get-Content` reads UTF-16 back "
-        "without complaint, so reading a file you just wrote does not tell "
-        "you whether anything else on this machine can read it.",
-
-        "PowerShell note: running .ps1 files may be blocked by execution "
-        "policy. Prefer passing the command directly; if you must use a "
-        "script file, invoke it with -ExecutionPolicy Bypass.",
-    ]
-
-
-def shell_notes(facts: dict[str, Any]) -> list[str]:
-    """This shell's traps, for anything that is going to run a command.
-
-    Public because the Resident is not the only thing running commands any
-    more: a worker with a shell needs the same warnings, and reaching into
-    the private helper from another module would be the kind of coupling
-    that quietly rots.
-    """
-    return _shell_notes(facts.get("shell", ""), facts.get("shell_version"))
+    # Ordered by how much each one has ever changed an outcome, not by
+    # category. The workspace and the interpreter are the two that
+    # demonstrably have, so they lead; the capacity readings are the three
+    # that never have, so they trail. This matters twice over -- it is the
+    # order a model reads, and it decides what falls below the fold in a pane
+    # the owner has not dragged taller.
+    pairs.append(("Python", f"{facts['python']} at {facts['python_executable']}"))
+    pairs.append(("Machine", f"{facts['os']} {facts['release']} ({facts['version']})"))
+    pairs.append((
+        "Privileges",
+        "elevated -- root or administrator" if facts["elevated"]
+        else "not elevated" if facts["elevated"] is False
+        else "unknown",
+    ))
+    pairs.append(("Architecture", str(facts["arch"])))
+    pairs.append(("Host", f"{facts['hostname']}, as {facts['user']}"))
+    pairs.append(("Address", facts.get("ip") or "no network"))
+    pairs.append(("Processors", f"{facts['cpus']} CPUs"))
+    pairs.append((
+        "Memory",
+        f"{_gb(facts['memory_available'])} free of {_gb(facts['memory_total'])}",
+    ))
+    pairs.append((
+        "Disk",
+        f"{_gb(facts['disk_free'])} free of {_gb(facts['disk_total'])}",
+    ))
+    return pairs
 
 
 def summary(facts: dict[str, Any], workspace: Any = None) -> str:
-    """The host, compactly enough to send with every message.
+    """The environment, compactly enough to send with every message.
 
-    About 140 tokens -- under two per cent of even a small window, and the
-    difference between a Resident that proposes `apt install` on Windows and
-    one that does not. Sent every turn, because a fact the Resident has to
-    ask for is a fact it will forget to ask for.
+    Facts, and as little prose as they can be stated in. The block this
+    replaced had grown to about 800 tokens, of which roughly six hundred were
+    advice -- five paragraphs of shell workarounds, each added after a real
+    incident and each true, which together made the largest thing in a prompt
+    that this project's own measurements say gets worse as it gets longer.
 
-    The workspace is passed in rather than observed, because it is a fact
-    about this Aworg and not about the machine. It belongs in this block all
-    the same: this is the block that answers "where am I", and leaving the
-    most important location out of it had consequences -- see below.
+    The advice is not deleted, it is relocated: a note about what PowerShell
+    does to a redirect is worth reading at the moment a redirect fails, and
+    worth nothing on the four hundred messages where nobody redirects
+    anything. Facts are the opposite -- useless at the moment of failure,
+    because by then the wrong assumption has already been acted on.
+
+    Two sentences are still prose and both earn it. The workspace needs
+    saying rather than labelling, because what an owner calls a folder and
+    what a Resident does with a relative path are not obviously the same
+    thing. And the interpreter needs the warning beside it, because the path
+    is inside AWORG's own checkout and a Resident that reads it as "the
+    project" writes into the source tree.
     """
-    elevated = facts["elevated"]
-    privilege = (
-        "You are running with administrator or root privileges."
-        if elevated
-        else "You are not elevated; anything needing root or administrator will fail "
-             "unless the owner has arranged otherwise."
-        if elevated is False
-        else "Whether you are elevated could not be determined."
-    )
+    lines = ["ENVIRONMENT -- observed on this machine, not remembered."]
+    lines += [f"  {label}: {value}" for label, value in environment(facts, workspace)]
 
-    lines = []
-    # First, because it is the one location that decides where work lands.
-    #
-    # It was missing entirely, and the omission was not neutral. The only
-    # absolute path the Resident was ever shown is AWORG's own interpreter,
-    # which lives inside the source checkout -- so the only directory it had
-    # evidence for was that checkout, and it concluded that was "the
-    # project". Residents then wrote files into the source tree and ran
-    # commands with cwd set to it. Three of them ended up in a commit.
-    #
-    # Nothing was wrong with the tools: a relative path already resolves to
-    # the workspace. The failure was that the Resident had no idea the
-    # workspace existed, so it never used a relative path.
     if workspace:
         lines.append(
-            f"Your Living Workspace is {workspace}. That is where you build, "
-            "and it is where a relative path goes -- write `notes.md` and it "
-            "lands there. Work there unless the owner names somewhere else. "
-            "You are not confined to it, but nothing should end up outside "
-            "it by accident."
+            f"Build in {workspace}. A relative path goes there -- write "
+            "`notes.md` and it lands there. You are not confined to it, but "
+            "nothing should end up outside it by accident."
         )
     lines.append(
-        f"You are running on {facts['os']} {facts['release']} ({facts['arch']}), "
-        f"host {facts['hostname']}, as {facts['user']}.",
+        "That Python path is AWORG's own installation. Use the interpreter; "
+        "leave the directory alone, and do not run `python` by name."
     )
-    lines += [
-        f"{facts['cpus']} CPUs, {_gb(facts['memory_total'])} memory, "
-        f"{_gb(facts['disk_free'])} free disk.",
-        privilege,
-    ]
-    if facts["package_manager"]:
-        lines.append(f"System package manager: {facts['package_manager']}.")
-    else:
-        lines.append("No system package manager was found on PATH.")
-    shell = facts["shell"]
-    version = facts.get("shell_version")
     lines.append(
-        f"Commands run through {shell}"
-        + (f" {version}" if version else "")
-        + "."
-    )
-    # The interpreter AWORG itself runs on, named by its full path. The bare
-    # version was misleading: it described a Python the Resident had no way
-    # to invoke, while the `python` it could type resolved to something else
-    # entirely. A path is a fact the Resident can act on.
-    lines.append(
-        f"AWORG runs on Python {facts['python']} at {facts['python_executable']}."
-        + (
-            " That path is AWORG's own installation, not a place to work -- "
-            "use the interpreter, leave the directory alone."
-            if workspace else ""
-        )
-    )
-    if facts.get("python_executable"):
-        # Learned by watching it fail twice in a row inside one job.
-        #
-        # A model reaching for a quick check writes `python -c "for x in ...:
-        # <newline> ..."`, and through PowerShell the newline and the quoting
-        # do not survive: the interpreter receives a single line and raises a
-        # SyntaxError that names the source rather than the shell. So the
-        # second attempt is a rewrite of the Python, which fails the same way.
-        lines.append(
-            "Python note: do not pass multi-line code to python -c through "
-            "this shell -- the newlines and quoting do not survive, and the "
-            "SyntaxError names your code rather than the shell that mangled "
-            "it. Write a .py file and run it, which is also what you would "
-            "want to read back later."
-        )
-    lines.extend(_shell_notes(shell, version))
-    if facts["tools"]:
-        lines.append(f"On PATH: {', '.join(facts['tools'])}.")
-    if facts.get("stubs"):
-        note = (
-            f"On PATH but NOT usable: {', '.join(facts['stubs'])}. These are "
-            "Windows Store placeholder aliases -- they are zero-byte stubs "
-            "that fail with \"not found\" when run from a script, even though "
-            "the real program may well be installed. Do not try to make them "
-            "work; use a full path to a real installation instead."
-        )
-        # Say what to do instead, in the same breath, naming the path.
-        #
-        # Both halves of this were already here and separately true: one line
-        # said python was a stub, another said AWORG runs on a real one at a
-        # known path. A Resident given both still ran `python`, watched it
-        # fail, and then spent ten tool calls hunting the disk for an
-        # interpreter it had already been told the location of.
-        #
-        # Stating two facts and leaving the inference to the model is not the
-        # same as stating the conclusion. On a small model it is not close.
-        interpreter = facts.get("python_executable")
-        if interpreter and any(s.startswith("python") for s in facts["stubs"]):
-            note += (
-                f" For python specifically, use {interpreter} -- that is a "
-                "working interpreter on this machine and it is the one to "
-                "run scripts with. Do not go looking for another."
-            )
-        lines.append(note)
-    lines.append(
-        "These are observed facts about this machine. Do not assume anything "
-        "not listed is installed -- check before relying on it."
+        "These were observed, not assumed. Anything not here is something to "
+        "check rather than to rule out."
     )
     return "\n".join(lines)

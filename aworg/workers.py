@@ -27,7 +27,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from . import host
 from .activities import ActivityManager
 from .agent import AgentLoop, _describe_arguments
 from .models import Message, ModelError, build_adapter
@@ -387,26 +386,12 @@ def _system(
             f"A working Python is at {facts['python_executable']} -- use that "
             "full path rather than `python`."
         )
-    if facts.get("stubs"):
-        lines.append(
-            f"These are on PATH but do NOT run: {', '.join(facts['stubs'])}."
-        )
-    block = f"{prompt}\n\n{' '.join(lines)}"
-
-    # The shell's own traps, but only for a worker that can actually run
-    # something. A builder with no shell would be paying context for advice
-    # about a tool it does not have, and on a 2B that room is not free.
-    #
-    # This was the other half of a real failure: the note about quoting a
-    # path existed for the Resident, while the worker -- the one actually
-    # typing the command -- had never been told. It hit the trap and then
-    # blamed the file it was checking.
-    if "execute_command" in (worker.get("tools") or []):
-        notes = host.shell_notes(facts)
-        if notes:
-            block += "\n\n" + "\n".join(notes)
-
-    return block
+    # The stub warning that used to sit here has gone with the scan that made
+    # it necessary. It only ever corrected a claim the tool list made -- and
+    # with nothing advertising a `python` on PATH, the positive instruction
+    # above is the whole of what a worker needs: here is one that works, use
+    # it by path.
+    return f"{prompt}\n\n{' '.join(lines)}"
 
 
 def _skills_block(worker: dict[str, Any], library: Any) -> str:

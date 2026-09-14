@@ -74,11 +74,17 @@ PANES: dict[str, dict[str, Any]] = {
     #: its own either, which is why "lifecycle-height" is gone from here --
     #: sanitize drops a stored one, so an owner who had dragged it loses a
     #: setting rather than a working interface.
-    #: The observed facts about this machine. Read once and then glanced at,
-    #: so it sits above the things the owner actually operates.
-    "system-height": {"default": 150, "min": 80, "max": 500},
+    #: Where this Aworg is, and what it has to work with. Read once and
+    #: then glanced at, so it sits above the things the owner actually
+    #: operates. Taller than it was: it holds ten readings now rather than
+    #: four facts, and a default that shows a quarter of them is a pane an
+    #: owner has to discover is scrollable. Not so tall that it starves
+    #: Skills on a laptop: at this height the three readings below the fold
+    #: are the capacity ones, which is the order host.environment picks for
+    #: exactly that reason.
+    "environment-height": {"default": 250, "min": 80, "max": 560},
     #: Smaller than it was, because it no longer carries the machine facts as
-    #: well -- those moved to System, and leaving this at the height it
+    #: well -- those moved to Environment, and leaving this at the height it
     #: needed when it held both would squeeze Skills to nothing.
     "capabilities-height": {"default": 230, "min": 90, "max": 700},
     "skills-height": {"default": 120, "min": 80, "max": 600},
@@ -145,7 +151,7 @@ def sanitize(raw: Any) -> dict[str, float]:
 #: third pane keeps two saved heights that now add up to more than there is
 #: -- which is exactly how Skills ended up 28 pixels tall and overflowing.
 SUPERSEDED_BY = {
-    "system-height": ("capabilities-height", "skills-height"),
+    "environment-height": ("capabilities-height", "skills-height"),
 }
 
 
