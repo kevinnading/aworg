@@ -16,10 +16,18 @@ from importlib.metadata import PackageNotFoundError, version as _installed_versi
 #: was not the one running, which is precisely the kind of claim the
 #: Environment pane exists to make checkable.
 #:
-#: pyproject.toml is the one that actually ships, so it wins. The literal is
-#: the fallback for running out of a checkout that was never installed, where
-#: there is no distribution metadata to ask.
+#: pyproject.toml is where a Python project's version belongs and the only
+#: place this number is written down. Everything else -- this attribute, the
+#: API's version field, the Environment pane, the Resident's own prompt --
+#: reads it back from the metadata that installing actually produced.
+#:
+#: "unknown" rather than a literal when there is no metadata to ask, which
+#: happens only when running out of a checkout nobody installed. A hardcoded
+#: fallback would be a second source of truth that is right until the day it
+#: is not, and would then report a wrong version confidently in the one place
+#: an owner would go to check. The whole reason this is on screen is so a
+#: claim about what is running can be trusted; "unknown" keeps that true.
 try:
     __version__ = _installed_version("aworg")
 except PackageNotFoundError:  # pragma: no cover - only outside an install
-    __version__ = "0.1.0"
+    __version__ = "unknown"
