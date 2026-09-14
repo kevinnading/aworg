@@ -1856,6 +1856,22 @@ function paneNode(pane, { region, last }) {
     head.appendChild(mark);
   }
 
+  // What the pane's contents cost the Resident per message, for the panes
+  // whose contents are sent. Capabilities prices each capability separately
+  // because each has its own switch; the environment goes as one block and is
+  // priced as one. Same argument either way: a thing that rides along with
+  // every request should not be the only thing in the interface with no
+  // number on it.
+  if (typeof pane.tokens === "number") {
+    const cost = document.createElement("span");
+    cost.className = "pane-cost";
+    cost.textContent = `~${pane.tokens} tok`;
+    cost.title =
+      `These facts are sent to your Resident with every message, and cost ` +
+      `roughly ${pane.tokens} tokens of its context each time.`;
+    head.appendChild(cost);
+  }
+
   const body = document.createElement("div");
   body.className = "pane-body";
 

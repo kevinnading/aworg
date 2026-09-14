@@ -1992,6 +1992,20 @@ button.ghost.small {
 }
 .pane-item.capability.off .capability-cost { opacity: 0.4; }
 
+/* The same price, for a pane whose whole contents are one block rather than
+   a list of separately switchable things. Sits in the header beside the
+   title, in the same register as capability-cost so the two read as the same
+   kind of statement -- because they are: this is what riding along with
+   every message costs. */
+.pane-cost {
+  flex: none;
+  margin-left: auto;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
 /* Reset. Deliberately the only panel that looks like this: an owner who has
    scrolled here by accident should be able to tell before reading. */
 .panel.danger { border-color: color-mix(in srgb, var(--danger) 35%, var(--line)); }

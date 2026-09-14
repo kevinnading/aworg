@@ -414,15 +414,30 @@ def describe(
         elif pane["id"] == "log" and happened:
             items = log(happened)
 
-        described.append(
-            {
-                "id": pane["id"],
-                "label": pane["label"],
-                "hint": pane["hint"],
-                "available": pane["available"],
-                "items": items,
-                "empty_heading": heading,
-                "empty_detail": detail,
-            }
-        )
+        entry = {
+            "id": pane["id"],
+            "label": pane["label"],
+            "hint": pane["hint"],
+            "available": pane["available"],
+            "items": items,
+            "empty_heading": heading,
+            "empty_detail": detail,
+        }
+        # What this pane's contents cost the Resident on every message.
+        #
+        # Capabilities has carried a price per capability for a while, on the
+        # argument that an owner leaving everything switched on is paying for
+        # it in a currency nobody was showing them. The environment is the
+        # other thing sent with every request, and it had no price on it at
+        # all -- which is how it grew to more than three times what its own
+        # docstring claimed without anyone noticing.
+        #
+        # Measured from the block that actually goes, not estimated from the
+        # readings above it, so the number cannot drift from the thing it is
+        # describing.
+        if pane["id"] == "environment" and facts:
+            entry["tokens"] = int(
+                len(host.summary(facts, workspace)) / CHARS_PER_TOKEN
+            )
+        described.append(entry)
     return described
