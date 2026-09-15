@@ -3452,7 +3452,123 @@ function fileRow(entry, navigateTo) {
 
   row.append(icon, name, size, modified);
   if (navigateTo !== null) row.onclick = () => loadWorkspace(navigateTo);
+  // A file had nothing to click. Folders navigate; a file just sat there, so
+  // an owner could see a thing the Resident had made and do nothing about
+  // it except describe it out loud in the composer.
+  else row.onclick = (event) => openFileMenu(entry, event);
+  // Right-click works on both, because a folder is a thing you may want to
+  // rename as much as a file is, and losing that to navigation would be odd.
+  row.oncontextmenu = (event) => {
+    event.preventDefault();
+    openFileMenu(entry, event);
+  };
   return row;
+}
+
+/* What the owner can ask about one file.
+ *
+ * **These compose a message. They do not do anything.** Every entry writes a
+ * sentence into the composer, focuses it, and stops -- the owner reads it,
+ * edits it if they want, and sends it or does not.
+ *
+ * That is the whole design, and it is not timidity about wiring up a delete
+ * button. The workspace is the Resident's territory: it holds the plan it is
+ * working from and the files a running job has open. An owner deleting
+ * something underneath that, through a path the Resident never sees, gives it
+ * a workspace that changed for reasons it has no record of. Routing the
+ * request through the conversation means the Resident knows, the Activities
+ * feed shows the tool call, and the Living Log keeps whatever mattered --
+ * the same account as everything else it does.
+ *
+ * It also means the one irreversible action in the list is never one click
+ * away from happening.
+ */
+const FILE_ACTIONS = [
+  { label: "Show me this", say: (p) => `Show me what is in ${p}` },
+  { label: "Rename…", say: (p) => `Rename ${p} to `, open: true },
+  { label: "Duplicate", say: (p) => `Make a copy of ${p}` },
+  { label: "Move…", say: (p) => `Move ${p} to `, open: true },
+  { label: "Delete", say: (p) => `Delete ${p}`, danger: true },
+];
+
+function openFileMenu(entry, event) {
+  closeFileMenu();
+  const here = app.workspacePath ? `${app.workspacePath}/${entry.name}` : entry.name;
+
+  const menu = document.createElement("div");
+  menu.className = "file-menu";
+  menu.id = "file-menu";
+
+  const title = document.createElement("div");
+  title.className = "file-menu-title";
+  title.textContent = entry.name;
+  menu.appendChild(title);
+
+  for (const action of FILE_ACTIONS) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "file-menu-item" + (action.danger ? " danger" : "");
+    button.textContent = action.label;
+    button.onclick = () => {
+      closeFileMenu();
+      suggestToResident(action.say(here));
+    };
+    menu.appendChild(button);
+  }
+
+  const note = document.createElement("div");
+  note.className = "file-menu-note";
+  // Said rather than assumed. An owner who expects a menu item to *do* the
+  // thing and finds a sentence in the composer instead should be told why
+  // once, here, rather than work it out.
+  note.textContent = "Puts it to your Resident. Nothing happens until you send.";
+  menu.appendChild(note);
+
+  document.body.appendChild(menu);
+
+  // Positioned after mounting, because the size is not known until then and
+  // a menu opened near the bottom edge should come up rather than off.
+  const box = menu.getBoundingClientRect();
+  const x = Math.min(event.clientX, window.innerWidth - box.width - 8);
+  const y = event.clientY + box.height > window.innerHeight - 8
+    ? event.clientY - box.height
+    : event.clientY;
+  menu.style.left = `${Math.max(8, x)}px`;
+  menu.style.top = `${Math.max(8, y)}px`;
+
+  // Deferred, or the click that opened it closes it again.
+  setTimeout(() => {
+    document.addEventListener("click", closeFileMenu, { once: true });
+    document.addEventListener("keydown", escapeFileMenu);
+  }, 0);
+}
+
+function closeFileMenu() {
+  const menu = el("file-menu");
+  if (menu) menu.remove();
+  document.removeEventListener("keydown", escapeFileMenu);
+}
+
+function escapeFileMenu(event) {
+  if (event.key === "Escape") closeFileMenu();
+}
+
+/* Put words in the owner's mouth, and leave them there.
+ *
+ * Appended rather than replacing, so a half-written message is not thrown
+ * away by a stray right-click -- and the cursor lands at the end either way,
+ * which is where "Rename x to " needs it.
+ */
+function suggestToResident(text) {
+  const input = el("input");
+  if (!input) return;
+  const existing = input.value.trim();
+  input.value = existing ? `${existing} ${text}` : text;
+  fitComposer();
+  input.focus();
+  input.setSelectionRange(input.value.length, input.value.length);
+  app.contextDraft = estimateTokens(input.value);
+  renderContext();
 }
 
 function formatSize(bytes) {

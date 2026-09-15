@@ -1081,6 +1081,67 @@ body.has-maximised-pane .resizer { pointer-events: none; }
 /* Carrying a file. Dashed rather than merely tinted: a dashed edge is the one
    border style nothing else in this interface uses, so it cannot be mistaken
    for a pane that happens to be focused. */
+/* What the owner can ask about one file.
+   Floating and fixed rather than inside the pane: the listing scrolls and
+   clips, and a menu that scrolls with its row or gets cut off by the pane's
+   edge is a menu that only works in the middle of a short list. */
+.file-menu {
+  position: fixed;
+  z-index: 60;
+  min-width: 190px;
+  display: flex;
+  flex-direction: column;
+  padding: 5px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  box-shadow: 0 8px 26px color-mix(in srgb, var(--bg) 70%, transparent);
+}
+.file-menu-title {
+  padding: 4px 9px 6px;
+  font-size: 11px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 4px;
+}
+.file-menu-item {
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  padding: 5px 9px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--text);
+  cursor: pointer;
+}
+.file-menu-item:hover,
+.file-menu-item:focus-visible {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  outline: none;
+}
+/* Marked, not disabled. It composes a sentence like the others -- the colour
+   is so an owner reaching for Duplicate does not land on it by accident. */
+.file-menu-item.danger { color: var(--danger); }
+.file-menu-item.danger:hover,
+.file-menu-item.danger:focus-visible {
+  background: color-mix(in srgb, var(--danger) 16%, transparent);
+}
+.file-menu-note {
+  margin-top: 5px;
+  padding: 6px 9px 3px;
+  border-top: 1px solid var(--line);
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+/* A file is clickable now, so it should look it. */
+.file:not(.navigable) { cursor: pointer; }
+
 .files.dropping {
   border-style: dashed;
   border-color: var(--accent);
