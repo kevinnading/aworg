@@ -32,15 +32,26 @@ def target(context: ToolContext, path: str, *, must_exist: bool = True) -> Path:
 def refuse_if_ours(context: ToolContext, path: Path, verb: str) -> None:
     """Stop the Resident destroying the Aworg it lives in.
 
-    The one hard boundary in this file, and it is not about the workspace.
-    An Aworg's home holds state.db, secrets.db, the trash and every
-    conversation the owner has had; `delete_file("~/.aworg")` would take the
-    owner's credentials, their history and the record of what happened to
-    them, and the trash it would have been recoverable from goes with it.
+    Two refusals, and they are different in kind.
 
-    Nothing else here is fenced. This is not a rule about where the Resident
-    may work -- it is the machine refusing to be asked to saw through the
-    branch it is sitting on.
+    **The home itself.** state.db, secrets.db, the trash, the backups and
+    every conversation the owner has had. `delete_file("~/.aworg")` would
+    take their credentials, their history and the record of what happened to
+    them -- and the trash it would have been recoverable from goes with it.
+
+    **The Living Workspace, as a whole.** Everything *in* it is the
+    Resident's to move, copy and delete; the directory itself is not. The
+    difference is that emptying the workspace is not a file operation, it is
+    a decision about the Aworg, and there is already a door for it: Settings
+    has a Reset that counts what will go first, makes the owner type a code,
+    copies both databases to backups/, stops whatever the Resident had
+    running, and writes the Living Log entry afterwards so the silence above
+    it is explained. None of that happens when a tool moves the folder into
+    the trash.
+
+    So this is not a fence around where the Resident may work -- absolute
+    paths anywhere else are honoured. It is the machine declining to be asked
+    to saw through the branch it is sitting on, and pointing at the stairs.
     """
     paths = getattr(context, "paths", None)
     if paths is None:
@@ -50,18 +61,32 @@ def refuse_if_ours(context: ToolContext, path: Path, verb: str) -> None:
         candidate = path.resolve()
     except OSError:
         return
-    if candidate == home or home in candidate.parents:
-        # The workspace is inside the home and is the one part of it that is
-        # the Resident's to change.
-        workspace = Path(paths.workspace).resolve()
-        if candidate == workspace or workspace in candidate.parents:
-            return
+    if not (candidate == home or home in candidate.parents):
+        return
+
+    workspace = Path(paths.workspace).resolve()
+    # Inside the workspace: the Resident's own territory, allowed.
+    if workspace in candidate.parents:
+        return
+
+    if candidate == workspace:
+        # Phrased around the infinitive rather than conjugating `verb`:
+        # callers pass "delete", "move" and "copy onto", and the last of
+        # those has no past tense that a suffix will find.
         raise ToolError(
-            f"That is inside this Aworg's own home ({home}), which holds its "
-            f"settings, its credentials and its conversation. Refusing to "
-            f"{verb} it. The Living Workspace at {workspace} is the part that "
-            "is yours to change."
+            f"Refusing to {verb} the Living Workspace itself ({workspace}). "
+            "Everything inside it can be. If the owner wants it emptied, that "
+            "is Reset in Settings -- it counts what will go, asks them to "
+            "confirm with a code, backs up both databases and stops anything "
+            "still running. Point them at it rather than doing it here."
         )
+
+    raise ToolError(
+        f"That is inside this Aworg's own home ({home}), which holds its "
+        f"settings, its credentials and its conversation. Refusing to {verb} "
+        f"it. The Living Workspace at {workspace} is the part that is yours "
+        "to change."
+    )
 
 
 def describe(path: Path, root: Any = None) -> str:
