@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="P2">
+  <defs>
+    <linearGradient id="ground" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1f2a0e"/>
+      <stop offset="1" stop-color="#0d1405"/>
+    </linearGradient>
+  </defs>
+  <rect x="0.5" y="0.5" width="63" height="63" rx="15.5" fill="url(#ground)" stroke="#3f5a1a"/>
+  <!-- A controller: d-pad and two buttons. -->
+  <rect x="8" y="22" width="48" height="24" rx="12" fill="#a3e635"/>
+  <path d="M17 31 h4 v-4 h4 v4 h4 v4 h-4 v4 h-4 v-4 h-4 z" fill="#1a2408"/>
+  <circle cx="42" cy="36" r="3.5" fill="#1a2408"/><circle cx="49" cy="30" r="3.5" fill="#1a2408"/>
+</svg>

@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Bramble">
+  <defs>
+    <linearGradient id="ground" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#dfe8cf"/>
+      <stop offset="1" stop-color="#b9caa3"/>
+    </linearGradient>
+  </defs>
+  <rect x="0.5" y="0.5" width="63" height="63" rx="15.5" fill="url(#ground)" stroke="#f1f5e8"/>
+  <!-- A spotted mushroom. -->
+  <path d="M10 34 C 10 19, 22 11, 32 11 C 42 11, 54 19, 54 34 Z" fill="#c2553f"/>
+  <circle cx="22" cy="24" r="3.5" fill="#fdf6e3"/><circle cx="36" cy="18" r="3" fill="#fdf6e3"/>
+  <circle cx="44" cy="28" r="3.5" fill="#fdf6e3"/><circle cx="30" cy="29" r="2.2" fill="#fdf6e3"/>
+  <path d="M24 34 H40 L38 52 C 38 54, 36 55, 32 55 C 28 55, 26 54, 26 52 Z" fill="#fdf6e3"/>
+  <path d="M8 56 C 16 52, 22 54, 26 56 M38 56 C 44 53, 50 53, 56 56" stroke="#6b8f5a"
+        stroke-width="2.5" fill="none" stroke-linecap="round"/>
+</svg>

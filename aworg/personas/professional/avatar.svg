@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Harper">
+  <defs>
+    <linearGradient id="ground" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#28303b"/>
+      <stop offset="1" stop-color="#151a21"/>
+    </linearGradient>
+  </defs>
+  <rect x="0.5" y="0.5" width="63" height="63" rx="15.5" fill="url(#ground)" stroke="#48525f"/>
+  <!-- A briefcase. -->
+  <rect x="11" y="23" width="42" height="28" rx="4" fill="#cbd5e1"/>
+  <path d="M24 23 V18 C 24 16.5, 25 15.5, 26.5 15.5 H37.5 C 39 15.5, 40 16.5, 40 18 V23"
+        stroke="#cbd5e1" stroke-width="3.5" fill="none"/>
+  <rect x="11" y="33" width="42" height="2.5" fill="#475569"/>
+  <rect x="29" y="31" width="6" height="7" rx="1.5" fill="#475569"/>
+</svg>

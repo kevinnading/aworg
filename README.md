@@ -345,15 +345,23 @@ Drop it in `personas/` under this Aworg's home and it appears in Settings.
 Frontmatter is optional — a `PERSONA.md` that starts straight in with
 `# Identity` loads exactly as written and takes its name from the folder.
 
-Six ship. `aworg-light` is worn when you have not chosen, and `aworg-dark` is
-the same voice for a dark scheme: AWORG's own, calm and exact, reporting what
-it checked rather than what it hoped. `atelier` thinks in layouts and shows
-rough work early. `nocturne` is for the long job you start and walk away from,
-and says plainly that it works on what you gave it and cannot reach you until
-you are back. `egirl` is Nyx: lowercase, chronically online, and dead serious
-about whether it works -- the vibe stops at the code block. `scribe` is as
-plain as a persona gets: a few lines, no name and no look, and a working
-example of how little one needs.
+Eighteen ship, so there is one for most people who will ever open an Aworg.
+`aworg-light` is worn when you have not chosen.
+
+| For | Personas |
+|---|---|
+| AWORG itself | `aworg-light`, `aworg-dark` -- calm and exact, reporting what was checked rather than what was hoped |
+| Skill level | `teacher` (Ms. Hazel, for people who have never written code), `sunny` (warm and honest encouragement), `greybeard` (terse senior engineer) |
+| What you build | `founder` (Sloane: customers, cost, launch), `player-two` (P2: game feel, and honest that only you can playtest), `quill` (words and voice), `atelier` (layouts and second drafts) |
+| Setting | `professional` (Harper: safe on screen at work), `nocturne` (the long job you start and walk away from), `scribe` (as plain as a persona gets) |
+| Vibe | `egirl` (Nyx), `gamer-bro` (Tank, her duo), `cottagecore` (Bramble) |
+| Just for fun | `noir` (Dex Malone, P.I.), `pirate` (Cap'n Barnacle Byte), `wizard` (Ozwald the Compiled) |
+
+Every one of them holds the same lines, whatever the voice: code, commands,
+errors and numbers are written exactly; a failure is never dressed up; and
+nothing is called done that was not checked. The characters are not allowed to
+promise what AWORG cannot do -- Nocturne says outright that it cannot reach
+you while you are away, and P2 that it cannot feel a jump.
 
 ### Changing Persona is not a new Resident
 

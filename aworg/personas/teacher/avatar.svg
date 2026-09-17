@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Ms. Hazel">
+  <defs>
+    <linearGradient id="ground" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2f5d46"/>
+      <stop offset="1" stop-color="#1c3b2c"/>
+    </linearGradient>
+  </defs>
+  <rect x="0.5" y="0.5" width="63" height="63" rx="15.5" fill="url(#ground)" stroke="#4f7f66"/>
+  <!-- An apple on a chalkboard. -->
+  <path d="M32 24 C 26 19, 15 21, 15 33 C 15 44, 23 52, 28 52 C 30 52, 31 51, 32 51
+           C 33 51, 34 52, 36 52 C 41 52, 49 44, 49 33 C 49 21, 38 19, 32 24 Z" fill="#f87171"/>
+  <path d="M22 30 C 22 27, 24 25, 26 25" stroke="#fecaca" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+  <path d="M32 24 L33 15" stroke="#7c4a2d" stroke-width="3" stroke-linecap="round"/>
+  <path d="M34 18 C 38 12, 45 13, 46 15 C 42 19, 37 20, 34 18 Z" fill="#86efac"/>
+  <path d="M10 58 L24 58" stroke="#e8f0ea" stroke-width="2" stroke-linecap="round" opacity="0.6"/>
+</svg>

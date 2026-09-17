@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Cap'n Barnacle Byte">
+  <defs>
+    <linearGradient id="ground" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0f3b57"/>
+      <stop offset="1" stop-color="#082233"/>
+    </linearGradient>
+  </defs>
+  <rect x="0.5" y="0.5" width="63" height="63" rx="15.5" fill="url(#ground)" stroke="#2a6a8f"/>
+  <!-- An anchor. -->
+  <circle cx="32" cy="14" r="5" stroke="#fbbf24" stroke-width="3.5" fill="none"/>
+  <path d="M32 19 V52" stroke="#fbbf24" stroke-width="4.5" stroke-linecap="round"/>
+  <path d="M22 27 H42" stroke="#fbbf24" stroke-width="4" stroke-linecap="round"/>
+  <path d="M13 38 C 14 48, 22 53, 32 53 C 42 53, 50 48, 51 38" stroke="#fbbf24"
+        stroke-width="4.5" fill="none" stroke-linecap="round"/>
+  <path d="M9 41 L13 35 L17 41 Z M47 41 L51 35 L55 41 Z" fill="#fbbf24"/>
+</svg>

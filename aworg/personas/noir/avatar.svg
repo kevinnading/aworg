@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Dex Malone">
+  <defs>
+    <linearGradient id="ground" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2a2a2e"/>
+      <stop offset="1" stop-color="#0b0b0d"/>
+    </linearGradient>
+  </defs>
+  <rect x="0.5" y="0.5" width="63" height="63" rx="15.5" fill="url(#ground)" stroke="#4a4a50"/>
+  <!-- A fedora under a streetlight. -->
+  <path d="M8 42 C 14 46, 50 46, 56 42 C 52 39, 46 38, 44 38 L42 24 C 41 20, 38 18, 32 21
+           C 26 18, 23 20, 22 24 L20 38 C 18 38, 12 39, 8 42 Z" fill="#e5e5e5"/>
+  <path d="M20.5 34 C 28 36, 36 36, 43.5 34 L44 38 C 36 40, 28 40, 20 38 Z" fill="#f43f5e"/>
+  <path d="M6 60 L16 50" stroke="#e5e5e5" stroke-width="1.5" opacity="0.35"/>
+  <path d="M52 8 L60 2" stroke="#e5e5e5" stroke-width="1.5" opacity="0.35"/>
+</svg>
