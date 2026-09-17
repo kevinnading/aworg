@@ -49,7 +49,7 @@ python -m venv /tmp/clean && /tmp/clean/bin/pip install /tmp/w/aworg-*.whl
 ```
 
 Then boot `create_app` from that environment and confirm `/api/skills`
-returns three and `/api/personas` returns six. Any packaging change deserves
+returns three and `/api/personas` returns five. Any packaging change deserves
 this, because the failure mode is silence.
 
 ## Metadata (filled in 2026-09-16)
@@ -58,7 +58,7 @@ this, because the failure mode is silence.
 `keywords`, `classifiers` and `urls`. Checked by building a wheel and reading
 its `METADATA`: the README is the long description, all three license files
 land in `dist-info/licenses/`, and the wheel still carries 3 skills and 6
-personas.
+personas (five since 2026-09-16).
 
 Decisions worth knowing:
 

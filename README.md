@@ -334,7 +334,7 @@ authority:
 It is a folder, so writing one is writing a page of Markdown:
 
 ```text
-ada/
+aworg-light/
 ├── PERSONA.md      identity, voice, temperament, values, what to avoid
 ├── theme.json      accent colour, avatar, optional chat background
 ├── avatar.svg
@@ -345,10 +345,12 @@ Drop it in `personas/` under this Aworg's home and it appears in Settings.
 Frontmatter is optional — a `PERSONA.md` that starts straight in with
 `# Identity` loads exactly as written and takes its name from the folder.
 
-Two ship. `resident` is the plain one, worn when you have not chosen: direct,
-unhurried, and more interested in whether the thing works than in how it
-sounds. `ada` is curious and dry and will tell you when an idea is worse than
-the one underneath it.
+Five ship. `aworg-light` is worn when you have not chosen, and `aworg-dark` is
+the same voice for a dark scheme: AWORG's own, calm and exact, reporting what
+it checked rather than what it hoped. `atelier` thinks in layouts and shows
+rough work early. `nocturne` is for the long job you start and walk away from,
+and says plainly that it works on what you gave it and cannot reach you until
+you are back. `scribe` writes everything down.
 
 ### Changing Persona is not a new Resident
 
@@ -369,7 +371,7 @@ working rather than failing.
 You chose the interface's colours. A Persona is a guest in them, so its
 accent is redefined on the chat surface rather than at the root: it reaches
 the conversation and stops at its edge. The app stays your teal while the
-chat goes Ada's purple.
+chat goes Atelier's amber.
 
 A background image brings its own scrim, emitted with the picture and never
 without it — so whatever anyone ships, the text on top stays readable, and an

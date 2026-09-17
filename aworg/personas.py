@@ -49,7 +49,7 @@ INSTALLED = "installed"
 #: name, so that "I have not chosen" and "I chose this one" stay different
 #: facts -- which is what lets a factory reset put the shipped persona back
 #: without having to know what it is called.
-DEFAULT_PERSONA = "resident"
+DEFAULT_PERSONA = "aworg-light"
 
 #: What theme.json may set, and nothing else.
 #:
