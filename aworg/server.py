@@ -661,7 +661,8 @@ def create_app(paths: Paths, address: str = "http://127.0.0.1:8420") -> FastAPI:
         stylesheets would mean two chances to paint half-configured.
         """
         appearance = store.get_appearance()
-        colors = declarations(resolve(appearance["preset"], appearance["overrides"]))
+        scheme = resolve(appearance["preset"], appearance["overrides"])
+        colors = declarations(scheme)
         sizes = layout_settings.to_css(layout_settings.resolve(store.get_layout()))
         # The persona's own room, and only its own room.
         #
@@ -670,7 +671,10 @@ def create_app(paths: Paths, address: str = "http://127.0.0.1:8420") -> FastAPI:
         # them. It rides in the same stylesheet for the same reason colour and
         # layout do -- they arrive together, and a second request would be a
         # second chance to paint the interface without the Resident in it.
-        room = resident.personas.css(store.get_resident().get("persona"))
+        # The scheme goes with it: a persona's own colours are checked against
+        # the ground they will sit on, and any that would make the
+        # conversation unreadable are dropped -- see personas._legible.
+        room = resident.personas.css(store.get_resident().get("persona"), scheme)
         return Response(
             content=":root {\n" + colors + sizes + "}\n" + room,
             media_type="text/css",

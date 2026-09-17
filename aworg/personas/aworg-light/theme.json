@@ -1,5 +1,14 @@
 {
   "accent": "#075DCC",
+  "on_accent": "#FFFFFF",
+  "text": "#16222E",
+  "muted": "#55697D",
+  "owner": "#E4EDF5",
+  "surface": "#F1F6FA",
+  "line": "#C9D8E5",
+  "font": "system",
+  "font_size": 15,
+  "font_weight": 400,
   "avatar": "avatar.svg",
   "chat_background": "background.svg"
 }

@@ -53,12 +53,72 @@ DEFAULT_PERSONA = "aworg-light"
 
 #: What theme.json may set, and nothing else.
 #:
-#: A short list on purpose. The owner chose the interface's colours and a
-#: persona does not get to overrule them -- it decorates its own space. So
-#: these reach the chat surface and stop there; see `css`.
-ACCENT = "accent"
+#: The owner chose the interface's colours and a persona does not get to
+#: overrule them -- it decorates its own space. Every one of these reaches the
+#: chat surface and stops there; see `css`.
+#:
+#: The list covers what the conversation is actually made of: the colour that
+#: marks the Resident, the owner's own bubble, the words, the field they are
+#: typed into and the Send control. An accent alone left every persona looking
+#: the same but for one highlight, which is not a room.
 AVATAR = "avatar"
 BACKGROUND = "chat_background"
+
+ACCENT = "accent"
+OWNER = "owner"
+TEXT = "text"
+MUTED = "muted"
+SURFACE = "surface"
+LINE = "line"
+ON_ACCENT = "on_accent"
+
+#: Colour keys, and the interface token each redefines inside the chat.
+#:
+#: `surface` is the composer's own box rather than the pane behind it: a
+#: persona dresses the field the owner types into, not the furniture around
+#: the conversation.
+COLOURS = {
+    ACCENT: "--accent",
+    OWNER: "--owner",
+    TEXT: "--text",
+    MUTED: "--muted",
+    SURFACE: "--panel-2",
+    LINE: "--line",
+    ON_ACCENT: "--on-accent",
+}
+
+FONT = "font"
+FONT_SIZE = "font_size"
+FONT_WEIGHT = "font_weight"
+
+#: Named stacks rather than a free font string. A persona is downloaded, the
+#: value reaches a CSS declaration, and "whatever is installed on the author's
+#: machine" is not a font anyone else has.
+FONTS = {
+    "system": 'ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif',
+    "serif": 'ui-serif, Georgia, "Times New Roman", serif',
+    "mono": 'ui-monospace, "Cascadia Code", Consolas, monospace',
+    "rounded": '"Segoe UI Variable Display", ui-rounded, "Nunito", system-ui, sans-serif',
+}
+
+#: Bounds on the conversation's type. Small enough to still be reading, large
+#: enough to still be an interface.
+FONT_SIZES = (13.0, 19.0)
+FONT_WEIGHTS = {300, 400, 500, 600, 700}
+
+#: The interface's own size for body text, restored for inline code so a
+#: persona's type size does not drag code along with it. Code containers are
+#: the one thing inside the chat a persona does not dress: they are quoted
+#: material, and they are the part an owner most needs to read exactly.
+CODE_FONT_SIZE = "13px"
+
+#: The least contrast a persona's own colours may have where they meet.
+#:
+#: Checked rather than trusted, because these are downloaded packages and the
+#: failure is a conversation nobody can read. AA for anything that is words,
+#: and the lower large-text bar for secondary text, which is what `muted` is.
+MIN_TEXT = 4.5
+MIN_MUTED = 3.0
 
 #: How much of the chat's own ground to lay over a persona's background.
 #:
@@ -86,6 +146,25 @@ MAX_BODY_CHARS = 4000
 IMAGE_SUFFIXES = frozenset({".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"})
 
 FENCE = "---"
+
+
+def _channel(value: float) -> float:
+    return value / 12.92 if value <= 0.03928 else ((value + 0.055) / 1.055) ** 2.4
+
+
+def _luminance(colour: str) -> float:
+    """Relative luminance of a #rgb or #rrggbb colour, as WCAG defines it."""
+    value = colour.lstrip("#")
+    if len(value) == 3:
+        value = "".join(c * 2 for c in value)
+    r, g, b = (int(value[i:i + 2], 16) / 255 for i in (0, 2, 4))
+    return 0.2126 * _channel(r) + 0.7152 * _channel(g) + 0.0722 * _channel(b)
+
+
+def contrast(one: str, other: str) -> float:
+    """The WCAG contrast ratio between two colours, 1.0 to 21.0."""
+    light, dark = sorted((_luminance(one), _luminance(other)), reverse=True)
+    return (light + 0.05) / (dark + 0.05)
 
 
 class Persona:
@@ -142,15 +221,16 @@ class Persona:
             return None
         return candidate if candidate.is_file() else None
 
-    @property
-    def accent(self) -> str | None:
-        """The accent colour, if it is one.
+    def colour(self, key: str) -> str | None:
+        """One of this persona's colours, if it is one.
 
         Anything that is not a plain hex colour is dropped rather than
         rejected: a persona with a typo in its theme should arrive with its
-        writing intact and its colour ignored.
+        writing intact and that one colour ignored. The value is interpolated
+        into a stylesheet, so this is also the check that keeps a downloaded
+        theme.json from writing CSS.
         """
-        value = self.theme.get(ACCENT)
+        value = self.theme.get(key)
         if not isinstance(value, str):
             return None
         value = value.strip()
@@ -160,6 +240,32 @@ class Persona:
             return None
         return value
 
+    @property
+    def accent(self) -> str | None:
+        return self.colour(ACCENT)
+
+    @property
+    def font(self) -> str | None:
+        """The named font stack this persona asks for, if it is one of ours."""
+        value = self.theme.get(FONT)
+        return FONTS.get(value.strip().lower()) if isinstance(value, str) else None
+
+    @property
+    def font_size(self) -> str | None:
+        """Body size in px, clamped to what is still an interface."""
+        value = self.theme.get(FONT_SIZE)
+        if not isinstance(value, (int, float)) or isinstance(value, bool):
+            return None
+        low, high = FONT_SIZES
+        return f"{min(max(float(value), low), high):g}px"
+
+    @property
+    def font_weight(self) -> int | None:
+        value = self.theme.get(FONT_WEIGHT)
+        if not isinstance(value, int) or isinstance(value, bool):
+            return None
+        return value if value in FONT_WEIGHTS else None
+
     def snapshot(self) -> dict[str, Any]:
         return {
             "name": self.name,
@@ -167,6 +273,8 @@ class Persona:
             "source": self.source,
             "path": str(self.path),
             "accent": self.accent,
+            "colours": {k: c for k in COLOURS if (c := self.colour(k))},
+            "font": self.theme.get(FONT) if self.font else None,
             "has_avatar": self.asset(AVATAR) is not None,
             "has_background": self.asset(BACKGROUND) is not None,
         }
@@ -317,14 +425,30 @@ class PersonaLibrary:
 
     # -- what the interface is told -------------------------------------
 
-    def css(self, active: str) -> str:
+    def css(self, active: str, scheme: dict[str, str] | None = None) -> str:
         """The persona's presentation, scoped to the chat and nowhere else.
 
         **A persona does not restyle the application.** The owner picked the
         interface's colours and a persona is a guest in them; what it gets is
         its own room. So every declaration here is scoped to the chat surface,
-        and the accent is redefined on that element rather than on :root --
-        which means it cascades to the conversation and stops at its edge.
+        and the tokens are redefined on that element rather than on :root --
+        which means they cascade to the conversation and stop at its edge.
+        Panes, status column, settings and every other surface are untouched.
+
+        Inside that room a persona dresses what the conversation is made of:
+        the owner's bubble, the words, the field they are typed into and the
+        Send control. Two things are deliberately left alone. Code containers
+        keep the interface's type, because code is quoted material and the
+        part an owner most needs to read exactly. And the scrim stays the
+        interface's own background, so the guarantee that text survives any
+        picture does not depend on the picture's author.
+
+        `scheme` is the interface's resolved colours, which is what makes the
+        contrast checks possible: a persona's text is measured against the
+        ground it will actually sit on, and dropped if it fails. A downloaded
+        persona should be able to make the chat *look* like anything except
+        unreadable. Without a scheme the colours are still validated as
+        colours and taken as given.
 
         Returning a string rather than applying anything keeps this alongside
         the colours and proportions in the one stylesheet that loads before
@@ -336,9 +460,26 @@ class PersonaLibrary:
             return ""
 
         rules = []
-        accent = persona.accent
-        if accent:
-            rules.append(f"  --accent: {accent};")
+        chosen = _legible(persona, scheme)
+        for key, colour in chosen.items():
+            rules.append(f"  {COLOURS[key]}: {colour};")
+        if TEXT in chosen:
+            # Restated, not merely redefined. `color` is resolved once where
+            # it is declared -- on body, against the root's --text -- and
+            # what descends from there is the resulting colour, not the
+            # variable. Without this line a persona's text token reaches
+            # every rule that mentions var(--text) inside the chat and none
+            # of the words themselves, which is exactly the way round that
+            # looks like nothing happened.
+            rules.append("  color: var(--text);")
+
+        type_rules = []
+        if (font := persona.font):
+            type_rules.append(f"  font-family: {font};")
+        if (size := persona.font_size):
+            type_rules.append(f"  font-size: {size};")
+        if (weight := persona.font_weight):
+            type_rules.append(f"  font-weight: {weight};")
 
         scrim = ""
         if persona.asset(BACKGROUND) is not None:
@@ -367,9 +508,56 @@ class PersonaLibrary:
                 "  pointer-events: none;\n"
                 "}\n"
             )
-        if not rules:
+        if not rules and not type_rules:
             return ""
-        return ".chat {\n" + "\n".join(rules) + "\n}\n" + scrim
+
+        out = ".chat {\n" + "\n".join(rules + type_rules) + "\n}\n" + scrim
+        if type_rules:
+            # Code keeps the interface's type. Inline code sizes itself in
+            # `em`, so without this it would ride along with a persona that
+            # asked for large text, and a mono stack would inherit a serif.
+            out += (
+                ".chat .markdown code {\n"
+                f"  font-family: {FONTS['mono']};\n"
+                f"  font-size: {CODE_FONT_SIZE};\n"
+                "  font-weight: 400;\n"
+                "}\n"
+            )
+        return out
+
+
+def _legible(persona: Persona, scheme: dict[str, str] | None) -> dict[str, str]:
+    """A persona's colours, minus any that would make the chat unreadable.
+
+    Each one is dropped on its own rather than the set being refused: a
+    persona with one bad value should arrive wearing the rest of its clothes.
+    What is dropped falls back to the interface's own token, which is by
+    definition readable, because the owner is already reading the interface
+    in it.
+    """
+    chosen = {k: c for k in COLOURS if (c := persona.colour(k))}
+    if scheme is None:
+        return chosen
+
+    ground = scheme.get("bg", "#000000")
+    # Text is checked first: everything after it is checked against whatever
+    # text ends up being, the persona's or the interface's.
+    if (text := chosen.get(TEXT)) and contrast(text, ground) < MIN_TEXT:
+        del chosen[TEXT]
+    text = chosen.get(TEXT) or scheme.get("text", "#ffffff")
+
+    if (muted := chosen.get(MUTED)) and contrast(muted, ground) < MIN_MUTED:
+        del chosen[MUTED]
+    # The owner's bubble and the composer's box are grounds of their own, and
+    # the words on them are the same words.
+    for key in (OWNER, SURFACE):
+        if (surface := chosen.get(key)) and contrast(text, surface) < MIN_TEXT:
+            del chosen[key]
+    # Send: whatever the label is drawn in has to survive the button.
+    accent = chosen.get(ACCENT) or scheme.get("accent", "#000000")
+    if (on := chosen.get(ON_ACCENT)) and contrast(on, accent) < MIN_TEXT:
+        del chosen[ON_ACCENT]
+    return chosen
 
 
 def _quote(name: str) -> str:

@@ -336,10 +336,16 @@ It is a folder, so writing one is writing a page of Markdown:
 ```text
 aworg-light/
 ├── PERSONA.md      identity, voice, temperament, values, what to avoid
-├── theme.json      accent colour, avatar, optional chat background
+├── theme.json      the room: colours, type, avatar, optional background
 ├── avatar.svg
 └── background.jpg  optional
 ```
+
+`theme.json` dresses the conversation and nothing else: `accent`, `on_accent`
+(the Send label), `text`, `muted`, `owner` (your own bubble), `surface` (the
+box you type into), `line`, plus `font` (`system`, `serif`, `mono` or
+`rounded`), `font_size` and `font_weight`. Code containers are left alone --
+code is quoted material, and the part an owner most needs to read exactly.
 
 Drop it in `personas/` under this Aworg's home and it appears in Settings.
 Frontmatter is optional — a `PERSONA.md` that starts straight in with
@@ -389,6 +395,19 @@ You chose the interface's colours. A Persona is a guest in them, so its
 accent is redefined on the chat surface rather than at the root: it reaches
 the conversation and stops at its edge. The app stays your teal while the
 chat goes Atelier's amber.
+
+A persona's colours are checked before they are served. Its text is measured
+against the ground it will actually sit on, its words against its own bubble
+and its own composer, its Send label against its Send button — and any single
+value that would fall below AA is dropped, falling back to the interface's
+token, which the owner is demonstrably able to read. One bad value costs that
+value and not the persona.
+
+One thing the scoping does not do by itself: `color` is resolved where it is
+declared, on `body`, so descendants inherit the resulting colour rather than
+the variable. A persona that only redefined `--text` would recolour every rule
+inside the chat that mentions it and none of the words. The chat restates
+`color: var(--text)` for exactly that reason.
 
 A background image brings its own scrim, emitted with the picture and never
 without it — so whatever anyone ships, the text on top stays readable, and an
