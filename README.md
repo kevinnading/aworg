@@ -345,12 +345,15 @@ Drop it in `personas/` under this Aworg's home and it appears in Settings.
 Frontmatter is optional — a `PERSONA.md` that starts straight in with
 `# Identity` loads exactly as written and takes its name from the folder.
 
-Five ship. `aworg-light` is worn when you have not chosen, and `aworg-dark` is
+Six ship. `aworg-light` is worn when you have not chosen, and `aworg-dark` is
 the same voice for a dark scheme: AWORG's own, calm and exact, reporting what
 it checked rather than what it hoped. `atelier` thinks in layouts and shows
 rough work early. `nocturne` is for the long job you start and walk away from,
 and says plainly that it works on what you gave it and cannot reach you until
-you are back. `scribe` writes everything down.
+you are back. `egirl` is Nyx: lowercase, chronically online, and dead serious
+about whether it works -- the vibe stops at the code block. `scribe` is as
+plain as a persona gets: a few lines, no name and no look, and a working
+example of how little one needs.
 
 ### Changing Persona is not a new Resident
 
