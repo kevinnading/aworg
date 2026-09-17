@@ -1,15 +1,15 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Quill">
   <defs>
     <linearGradient id="ground" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#3a2a1c"/>
-      <stop offset="1" stop-color="#1e150d"/>
+      <stop offset="0" stop-color="#faf3e6"/>
+      <stop offset="1" stop-color="#ecdcc2"/>
     </linearGradient>
   </defs>
-  <rect x="0.5" y="0.5" width="63" height="63" rx="15.5" fill="url(#ground)" stroke="#6b5038"/>
-  <!-- A quill mid-stroke. -->
-  <path d="M50 10 C 34 14, 22 30, 18 46 C 26 40, 44 30, 50 10 Z" fill="#e7c9a9"/>
-  <path d="M50 10 C 40 22, 28 36, 18 46" stroke="#8a6a4a" stroke-width="1.6" fill="none"/>
-  <path d="M18 46 L13 55" stroke="#e7c9a9" stroke-width="3" stroke-linecap="round"/>
-  <path d="M22 56 C 30 53, 38 58, 50 54" stroke="#e7c9a9" stroke-width="2" fill="none"
-        stroke-linecap="round" opacity="0.7"/>
+  <rect x="0.5" y="0.5" width="63" height="63" rx="15.5" fill="url(#ground)" stroke="#d8c6a8"/>
+  <!-- A quill mid-stroke, on paper. -->
+  <path d="M50 10 C 34 14, 22 30, 18 46 C 26 40, 44 30, 50 10 Z" fill="#7c2d12"/>
+  <path d="M50 10 C 40 22, 28 36, 18 46" stroke="#faf3e6" stroke-width="1.6" fill="none"/>
+  <path d="M18 46 L13 55" stroke="#7c2d12" stroke-width="3" stroke-linecap="round"/>
+  <path d="M22 56 C 30 53, 38 58, 50 54" stroke="#a8674a" stroke-width="2" fill="none"
+        stroke-linecap="round" opacity="0.8"/>
 </svg>

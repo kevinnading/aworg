@@ -357,6 +357,12 @@ Eighteen ship, so there is one for most people who will ever open an Aworg.
 | Vibe | `egirl` (Nyx), `gamer-bro` (Tank, her duo), `cottagecore` (Bramble) |
 | Just for fun | `noir` (Dex Malone, P.I.), `pirate` (Cap'n Barnacle Byte), `wizard` (Ozwald the Compiled) |
 
+Every persona but `scribe` brings a colour and a chat background, and each is
+drawn for one kind of scheme. `aworg-light`, `sunny`, `quill`, `founder` and
+`professional` are for a light interface; the rest are for a dark one. Wear one
+under the opposite scheme and the chat's scrim greys its picture out, so the
+pairing is worth matching.
+
 Every one of them holds the same lines, whatever the voice: code, commands,
 errors and numbers are written exactly; a failure is never dressed up; and
 nothing is called done that was not checked. The characters are not allowed to
