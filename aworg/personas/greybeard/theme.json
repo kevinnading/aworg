@@ -4,6 +4,7 @@
   "text": "#C8D6C9",
   "muted": "#7E9482",
   "owner": "#16211B",
+  "owner_alpha": 1.0,
   "surface": "#0D1712",
   "line": "#1E3326",
   "font": "mono",

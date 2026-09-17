@@ -72,6 +72,23 @@ SURFACE = "surface"
 LINE = "line"
 ON_ACCENT = "on_accent"
 
+#: The Resident's own bubble, which the interface does not draw at all: a
+#: reply is the page's own voice and needs no envelope. A persona may want
+#: one anyway, to lift its words off its artwork.
+RESIDENT = "resident"
+
+#: How much of each bubble is there. 0 is no bubble, 1 is solid, and the
+#: values in between are the useful ones over a background: enough to settle
+#: the words on something without hiding the picture underneath.
+OWNER_ALPHA = "owner_alpha"
+RESIDENT_ALPHA = "resident_alpha"
+ALPHAS = {OWNER: OWNER_ALPHA, RESIDENT: RESIDENT_ALPHA}
+
+#: Bubble padding, when a persona asks for a Resident bubble. The owner's own
+#: is styled in the stylesheet; this matches it so the two read as a pair.
+BUBBLE = "11px 15px"
+BUBBLE_RADIUS = "12px"
+
 #: Colour keys, and the interface token each redefines inside the chat.
 #:
 #: `surface` is the composer's own box rather than the pane behind it: a
@@ -79,6 +96,7 @@ ON_ACCENT = "on_accent"
 #: the conversation.
 COLOURS = {
     ACCENT: "--accent",
+    RESIDENT: "--resident-bubble",
     OWNER: "--owner",
     TEXT: "--text",
     MUTED: "--muted",
@@ -159,6 +177,26 @@ def _luminance(colour: str) -> float:
         value = "".join(c * 2 for c in value)
     r, g, b = (int(value[i:i + 2], 16) / 255 for i in (0, 2, 4))
     return 0.2126 * _channel(r) + 0.7152 * _channel(g) + 0.0722 * _channel(b)
+
+
+def _rgb(colour: str) -> tuple[int, int, int]:
+    value = colour.lstrip("#")
+    if len(value) == 3:
+        value = "".join(c * 2 for c in value)
+    return tuple(int(value[i:i + 2], 16) for i in (0, 2, 4))
+
+
+def blend(colour: str, ground: str, alpha: float) -> str:
+    """What a translucent colour actually looks like over a given ground.
+
+    A half-transparent bubble is not the colour in theme.json; it is that
+    colour mixed with whatever shows through. The contrast checks have to see
+    what the eye will see, or a persona could pass them with a bubble that is
+    barely there.
+    """
+    top, under = _rgb(colour), _rgb(ground)
+    mixed = tuple(round(t * alpha + u * (1 - alpha)) for t, u in zip(top, under))
+    return "#%02x%02x%02x" % mixed
 
 
 def contrast(one: str, other: str) -> float:
@@ -243,6 +281,18 @@ class Persona:
     @property
     def accent(self) -> str | None:
         return self.colour(ACCENT)
+
+    def alpha(self, key: str) -> float | None:
+        """How opaque one of the bubbles is, if the persona says.
+
+        Absent means solid, which is what a colour without an opacity has
+        always meant. Zero is a legitimate answer -- no bubble at all -- so
+        it is kept rather than treated as unset.
+        """
+        value = self.theme.get(ALPHAS.get(key, ""))
+        if not isinstance(value, (int, float)) or isinstance(value, bool):
+            return None
+        return min(max(float(value), 0.0), 1.0)
 
     @property
     def font(self) -> str | None:
@@ -462,6 +512,13 @@ class PersonaLibrary:
         rules = []
         chosen = _legible(persona, scheme)
         for key, colour in chosen.items():
+            alpha = persona.alpha(key)
+            if alpha is not None and alpha < 1:
+                # Mixed in the browser rather than flattened here, so what
+                # shows through a bubble is whatever is actually behind it --
+                # the persona's own artwork, not an assumption about it.
+                colour = (f"color-mix(in srgb, {colour} {alpha * 100:g}%,"
+                          " transparent)")
             rules.append(f"  {COLOURS[key]}: {colour};")
         if TEXT in chosen:
             # Restated, not merely redefined. `color` is resolved once where
@@ -512,6 +569,20 @@ class PersonaLibrary:
             return ""
 
         out = ".chat {\n" + "\n".join(rules + type_rules) + "\n}\n" + scrim
+        if RESIDENT in chosen:
+            # The reply gets an envelope only because this persona asked for
+            # one. Bounded like the owner's so a long answer does not become
+            # a full-width slab, and left on the text rather than the row so
+            # the avatar stays outside it.
+            out += (
+                ".chat .msg.resident > .body {\n"
+                "  background: var(--resident-bubble);\n"
+                f"  padding: {BUBBLE};\n"
+                f"  border-radius: {BUBBLE_RADIUS};\n"
+                "  display: inline-block;\n"
+                "  max-width: 80%;\n"
+                "}\n"
+            )
         if type_rules:
             # Code keeps the interface's type. Inline code sizes itself in
             # `em`, so without this it would ride along with a persona that
@@ -548,10 +619,23 @@ def _legible(persona: Persona, scheme: dict[str, str] | None) -> dict[str, str]:
 
     if (muted := chosen.get(MUTED)) and contrast(muted, ground) < MIN_MUTED:
         del chosen[MUTED]
-    # The owner's bubble and the composer's box are grounds of their own, and
-    # the words on them are the same words.
-    for key in (OWNER, SURFACE):
-        if (surface := chosen.get(key)) and contrast(text, surface) < MIN_TEXT:
+    # The bubbles and the composer's box are grounds of their own, and the
+    # words on them are the same words. A translucent bubble is checked as
+    # what it will look like over the chat's own ground: a persona does not
+    # get to pass by making its bubble almost invisible.
+    #
+    # A bubble that is entirely transparent is left alone. It is not a ground
+    # at all -- the words sit on the chat itself, which was checked above.
+    for key in (OWNER, RESIDENT, SURFACE):
+        surface = chosen.get(key)
+        if not surface:
+            continue
+        alpha = persona.alpha(key)
+        if alpha == 0:
+            continue
+        if alpha is not None and alpha < 1:
+            surface = blend(surface, ground, alpha)
+        if contrast(text, surface) < MIN_TEXT:
             del chosen[key]
     # Send: whatever the label is drawn in has to survive the button.
     accent = chosen.get(ACCENT) or scheme.get("accent", "#000000")

@@ -342,10 +342,19 @@ aworg-light/
 ```
 
 `theme.json` dresses the conversation and nothing else: `accent`, `on_accent`
-(the Send label), `text`, `muted`, `owner` (your own bubble), `surface` (the
-box you type into), `line`, plus `font` (`system`, `serif`, `mono` or
+(the Send label), `text`, `muted`, `owner` (your own bubble), `resident` (a
+bubble behind the reply, which the interface does not draw at all), `surface`
+(the box you type into), `line`, plus `font` (`system`, `serif`, `mono` or
 `rounded`), `font_size` and `font_weight`. Code containers are left alone --
 code is quoted material, and the part an owner most needs to read exactly.
+
+Both bubbles take an opacity, `owner_alpha` and `resident_alpha`, and the
+range is the point of them. Solid suits a persona whose reply is a document or
+a case file; a tenth of one is enough to settle words on busy artwork without
+hiding it; and leaving `resident` out means no bubble at all, which is how
+Sunny and Greybeard are drawn. A translucent bubble is checked as what it will
+actually look like over the ground behind it, so a persona cannot pass the
+contrast floor by being nearly invisible.
 
 Drop it in `personas/` under this Aworg's home and it appears in Settings.
 Frontmatter is optional — a `PERSONA.md` that starts straight in with
