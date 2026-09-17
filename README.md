@@ -831,3 +831,24 @@ everything above it speaks only AWORG's own vocabulary. And operating-system
 detail stays inside `tools/` — AWORG does not translate between environments,
 so a tool either handles its platform itself or says it cannot run here. A
 compatibility layer in the core would be wrong everywhere at once.
+
+## License
+
+AWORG is **source-available**, not open source. It is free to use, personal or
+commercial, under the [PolyForm Shield License 1.0.0](LICENSE) with the
+[AWORG Additional Terms](ADDITIONAL-TERMS.md). In short:
+
+- **Use it for anything, free** — including inside products you sell.
+- **What you make with AWORG is yours**, under your own name, with no AWORG
+  branding required.
+- **AWORG's own screens stay AWORG.** Wherever people operate or manage AWORG,
+  it must still identify itself as AWORG, however you restyle it.
+- **Don't compete with it.** You may not offer AWORG, or a product built from
+  it, as a substitute for AWORG, including multi-project AWORGs or a hub for
+  managing many.
+- **The name is not yours to use** for your own product or fork. See
+  [TRADEMARKS.md](TRADEMARKS.md).
+
+The summary is a guide; the license files are the terms.
+
+AWORG does not accept outside contributions.
