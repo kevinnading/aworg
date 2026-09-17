@@ -318,6 +318,25 @@ def tasks(plan: list[dict[str, Any]]) -> list[dict[str, Any]]:
     ]
 
 
+def skill_tokens(name: str, description: str) -> int:
+    """What offering one skill costs per message.
+
+    Not the skill. The *offer* of it: a skill's body is read on demand with
+    read_skill and costs nothing until it is, which is the whole point of the
+    convention. What rides along every message is the name in the prompt's
+    skills line and the name-with-description in read_skill's own schema --
+    see skills.prompt_block and read_skill.describe_for, which is where these
+    two strings are actually built.
+
+    A skill that is not being offered costs nothing, and the pane says zero
+    rather than hiding the row: "switched off" and "free" are the same fact
+    seen twice, and an owner deciding what to turn off is owed both.
+    """
+    listed = f"{name}, "
+    catalogue = f"  {name}: {description}\n"
+    return int((len(listed) + len(catalogue)) / CHARS_PER_TOKEN)
+
+
 def skills(library: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """The procedures this Aworg knows, as the pane lists them.
 
@@ -345,6 +364,14 @@ def skills(library: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "offered": skill.get("offered", True),
             "active_while": skill.get("active_while", "always"),
             "references": len(skill["references"]),
+            # What being offered costs on every message. Zero when it is not
+            # being offered, which is the honest number: a retired or
+            # switched-off skill is not in the prompt or the schema.
+            "tokens": (
+                skill_tokens(skill["name"], skill["description"])
+                if skill.get("offered", True) and skill.get("enabled", True)
+                else 0
+            ),
         }
         for skill in library
     ]
@@ -441,6 +468,12 @@ def describe(
         # Measured from the block that actually goes, not estimated from the
         # readings above it, so the number cannot drift from the thing it is
         # describing.
+        if pane["id"] == "skills" and items:
+            # Same argument as Capabilities: the total is what is being
+            # offered right now, so it moves when the owner presses a switch.
+            # It counts the per-skill offers only -- the standing instruction
+            # that introduces them is prose the pane does not own.
+            entry["tokens"] = sum(int(item.get("tokens") or 0) for item in items)
         if pane["id"] == "capabilities" and items:
             # The pane already prices each capability; this is what the pane
             # as a whole is costing right now. Only what is switched on,

@@ -2403,7 +2403,20 @@ function skillRow(item) {
     : `Offer ${item.name} to the Resident again.`;
   toggle.onclick = () => setSkill(item.id, !item.enabled);
 
-  head.append(name, mode, toggle);
+  // What offering it costs per message, the same as a capability carries.
+  // A skill's body is free until read_skill fetches it; what rides along
+  // every message is its name and description, and that is what this is.
+  // Zero is shown rather than hidden: a switched-off or retired skill
+  // costing nothing is the other half of the decision the switch offers.
+  const cost = document.createElement("span");
+  cost.className = "capability-cost";
+  cost.textContent = `~${item.tokens ?? 0} tok`;
+  cost.title = item.tokens
+    ? `Offering ${item.name} costs roughly ${item.tokens} tokens of context ` +
+      `on every message. Its steps cost nothing until the Resident reads it.`
+    : `${item.name} is not being offered, so it costs nothing right now.`;
+
+  head.append(name, mode, cost, toggle);
 
   const detail = document.createElement("span");
   detail.className = "pane-item-detail";
