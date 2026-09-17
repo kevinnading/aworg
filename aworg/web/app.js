@@ -1866,9 +1866,16 @@ function paneNode(pane, { region, last }) {
     const cost = document.createElement("span");
     cost.className = "pane-cost";
     cost.textContent = `~${pane.tokens} tok`;
-    cost.title =
-      `These facts are sent to your Resident with every message, and cost ` +
-      `roughly ${pane.tokens} tokens of its context each time.`;
+    // Two panes carry a price and they are priced for different reasons, so
+    // they say different things. Capabilities totals what is switched on
+    // right now -- the number that moves when the owner presses something --
+    // and the environment is one block that either goes or does not.
+    cost.title = pane.id === "capabilities"
+      ? `The tools you have switched on are offered to your Resident with ` +
+        `every message, and their descriptions cost roughly ${pane.tokens} ` +
+        `tokens of its context each time. Switching one off lowers this.`
+      : `These facts are sent to your Resident with every message, and cost ` +
+        `roughly ${pane.tokens} tokens of its context each time.`;
     head.appendChild(cost);
   }
 

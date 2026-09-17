@@ -441,6 +441,18 @@ def describe(
         # Measured from the block that actually goes, not estimated from the
         # readings above it, so the number cannot drift from the thing it is
         # describing.
+        if pane["id"] == "capabilities" and items:
+            # The pane already prices each capability; this is what the pane
+            # as a whole is costing right now. Only what is switched on,
+            # because that is the number that changes when the owner presses
+            # something -- a total that counted the off ones would not move
+            # when they turned one off, which is the one moment they are
+            # looking at it.
+            entry["tokens"] = sum(
+                int(item.get("tokens") or 0)
+                for item in items
+                if item.get("enabled")
+            )
         if pane["id"] == "environment" and facts:
             entry["tokens"] = int(
                 len(host.summary(facts, workspace)) / CHARS_PER_TOKEN
