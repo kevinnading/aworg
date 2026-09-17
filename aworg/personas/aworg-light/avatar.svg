@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="AWORG Light">
+  <!-- Structure containing a Resident: a metallic A holding a luminous orb.
+       Drawn as two facets rather than set in type, so it needs no font and
+       reads as dimensional at avatar size. -->
+  <defs>
+    <linearGradient id="ground" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FAFCFD"/>
+      <stop offset="1" stop-color="#DCE5ED"/>
+    </linearGradient>
+    <linearGradient id="left" x1="0" y1="0" x2="0.4" y2="1">
+      <stop offset="0" stop-color="#7F91A3"/>
+      <stop offset="0.5" stop-color="#243342"/>
+      <stop offset="1" stop-color="#0B1118"/>
+    </linearGradient>
+    <linearGradient id="right" x1="1" y1="0" x2="0.6" y2="1">
+      <stop offset="0" stop-color="#B9C5D1"/>
+      <stop offset="0.45" stop-color="#7F91A3"/>
+      <stop offset="1" stop-color="#243342"/>
+    </linearGradient>
+    <radialGradient id="orb" cx="0.38" cy="0.34" r="0.7">
+      <stop offset="0" stop-color="#FAFCFD"/>
+      <stop offset="0.3" stop-color="#76D5FF"/>
+      <stop offset="0.65" stop-color="#159BFF"/>
+      <stop offset="1" stop-color="#075DCC"/>
+    </radialGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#36B8FF" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#36B8FF" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect x="0.5" y="0.5" width="63" height="63" rx="15.5" fill="url(#ground)" stroke="#B9C5D1"/>
+  <circle cx="32" cy="43" r="17" fill="url(#glow)"/>
+  <path d="M32 9 L32 29 L20 54 L9 54 Z" fill="url(#left)"/>
+  <path d="M32 9 L55 54 L44 54 L32 29 Z" fill="url(#right)"/>
+  <circle cx="32" cy="43" r="8.5" fill="url(#orb)"/>
+</svg>
