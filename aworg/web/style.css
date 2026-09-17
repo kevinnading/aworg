@@ -276,7 +276,17 @@ main { flex: 1; min-height: 0; display: flex; }
   background: none;
   border: none;
   color: var(--text);
-  padding: 8px 4px 8px 10px;
+  /* Sized to the controls beside it rather than to a line of text.
+     A one-line field is 22.5px of text in a 34px row of buttons, so left to
+     itself it either sat taller than them -- a box half again as deep as
+     anything in it -- or bottomed out against the padding with the caret
+     below the middle of Send. Matching their height and splitting the
+     difference as padding puts the first line on the buttons' centre line,
+     and the box is then as tall as its tallest control and no taller.
+     `min-height` rather than `height` so growing to the text still works:
+     the script measures scrollHeight, which this floor does not fight. */
+  min-height: 34px;
+  padding: 5.75px 4px 5.75px 10px;
   font: inherit;
   line-height: 1.5;
 }
