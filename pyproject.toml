@@ -2,18 +2,44 @@
 name = "aworg"
 version = "0.7.0"
 description = "Autonomous Workspace Organism - a persistent AI Resident for your machine"
+readme = "README.md"
 requires-python = ">=3.10"
+# Source-available, not open source: PolyForm Shield 1.0.0 plus AWORG's own
+# additional terms. Neither combination has an SPDX identifier (Shield itself
+# is not on the SPDX list), so this is a LicenseRef pointing at the files.
+license = "LicenseRef-AWORG"
+license-files = ["LICENSE", "ADDITIONAL-TERMS.md", "TRADEMARKS.md"]
+authors = [{ name = "Kevin Nading" }]
+keywords = ["ai", "agent", "llm", "autonomous", "assistant", "resident", "workspace", "self-hosted"]
+# No License classifier: PEP 639 forbids one alongside a license expression.
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Web Environment",
+    "Framework :: FastAPI",
+    "Intended Audience :: Developers",
+    "Intended Audience :: End Users/Desktop",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Code Generators",
+]
 dependencies = [
     "fastapi>=0.110",
     "uvicorn>=0.27",
     "httpx>=0.27",
 ]
 
+[project.urls]
+Homepage = "https://github.com/kevinnading/aworg"
+Source = "https://github.com/kevinnading/aworg"
+
 [project.scripts]
 aworg = "aworg.cli:main"
 
 [build-system]
-requires = ["setuptools>=68"]
+# 77 is the first release that reads a license expression and license-files
+# (PEP 639).
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]

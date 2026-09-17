@@ -7,6 +7,9 @@ by surprise are not surprises twice.
 
 ## Where it stands
 
+- **Licensed 2026-09-16**: PolyForm Shield 1.0.0 with `ADDITIONAL-TERMS.md`
+  and `TRADEMARKS.md`. Source-available, not open source.
+
 - **The name `aworg` is free.** `pypi.org/pypi/aworg/json` returned 404 on
   2026-09-14. Unclaimed names do not stay unclaimed, and a PyPI name can
   never be renamed or reused after deletion, so claiming it is cheap
@@ -49,16 +52,27 @@ Then boot `create_app` from that environment and confirm `/api/skills`
 returns three and `/api/personas` returns six. Any packaging change deserves
 this, because the failure mode is silence.
 
-## What is still missing
+## Metadata (filled in 2026-09-16)
 
-| Field | State | Why it matters |
-|---|---|---|
-| `readme` | **not declared** | The PyPI page would be blank apart from the one-line description, with an 833-line README sitting unused. Biggest single gap. |
-| `license` | **no file, no field** | Without one, nobody legally has permission to use it. This also undercuts the argument for putting the version in the Resident's prompt, which assumes the source is open and will reach training data. |
-| `classifiers` | absent | How people find it, and where `Development Status :: 4 - Beta` lives -- the machine-readable form of "0.7". |
-| `authors` | absent | |
-| `keywords` | absent | |
-| `urls` | absent | Homepage / Source / Issues in the sidebar. |
+`pyproject.toml` now declares `readme`, `license`, `license-files`, `authors`,
+`keywords`, `classifiers` and `urls`. Checked by building a wheel and reading
+its `METADATA`: the README is the long description, all three license files
+land in `dist-info/licenses/`, and the wheel still carries 3 skills and 6
+personas.
+
+Decisions worth knowing:
+
+- **`license = "LicenseRef-AWORG"`.** AWORG is PolyForm Shield 1.0.0 plus
+  `ADDITIONAL-TERMS.md`, and Shield has no SPDX identifier, so a LicenseRef is
+  the honest expression. PEP 639 forbids a License classifier next to it.
+- **The build now needs `setuptools>=77`**, the first release that reads a
+  license expression and `license-files`.
+- **No author email and no Issues URL.** Both are a choice for Kevin, not a
+  default. AWORG does not accept outside contributions, which may or may not
+  mean issues are wanted.
+- **Relative links in the README will break on PyPI** (`LICENSE`, `docs/`,
+  and the like), because PyPI does not resolve them against the repository.
+  Worth making them absolute GitHub URLs before the first upload.
 
 ## The steps, when ready
 
@@ -67,7 +81,7 @@ this, because the failure mode is silence.
    `kevinnading/aworg` plus a workflow name on PyPI once and GitHub Actions
    uploads with a short-lived OIDC token. No secret to leak or rotate.
    Preferred.
-3. Fill in the metadata above and add a LICENSE.
+3. ~~Fill in the metadata above and add a LICENSE.~~ Done 2026-09-16.
 4. `python -m build`, then `twine check dist/*`.
 5. **TestPyPI first.** Upload, install from it into a clean virtualenv, run
    it. This is the step that would have caught the missing skills.
