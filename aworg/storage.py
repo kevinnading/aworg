@@ -1232,6 +1232,21 @@ class Store:
                 + " WHERE id = 1",
                 (DEFAULT_SYSTEM_PROMPT,),
             )
+            # The project's name and version, back to what a fresh Aworg
+            # calls a thing it has not been told about yet.
+            #
+            # Missed until a reset left one behind. The workspace was emptied
+            # and the conversation was gone, but the name survived into the
+            # next prompt -- so the Resident, asked for something new, read
+            # that it was working on "Signal Garden" and dutifully built
+            # Signal Garden v2.0. It was not remembering; it was told, by a
+            # row nothing had cleared. The same class of miss as the running
+            # server below: state that lives outside the tables this loop
+            # names.
+            conn.execute(
+                "UPDATE project SET name = 'Unnamed Project', version = '1.0',"
+                " updated_at = datetime('now') WHERE id = 1"
+            )
             conn.execute("UPDATE layout SET sizes = '{}' WHERE id = 1")
             conn.execute(
                 "UPDATE appearance SET preset = 'midnight', overrides = '{}' WHERE id = 1"
