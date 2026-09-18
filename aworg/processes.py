@@ -241,7 +241,14 @@ class ProcessTable:
             if r.alive
         ]
         with contextlib.suppress(OSError):
-            (self._home / LEDGER).write_text(json.dumps(alive), encoding="utf-8")
+            ledger = self._home / LEDGER
+            if alive:
+                ledger.write_text(json.dumps(alive), encoding="utf-8")
+            else:
+                # Nothing running means no ledger, not an empty one. A fresh
+                # Aworg has no such file, and a reset one should not be told
+                # apart from it by a two-byte `[]` left in its home.
+                ledger.unlink(missing_ok=True)
 
     async def _drain(self, record: Running) -> None:
         """Read a process's output for as long as it runs, and notice when it stops.

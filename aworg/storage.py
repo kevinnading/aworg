@@ -1211,8 +1211,12 @@ class Store:
         """
         removed: dict[str, int] = {}
         with self._connect() as conn:
+            # skill_state was missing from this list, which meant the
+            # owner's skill switches survived a reset: an Aworg reset with
+            # three skills off came back with three skills off. It is the
+            # same kind of row as capability_state, and goes the same way.
             for table in ("messages", "conversations", "tasks", "workers",
-                          "capability_state", "journal"):
+                          "capability_state", "skill_state", "journal"):
                 removed[table] = conn.execute(
                     f"SELECT COUNT(*) c FROM {table}"
                 ).fetchone()["c"]

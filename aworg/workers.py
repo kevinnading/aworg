@@ -427,6 +427,20 @@ def _skills_block(worker: dict[str, Any], library: Any) -> str:
     bodies = []
     for name in names:
         skill = library.get_any(name)
+        # The owner's switch reaches workers too. This handed a worker every
+        # skill it was scoped to whether or not the owner had switched it
+        # off -- get_any exists precisely to find a skill that is off, for
+        # the toggle that turns it back on. So a builder went on writing
+        # house-style's provenance lines into every file after the owner had
+        # turned house-style off, and the switch was half a switch.
+        #
+        # Retired skills are the one "no" that does not apply here. That rule
+        # is about a Resident still getting started; a worker was scoped to
+        # the skill on purpose and has no start to be past.
+        if skill is not None:
+            allowed, reason = library.standing(skill)
+            if not allowed and reason != library.RETIRED:
+                skill = None
         if skill is None:
             continue
         bodies.append(f"## {skill.name}\n\n{skill.body().strip()}")

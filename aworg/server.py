@@ -852,6 +852,33 @@ def create_app(paths: Paths, address: str = "http://127.0.0.1:8420") -> FastAPI:
         # use is a code a second click could reuse.
         pending_code.pop("code", None)
 
+        # Stop the reply in progress first, and wait for it to be gone.
+        #
+        # This used to set `resident.turn = None` at the end and nothing
+        # else, which forgets the reply without stopping it. A Resident that
+        # was mid-job carried on regardless -- writing messages, tasks,
+        # files and a project name into the Aworg that had just been wiped
+        # underneath it, so the reset appeared to have remembered things.
+        # Cancelled, not asked: `stopping` is polite and waits for the next
+        # step, and the step it is on may be a worker with a long job.
+        turn = resident.turn
+        if turn is not None and not turn.done:
+            turn.stopping = True
+            task = getattr(turn, "task", None)
+            if task is not None:
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    await asyncio.wait_for(task, timeout=10)
+
+        # Then the programs it started, *before* touching the workspace.
+        #
+        # The other order failed quietly on Windows: a server started in
+        # site/ is sitting in that directory, the OS refuses to remove a
+        # directory a process is using, and rmtree's ignore_errors swallowed
+        # the refusal. The folder survived, empty, and the next Resident saw
+        # it in its own description of the workspace.
+        stopped = await resident.processes.clear()
+
         stamp = time.strftime("%Y%m%d-%H%M%S")
         backups = paths.home / "backups"
         backups.mkdir(exist_ok=True)
@@ -867,18 +894,42 @@ def create_app(paths: Paths, address: str = "http://127.0.0.1:8420") -> FastAPI:
         if not body.keep_connections:
             secrets.clear()
 
+        # What could not be removed is collected rather than swallowed. A
+        # reset that reports success over a folder it could not delete is
+        # the failure this whole block exists to prevent.
+        left_behind: list[str] = []
         for folder in (paths.workspace, paths.logs):
             if folder.exists():
                 for item in folder.iterdir():
-                    shutil.rmtree(item, ignore_errors=True) if item.is_dir() else item.unlink()
+                    try:
+                        shutil.rmtree(item) if item.is_dir() else item.unlink()
+                    except OSError as exc:
+                        left_behind.append(f"{item} ({exc.strerror or exc})")
             folder.mkdir(exist_ok=True)
+
+        # The trash goes to backups/ rather than away.
+        #
+        # It was never touched, so everything the Resident had ever deleted
+        # was still on disk inside the home it lives in -- readable by the
+        # next Resident with an absolute path. Kept rather than destroyed,
+        # beside the databases, because the trash is the one thing that
+        # exists so something deleted can come back, and a reset is the
+        # largest deletion there is.
+        trash = paths.trash
+        if trash.exists() and any(trash.iterdir()):
+            kept = backups / f"trash-{stamp}"
+            try:
+                shutil.move(str(trash), str(kept))
+                saved.append(kept.name)
+            except OSError as exc:
+                left_behind.append(f"{trash} ({exc.strerror or exc})")
+        trash.mkdir(exist_ok=True)
 
         # Runtime state is not in the database and has to be dropped by
         # hand -- including, and this was missed, the programs the Resident
         # started. A factory reset that leaves a web server running is not a
         # factory reset: the preview kept showing a page from a server the
         # Aworg no longer knew it owned.
-        stopped = await resident.processes.clear()
         # Cleared, not replaced. A new manager would leave the Living Log's
         # follower subscribed to the old one, and an Aworg that had been
         # reset would stop recording anything at all -- see forget_all.
@@ -889,23 +940,36 @@ def create_app(paths: Paths, address: str = "http://127.0.0.1:8420") -> FastAPI:
         # outstanding items in a log with none.
         resident.turn = None
         await resident.watch.inspect()
+        # The preview is showing a page from the Aworg that no longer exists.
+        resident._bump_preview()
 
         # Written after the wipe, not before, so it survives it. A reset is
         # the largest thing that can happen to an Aworg and a Living Log that
         # came back from one with no explanation for the silence above it
         # would be the pane failing at its only job.
+        detail = _reset_detail(removed, stopped, saved)
+        if left_behind:
+            detail += (
+                " Could not remove, and still there: "
+                + "; ".join(left_behind) + "."
+            )
         resident.journal.record(
             "This Aworg was reset",
             kind="aworg",
             source="owner",
-            detail=_reset_detail(removed, stopped, saved),
+            detail=detail,
+            # Incomplete is a concern rather than a note: the owner asked for
+            # a clean Aworg and did not entirely get one, and that should be
+            # findable rather than a clause at the end of a sentence.
+            **({"level": "concern"} if left_behind else {}),
         )
 
         return {
-            "status": "reset",
+            "status": "reset" if not left_behind else "reset, incompletely",
             "backups": saved,
             "removed": removed,
             "processes_stopped": stopped,
+            "left_behind": left_behind,
         }
 
     # -- personas ---------------------------------------------------------
