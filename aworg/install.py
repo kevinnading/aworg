@@ -50,6 +50,47 @@ SEEDS = ("skills", "personas", "capabilities")
 RECORD = "installed.json"
 
 
+def optional(folder: Path) -> bool:
+    """Whether this capability is one to leave out unless asked.
+
+    Read from the folder rather than listed here, so that adding an optional
+    capability is writing one line in its own __init__ rather than editing
+    the installer. Parsed rather than imported, for the same reason the
+    registry parses tool declarations: a capability that will not import is
+    a capability the installer should still be able to describe.
+
+    A capability that arrived with what it needs is not optional any more.
+    That is the whole rule: complete, or absent.
+    """
+    declared = _declared(folder / "__init__.py")
+    if not declared.get("OPTIONAL"):
+        return False
+    needs = declared.get("COMPLETE_WITH")
+    if needs and (folder / str(needs)).is_dir():
+        return False
+    return True
+
+
+def _declared(path: Path) -> dict[str, Any]:
+    """Top-level literal assignments in a module, without importing it."""
+    import ast
+
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    except (OSError, SyntaxError):
+        return {}
+    found: dict[str, Any] = {}
+    for node in tree.body:
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    try:
+                        found[target.id] = ast.literal_eval(node.value)
+                    except ValueError:
+                        continue
+    return found
+
+
 def shipped_root(kind: str) -> Path:
     """Where the seed for one kind of content lives inside the package."""
     return Path(__file__).parent / kind
@@ -86,11 +127,15 @@ def install(
     paths: Paths,
     force: bool = False,
     workspace: str | Path | None = None,
+    also: tuple[str, ...] | list[str] = (),
 ) -> dict[str, Any]:
     """Make this home into an Aworg, and report exactly what was done.
 
     Safe to run again. Nothing already in the home is touched unless `force`
     says to put it back the way it shipped.
+
+    `also` names capabilities that are optional and wanted anyway -- see
+    `optional`.
     """
     report: dict[str, Any] = {
         "home": str(paths.home),
@@ -129,7 +174,8 @@ def install(
     sown: dict[str, list[str]] = {}
     for kind in SEEDS:
         already = set((previous.get("seeded") or {}).get(kind) or [])
-        result = _seed(shipped_root(kind), getattr(paths, kind), already, force)
+        result = _seed(shipped_root(kind), getattr(paths, kind), already, force,
+                       wanted=set(also) if kind == "capabilities" else None)
         report["seeded"][kind] = result
         # Everything that shipped is recorded as sown whether or not it was
         # copied this time -- including what the owner has deleted, which is
@@ -182,7 +228,11 @@ def reseed(paths: Paths, kind: str) -> tuple[list[str], list[str]]:
                 trouble.append(f"{item} ({exc.strerror or exc})")
     folder.mkdir(parents=True, exist_ok=True)
 
-    result = _seed(shipped_root(kind), folder, set(), force=False)
+    # Optional capabilities are not sown again by a reset unless they were
+    # complete in the package -- "back to the way it arrived" means the way
+    # it arrived here, and one the owner installed separately did not.
+    result = _seed(shipped_root(kind), folder, set(), force=False,
+                   wanted=set() if kind == "capabilities" else None)
     sown = sorted(set(result["added"]) | set(result["kept"]))
 
     # The record follows, or the next install would treat everything just
@@ -218,7 +268,8 @@ def _directories(paths: Paths) -> list[Path]:
 
 
 def _seed(
-    source: Path, destination: Path, already: set[str], force: bool
+    source: Path, destination: Path, already: set[str], force: bool,
+    wanted: set[str] | None = None,
 ) -> dict[str, list[str]]:
     """Copy one kind of shipped content into the home.
 
@@ -227,7 +278,7 @@ def _seed(
     stop believing the rest of the output.
     """
     result: dict[str, list[str]] = {
-        "added": [], "kept": [], "replaced": [], "removed": [],
+        "added": [], "kept": [], "replaced": [], "removed": [], "optional": [],
     }
     if not source.is_dir():
         return result
@@ -237,6 +288,17 @@ def _seed(
         if not folder.is_dir() or folder.name.startswith((".", "_")):
             continue
         target = destination / folder.name
+        if (
+            wanted is not None
+            and folder.name not in wanted
+            and not target.exists()
+            and optional(folder)
+        ):
+            # Listed rather than skipped in silence: an owner who wondered
+            # where the browser went is owed the answer and the way to get
+            # it, and that is a line of output rather than a support thread.
+            result["optional"].append(folder.name)
+            continue
         if target.exists():
             if force:
                 shutil.rmtree(target)
@@ -283,7 +345,18 @@ def describe(report: dict[str, Any]) -> str:
             ("added", "installed"), ("replaced", "put back"),
             ("kept", "left alone"), ("removed", "left out, deleted here"),
         ):
-            if result[outcome]:
+            if result.get(outcome):
                 parts.append(f"{len(result[outcome])} {word}")
         lines.append(f"{kind:<15}{', '.join(parts) if parts else 'nothing shipped'}")
+
+    skipped = report["seeded"].get("capabilities", {}).get("optional") or []
+    if skipped:
+        lines.append("")
+        lines.append(
+            "Not installed, because this build did not bring everything they "
+            "need: " + ", ".join(skipped) + "."
+        )
+        lines.append(
+            "    aworg install --with " + skipped[0] + "    installs it anyway"
+        )
     return "\n".join(lines)

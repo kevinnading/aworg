@@ -1,3 +1,14 @@
+#: Not installed by default -- unless this copy of AWORG brought the engine
+#: with it, which the per-OS packages do and a wheel cannot. Without an
+#: engine this is a capability that is switched on, priced in every message,
+#: and broken the first time it is used; with one it is complete. The owner
+#: can ask for it by name at any time: `aworg install --with chromium`.
+OPTIONAL = True
+
+#: What it needs beside its own source to be worth installing. A folder,
+#: relative to this one. See install.py.
+COMPLETE_WITH = "chromium"
+
 LABEL = "Chromium Browser"
 DESCRIPTION = (
     "Seeing a page the way a person would: rendered, after its JavaScript has "

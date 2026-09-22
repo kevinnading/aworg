@@ -40,6 +40,14 @@ def main(argv: list[str] | None = None) -> int:
                  "nothing already in it is touched.",
         )
         command.add_argument(
+            "--with",
+            dest="also",
+            action="append",
+            metavar="NAME",
+            help="Also install a capability that is not installed by "
+                 "default, such as chromium. May be given more than once.",
+        )
+        command.add_argument(
             "--force",
             action="store_true",
             help="Put every shipped skill, persona and capability back the "
@@ -57,7 +65,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command in ("install", "init"):
         print(describe(install(paths, force=args.force,
-                               workspace=args.workspace)))
+                               workspace=args.workspace,
+                               also=args.also or ())))
         print()
         print("Start it with:  aworg start")
         return 0
