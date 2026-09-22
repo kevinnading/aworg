@@ -182,6 +182,55 @@ the same to the Resident. AWORG keeps its own metadata beside them —
 capability membership, enabled state, source — without that leaking into the
 MCP boundary.
 
+### Installed Capabilities run as the Aworg
+
+Capabilities come from two places: `aworg/tools/` inside the package, and
+`capabilities/` in the Aworg's home. The second is where anything the owner
+installs goes, and it loads through the same discovery, the same schema
+reading and the same `invoke` as a built-in. The only difference is
+mechanical — a folder in the home has no import path, so its modules are
+loaded from their files under a synthetic parent package, which is what lets
+a capability of several files import between them normally.
+
+An installed Capability runs **in AWORG's process, with everything AWORG
+has**. That is the deliberate position, not an unfinished one. A Tool exists
+to reach the machine; a Tool that could not would not be a Tool, and a
+Resident that can already run shell commands gains no new power from one.
+What it does change is *visibility*: a shell command appears in Activities,
+and Python running inside the process need not. So the protection is placed
+where it can work — at the moment of installing, in knowing what a capability
+is and where it came from — and the interface says plainly which Capabilities
+AWORG did not ship.
+
+Two things the home cannot do. It cannot replace a built-in: a folder named
+`shell` is refused rather than allowed to stand in front of the real one. And
+it cannot declare itself `INTERNAL` or `REQUIRED`; both flags remove a control
+from the owner, and an installed folder that could hide from the pane or
+remove its own switch would be a capability that installs itself out of sight.
+Refusals are shown in the pane rather than swallowed, because a capability
+that is silently absent looks exactly like one that was never installed.
+
+Filesystem, Shell, HTTP and the internal capabilities stay in the package.
+An Aworg missing them is not a plainer Aworg but a broken one, and a folder
+the owner can delete should not be load-bearing.
+
+### Shipped content is a seed, not a second library
+
+Skills and Personas live in one place: the Aworg's home. `aworg install`
+copies what AWORG ships into `skills/`, `personas/` and `capabilities/` there,
+and `installed.json` records what it put in.
+
+They used to be read from inside the package as well, which made a shipped
+skill a different kind of object from one the owner wrote — same format, same
+loader, a different home, and invisible in the folder where an owner would go
+looking. Now there is one folder per kind and one copy of each thing in it.
+Editing a shipped skill edits the skill. Deleting a persona deletes it, and a
+second install leaves it deleted rather than arguing.
+
+"Shipped" survives as provenance rather than location: the pane calls a skill
+shipped because the installer's record says AWORG put it there, however much
+it has been edited since.
+
 ### Operating systems are the tools' business
 
 AWORG does not translate between environments and must not start. There is no

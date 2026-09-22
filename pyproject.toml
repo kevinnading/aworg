@@ -65,4 +65,8 @@ aworg = [
     "personas/*/*.md",
     "personas/*/*.svg",
     "personas/*/*.json",
+    # Shipped capabilities are ordinary packages, so their .py files come
+    # along on their own; anything beside them does not.
+    "capabilities/*/*.md",
+    "capabilities/*/*.json",
 ]

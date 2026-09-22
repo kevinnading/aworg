@@ -117,7 +117,10 @@ PANES: list[dict[str, Any]] = [
         "label": "Capabilities",
         "hint": "What this Aworg can do: its Tools, and what this machine has.",
         "available": True,
-        "empty": ("Nothing installed.", ""),
+        "empty": ("Nothing installed.",
+                  "A capability is a folder of Python tool files. Put one "
+                  "under capabilities/ in this Aworg's home and it is offered "
+                  "to the Resident from the next start."),
         "blocked": None,
     },
 ]
@@ -183,6 +186,28 @@ def capabilities(
                 {"name": name, "detail": reason}
                 for name, reason in sorted(capability.broken.items())
             ],
+        })
+
+    # Folders in capabilities/ that are not capabilities. Shown rather than
+    # skipped: an owner who has just copied something in and sees nothing
+    # cannot tell a refusal from a restart they forgot to do.
+    for name, reason in sorted(getattr(registry, "rejected", {}).items()
+                               if registry else []):
+        items.append({
+            "kind": "capability",
+            "id": name,
+            "name": name,
+            "detail": reason,
+            "state": "off",
+            "enabled": False,
+            "required": False,
+            "builtin": False,
+            # No switch and no price: there is nothing here to turn on and
+            # nothing being sent on any message.
+            "rejected": True,
+            "tools": [],
+            "tokens": 0,
+            "broken": [],
         })
 
     return items

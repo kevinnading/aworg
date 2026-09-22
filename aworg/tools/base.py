@@ -210,6 +210,10 @@ class ToolSpec:
     #: Whether this tool builds its own descriptor at call time from live
     #: state, rather than declaring a fixed one. See Registry.descriptors.
     dynamic: bool = False
+    #: Where the file is, for a tool that came from an installed capability
+    #: rather than from inside the package. None means AWORG shipped it and
+    #: it is reached by import path like any other module.
+    path: Any = None
     #: Filled on first use. Discovery reads the file's declarations without
     #: importing its dependencies, so an Aworg with a broken tool still
     #: starts and still says which tool is broken.

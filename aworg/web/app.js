@@ -2218,8 +2218,18 @@ function capabilityRow(item) {
   // why they cannot press it; a word tells them there was never a decision
   // here. What it costs still shows, because that is information rather than
   // a choice, and it is the half of this pane that still applies.
-  const control = document.createElement(item.required ? "span" : "button");
-  if (item.required) {
+  const control = document.createElement(
+    item.required || item.rejected ? "span" : "button"
+  );
+  if (item.rejected) {
+    // A folder in capabilities/ that AWORG would not load. There is no
+    // switch for something that is not there; the reason is the whole of
+    // what this row has to say.
+    control.className = "capability-fixed";
+    control.textContent = "Not loaded";
+    control.title = `${item.name} is in this Aworg's capabilities folder but ` +
+      `was not loaded. ${item.detail}`;
+  } else if (item.required) {
     control.className = "capability-fixed";
     control.textContent = "Always on";
     control.title =
@@ -2242,12 +2252,26 @@ function capabilityRow(item) {
   // on each message -- and until this was shown, in a currency nobody named.
   const cost = document.createElement("span");
   cost.className = "capability-cost";
-  cost.textContent = `~${item.tokens ?? 0} tok`;
+  cost.textContent = item.rejected ? "" : `~${item.tokens ?? 0} tok`;
   cost.title =
     `Offering ${item.name} costs roughly ${item.tokens ?? 0} tokens of ` +
     `context on every message, whether or not the Resident uses it.`;
 
   head.append(name, cost, toggle);
+
+  // Where it came from. Said only of the ones the owner put there: "built
+  // in" on the other six would be noise on every row to make one row's
+  // point, and the point is which of these AWORG is not responsible for.
+  if (!item.builtin && !item.rejected) {
+    const origin = document.createElement("span");
+    origin.className = "capability-origin";
+    origin.textContent = "Installed";
+    origin.title =
+      `${item.name} was installed into this Aworg rather than shipped with ` +
+      `AWORG. It runs with everything your Resident has. Remove it by ` +
+      `deleting its folder from capabilities/ in this Aworg's home.`;
+    head.insertBefore(origin, cost);
+  }
 
   const detail = document.createElement("span");
   detail.className = "pane-item-detail";

@@ -150,7 +150,10 @@ class SkillLibrary:
         installed: Path | None = None,
         is_enabled: Any = None,
         has_plan: Any = None,
+        shipped_names: set[str] | None = None,
     ):
+        #: Which folders in the home AWORG put there. See install.seeded.
+        self.shipped_names = shipped_names or set()
         #: Asked per skill name, on every use rather than captured, so the
         #: owner turning one off takes effect on the next message instead of
         #: at the next restart -- the same rule capabilities follow.
@@ -160,8 +163,11 @@ class SkillLibrary:
         #: this turn should retire a getting-started skill on the next
         #: message, not at the next restart.
         self.has_plan = has_plan or (lambda: False)
-        #: Ships inside the package, beside the tools.
-        self.shipped_root = shipped or (Path(__file__).parent / "skills")
+        #: The package's own skills/ -- the seed the installer copies into
+        #: a home, not a library. Nothing passes it at runtime any more: an
+        #: Aworg reads its skills from its home, where the installer put
+        #: them. See install.py.
+        self.shipped_root = shipped
         #: The owner's, under their Aworg home. This is also where a Resident
         #: writes one it has worked out for itself, which is the whole point
         #: of a skill being a file rather than a setting.
@@ -242,7 +248,9 @@ class SkillLibrary:
                     broken[folder.name] = "declares no description"
                     continue
                 found[name] = Skill(
-                    name, description, manifest, source, invocable, active,
+                    name, description, manifest,
+                    SHIPPED if folder.name in self.shipped_names else source,
+                    invocable, active,
                     {k: v for k, v in meta.items()
                      if k not in ("name", "description", "when_to_use",
                                   "disable-model-invocation",

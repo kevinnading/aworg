@@ -16,7 +16,10 @@ from __future__ import annotations
 
 import ast
 import importlib
+import importlib.util
 import inspect
+import sys
+import types
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
@@ -24,6 +27,13 @@ from .base import ToolContext, ToolError, ToolResult, ToolSpec
 
 
 TOOLS_PACKAGE = "aworg.tools"
+
+#: The name installed capabilities are loaded under. Nothing imports this and
+#: no such package exists on disk; it is a namespace so that the modules of an
+#: installed capability have a parent to import each other through, and so
+#: that they show up in sys.modules under a name that says where they came
+#: from rather than colliding with anything real.
+INSTALLED_PACKAGE = "aworg_capabilities"
 
 #: Files inside a capability folder that are not tools.
 SKIP = {"__init__.py"}
@@ -93,35 +103,76 @@ class Registry:
     def __init__(
         self,
         root: Path | None = None,
+        installed: Path | None = None,
         is_enabled: Callable[[str], bool] | None = None,
     ):
         self.root = root or Path(__file__).parent
+        #: capabilities/ in the Aworg's home: what the owner installed. None
+        #: for an Aworg with no home, which is every test that does not need
+        #: one.
+        self.installed_root = installed
         #: Asked per capability id. Defaults to enabled, so a fresh Aworg
         #: works before anything has been configured.
         self.is_enabled = is_enabled or (lambda _identifier: True)
         self._capabilities: dict[str, Capability] = {}
+        #: Installed folders that were not loaded, and why. Kept so the pane
+        #: can say so: a capability that is simply absent looks exactly like
+        #: one that was never installed, and the owner who just copied it in
+        #: deserves the difference.
+        self.rejected: dict[str, str] = {}
         self.discover()
 
     # -- discovery ------------------------------------------------------
 
     def discover(self) -> None:
-        self._capabilities = {}
-        for folder in sorted(self.root.iterdir()):
-            if not folder.is_dir() or folder.name.startswith(("_", ".")):
-                continue
-            capability = self._read_capability(folder)
-            if capability is not None:
-                self._capabilities[capability.id] = capability
+        """Read both roots: what AWORG ships, then what the owner installed.
 
-    def _read_capability(self, folder: Path) -> Capability | None:
+        Built-in first and never overridden. An installed folder named
+        `shell` is refused rather than allowed to replace the real one --
+        installing a capability is already a decision to run someone's code
+        as this Aworg, and it should not additionally be a way to silently
+        stand in front of the tools the Resident depends on.
+        """
+        self._capabilities = {}
+        self.rejected = {}
+        roots = [(self.root, True)]
+        if self.installed_root is not None and self.installed_root.is_dir():
+            roots.append((self.installed_root, False))
+        for root, builtin in roots:
+            for folder in sorted(root.iterdir()):
+                if not folder.is_dir() or folder.name.startswith(("_", ".")):
+                    continue
+                if not builtin and folder.name in self._capabilities:
+                    self.rejected[folder.name] = (
+                        "not loaded: AWORG has a built-in capability with this "
+                        "name, and a built-in is never replaced"
+                    )
+                    continue
+                capability = self._read_capability(folder, builtin=builtin)
+                if capability is not None:
+                    self._capabilities[capability.id] = capability
+                elif not builtin:
+                    self.rejected[folder.name] = (
+                        "not loaded: no tool files in it. A capability is a "
+                        "folder of .py files, each declaring NAME, DESCRIPTION "
+                        "and run()"
+                    )
+
+    def _read_capability(self, folder: Path, builtin: bool = True) -> Capability | None:
         meta = _module_constants(folder / "__init__.py")
         capability = Capability(
             identifier=folder.name,
             label=meta.get("LABEL") or folder.name.replace("_", " ").title(),
             description=meta.get("DESCRIPTION", ""),
             path=folder,
-            internal=bool(meta.get("INTERNAL")),
-            required=bool(meta.get("REQUIRED")),
+            builtin=builtin,
+            # Only AWORG's own capabilities may declare themselves machinery
+            # or undisableable. Both flags remove a control from the owner,
+            # and an installed folder that could remove its own switch --
+            # or hide from the pane entirely -- would be a capability that
+            # installs itself out of sight.
+            internal=builtin and bool(meta.get("INTERNAL")),
+            required=builtin and bool(meta.get("REQUIRED")),
         )
         for file in sorted(folder.glob("*.py")):
             if file.name in SKIP or file.name.startswith("_"):
@@ -141,6 +192,8 @@ class Registry:
                     capability=capability.id,
                     module_name=file.stem,
                     dynamic=bool(declared.get("DYNAMIC")),
+                    # Only for the installed ones, which have no import path.
+                    path=None if builtin else file,
                 )
             )
         return capability if (capability.tools or capability.broken) else None
@@ -233,9 +286,12 @@ class Registry:
 
     def _load(self, spec: ToolSpec) -> Any:
         if spec.module is None:
-            spec.module = importlib.import_module(
-                f"{TOOLS_PACKAGE}.{spec.capability}.{spec.module_name}"
-            )
+            if spec.path is None:
+                spec.module = importlib.import_module(
+                    f"{TOOLS_PACKAGE}.{spec.capability}.{spec.module_name}"
+                )
+            else:
+                spec.module = _load_installed(spec)
         return spec.module
 
     async def invoke(
@@ -306,6 +362,45 @@ class Registry:
             # accepting it costs nothing and keeps simple tools simple.
             result = ToolResult(text=str(result))
         return result
+
+
+def _load_installed(spec: ToolSpec) -> Any:
+    """Import one tool file that lives outside the package.
+
+    The same import machinery Python uses for everything else, pointed at a
+    path instead of at a package -- and the module is put in sys.modules under
+    a parent that carries the capability folder as its search path, so that a
+    capability made of several files can say `from ._shared import ...` like
+    any other Python. It runs in this process with everything AWORG has,
+    which is the bargain of installing it.
+    """
+    package = f"{INSTALLED_PACKAGE}.{spec.capability}"
+    name = f"{package}.{spec.module_name}"
+    if name in sys.modules:
+        return sys.modules[name]
+
+    if INSTALLED_PACKAGE not in sys.modules:
+        root = types.ModuleType(INSTALLED_PACKAGE)
+        root.__path__ = []                    # a package with no directory
+        sys.modules[INSTALLED_PACKAGE] = root
+    if package not in sys.modules:
+        parent = types.ModuleType(package)
+        parent.__path__ = [str(Path(spec.path).parent)]
+        sys.modules[package] = parent
+
+    module_spec = importlib.util.spec_from_file_location(name, spec.path)
+    if module_spec is None or module_spec.loader is None:
+        raise ImportError(f"{spec.path} could not be read as a Python module")
+    module = importlib.util.module_from_spec(module_spec)
+    sys.modules[name] = module
+    try:
+        module_spec.loader.exec_module(module)
+    except BaseException:
+        # A half-imported module left in sys.modules would be handed out on
+        # the next call as though it had worked.
+        sys.modules.pop(name, None)
+        raise
+    return module
 
 
 def _module_constants(

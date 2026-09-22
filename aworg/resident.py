@@ -27,6 +27,7 @@ from typing import Any, AsyncIterator
 
 from . import host
 from .activities import ActivityManager
+from .install import seeded
 from .journal import Journal
 from .personas import PersonaLibrary
 from .watch import Watch
@@ -120,12 +121,20 @@ class Resident:
         #: asked of the store on every use rather than captured here, so the
         #: owner turning one off takes effect on the next call instead of at
         #: the next restart.
-        self.registry = Registry(is_enabled=store.capability_enabled)
-        #: Procedures the Aworg knows. Shipped ones live in the package;
-        #: the owner's -- and any the Resident writes for itself -- live
-        #: under their home, where a name collision means theirs wins.
+        self.registry = Registry(
+            installed=paths.capabilities if paths is not None else None,
+            is_enabled=store.capability_enabled,
+        )
+        #: Procedures the Aworg knows, all of them from skills/ in this
+        #: Aworg's home -- the ones AWORG ships, put there by the installer,
+        #: and any the owner or the Resident wrote since. One folder, so
+        #: that editing a shipped skill is editing the skill rather than
+        #: shadowing a copy of it that is still in the package.
         self.skills = SkillLibrary(
-            installed=(paths.home / "skills") if paths is not None else None,
+            installed=paths.skills if paths is not None else None,
+            # Which of them AWORG put there, which is all that is left of
+            # "shipped" once shipped skills live in the owner's folder.
+            shipped_names=seeded(paths, "skills") if paths is not None else None,
             is_enabled=store.skill_enabled,
             # Any task at all, in any state -- including done. A plan that
             # has been worked through is still evidence the Resident
@@ -139,7 +148,8 @@ class Resident:
         #: apart in the prompt is what keeps a persona change from quietly
         #: changing the job.
         self.personas = PersonaLibrary(
-            installed=(paths.home / "personas") if paths is not None else None,
+            installed=paths.personas if paths is not None else None,
+            shipped_names=seeded(paths, "personas") if paths is not None else None,
         )
         #: Reads the Living Log on a schedule and says what is still open.
         #: Deliberately only that -- it notices, and what to do about it

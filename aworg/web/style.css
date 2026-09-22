@@ -1886,6 +1886,23 @@ body.resizing.row * { cursor: row-resize !important; }
   white-space: nowrap;
 }
 
+/* Where a capability came from, on the ones AWORG did not ship. A quiet
+   tag beside the name rather than a warning: installing it was a decision
+   the owner made, and this is the row that lets them remember making it.
+   Nothing marks the built-in ones -- a label on six rows to make one row's
+   point is a label nobody reads. */
+.capability-origin {
+  flex: none;
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0 5px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
 .capability-tools { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
 
 /* Tools are named rather than counted. "3 tools" tells an owner nothing they

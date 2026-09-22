@@ -337,8 +337,13 @@ class PersonaLibrary:
         self,
         installed: Path | None = None,
         shipped: Path | None = None,
+        shipped_names: set[str] | None = None,
     ):
-        self.shipped_root = shipped or (Path(__file__).parent / "personas")
+        #: Which folders in the home AWORG put there. See install.seeded.
+        self.shipped_names = shipped_names or set()
+        #: The package's own personas/ -- the seed, not a library. See the
+        #: same note in skills.py and install.py.
+        self.shipped_root = shipped
         self.installed_root = installed
         self._personas: dict[str, Persona] = {}
         #: Folders that look like personas and would not load, kept so the
@@ -396,7 +401,8 @@ class PersonaLibrary:
                     name=name,
                     description=description,
                     path=manifest,
-                    source=source,
+                    source=(SHIPPED if folder.name in self.shipped_names
+                            else source),
                     theme=_theme(folder / THEME_FILE, broken, folder.name),
                 )
 

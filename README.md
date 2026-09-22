@@ -60,6 +60,7 @@ and History and Reversibility. See
 ```bash
 python -m venv .venv
 .venv/Scripts/python.exe -m pip install -e .
+.venv/Scripts/python.exe -m aworg install
 .venv/Scripts/python.exe -m aworg start
 ```
 
@@ -69,17 +70,51 @@ On macOS or Linux the interpreter path is `.venv/bin/python` instead.
 
 Open **Settings**, add a model connection, and start talking.
 
+Installing the package and installing an Aworg are two different things.
+`pip install` puts the program on the machine; `aworg install` makes an Aworg:
+a home, its two databases, its folders, and the skills, personas and
+capabilities AWORG ships — copied into that home as ordinary folders, yours
+from then on. Starting an Aworg that was never installed installs it once, so
+the step is skippable; it is a separate command because "put this back the way
+it shipped" (`--force`) and "keep my workspace over here"
+(`--workspace <path>`) are things you need somewhere to say.
+
+Edit a shipped skill and it stays edited. Delete a persona and it stays
+deleted — a second install will not bring it back, and says so rather than
+counting it as installed.
+
 ## Where an Aworg lives
 
 By default `~/.aworg`, overridable with `AWORG_HOME` or `--home`:
 
 ```
 ~/.aworg/
-  state.db      configuration, model connections, conversation
-  secrets.db    credentials — kept deliberately separate
-  workspace/    the Living Workspace, where the Resident builds
+  state.db         configuration, model connections, conversation
+  secrets.db       credentials — kept deliberately separate
+  workspace/       the Living Workspace, where the Resident builds
+  skills/          procedures it knows — the shipped ones and yours
+  personas/        who it is, and what its chat looks like
+  capabilities/    folders of Tools you installed
+  trash/           what delete_file moved instead of destroying
   logs/
+  installed.json   what the installer put here, so what you remove stays gone
 ```
+
+Everything in those three content folders is the same kind of thing whoever
+wrote it. There is no second, hidden library inside the package that a shipped
+persona is really read from: the installer copies them out, and the Aworg
+reads its home.
+
+The exception is the built-in Capabilities — Filesystem, Shell, HTTP, and the
+internal ones the Resident reaches AWORG's own subsystems through. Those stay
+inside the package, because an Aworg missing them is not a plainer Aworg, it
+is a broken one, and a folder you can delete should not be load-bearing.
+
+A capability in that folder is Python that AWORG imports and runs in its own
+process, with everything AWORG has. That is deliberate and it is the whole
+bargain: a Tool that could not reach the machine would not be a Tool. What
+protects you is knowing where a capability came from *before* it is in this
+folder.
 
 Those zones are separate on disk from the start. Once snapshots exist, "what
 may be published" and "what never leaves this machine" must already be
