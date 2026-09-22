@@ -6,23 +6,28 @@ JavaScript is, to http_request, an empty shell with a script tag in it. So a
 Resident building anything modern is building blind, and the owner is its
 eyes. That is the single largest thing missing from what it can reach.
 
-This drives a browser that is already on the machine -- Chrome, Chromium or
-Edge -- over the Chrome DevTools Protocol. CDP is how every one of them is
-automated; the protocol is one WebSocket carrying JSON.
+This drives Chromium over the Chrome DevTools Protocol -- the same engine and
+the same protocol every browser automation tool in the world is built on, and
+one WebSocket carrying JSON.
+
+One engine on purpose. Chrome, Chromium and Edge are the same renderer
+wearing different policies, and the differences surface exactly where they
+are hardest to diagnose: a managed Edge opening a first-run page, a Chrome
+with devtools disabled by policy. A capability whose behaviour depends on
+which browser a machine happens to have is one that cannot be debugged from
+a description of what went wrong.
 
 Nothing is imported that AWORG does not already have. The WebSocket client
 below is about a hundred lines because the protocol needs about a hundred
 lines, and a capability that made an owner install a package to read a page
-would be a capability most owners do not install. The engine itself is not
-bundled either: a browser is a hundred megabytes, most machines have three,
-and a capability that shipped its own would be shipping the largest thing in
-AWORG to save a lookup in Program Files.
+would be a capability most owners do not install.
 
-An engine *may* be bundled, though, and that is looked for first: drop a
-Chromium into `chromium/` inside this capability's folder and it is used in
-preference to anything installed. That is what makes this capability
-self-contained on a machine with no browser at all, without making every
-other machine pay for it.
+The engine is not shipped inside AWORG -- a browser is the largest thing that
+would then be in it -- but it is not left to chance either. `install_engine`
+fetches Chrome for Testing's headless shell into `chromium/` inside this
+capability's own folder, and that copy is preferred over anything installed.
+An owner who already has Chromium or Chrome pays for no download; one who has
+neither runs one tool. Either way what runs is Chromium.
 """
 
 from __future__ import annotations
@@ -64,33 +69,48 @@ class BrowserError(Exception):
 # Finding an engine
 # ---------------------------------------------------------------------------
 
-#: Where a bundled engine goes, relative to this capability's own folder.
-#: Looked at first, so that a capability carrying its own Chromium works on a
-#: machine with none installed.
-BUNDLED = ("chromium", "chrome-headless-shell", "engine")
+#: Where an engine this capability fetched for itself lives, relative to this
+#: file. Looked at first, so that what AWORG downloaded and knows the version
+#: of wins over whatever a machine happens to have.
+BUNDLED = ("chromium", "engine")
+
+#: The binaries worth looking inside that folder for, most specific first.
+ENGINE_NAMES = (
+    "chrome-headless-shell.exe", "chrome-headless-shell",
+    "headless_shell.exe", "headless_shell",
+    "chrome.exe", "chrome", "chromium",
+)
 
 WINDOWS_CANDIDATES = (
+    r"%ProgramFiles%\Chromium\Application\chrome.exe",
+    r"%LocalAppData%\Chromium\Application\chrome.exe",
     r"%ProgramFiles%\Google\Chrome\Application\chrome.exe",
     r"%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe",
     r"%LocalAppData%\Google\Chrome\Application\chrome.exe",
-    r"%ProgramFiles%\Microsoft\Edge\Application\msedge.exe",
-    r"%ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe",
-    r"%ProgramFiles%\Chromium\Application\chrome.exe",
 )
 
 MAC_CANDIDATES = (
-    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
     "/Applications/Chromium.app/Contents/MacOS/Chromium",
-    "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
 )
 
 LINUX_NAMES = (
-    "google-chrome", "google-chrome-stable", "chromium", "chromium-browser",
-    "microsoft-edge", "microsoft-edge-stable",
+    "chromium", "chromium-browser", "google-chrome", "google-chrome-stable",
 )
 
 
-def find_engine() -> Path:
+def engine_root(home: Path | None) -> Path | None:
+    """Where a fetched engine lives: engines/ under the Aworg's home.
+
+    Outside the capability folder on purpose. That folder is content now --
+    reinstalled by `aworg install --force`, emptied by the Capabilities part
+    of a reset -- and a hundred megabytes that a routine reset throws away
+    is a download the owner pays for twice.
+    """
+    return None if home is None else Path(home) / "engines" / "chromium"
+
+
+def find_engine(home: Path | None = None) -> Path:
     """The browser this capability will drive, or a refusal that says why.
 
     Order: one the owner named, one bundled with this capability, then
@@ -105,16 +125,8 @@ def find_engine() -> Path:
             f"AWORG_BROWSER is set to {named!r}, and there is no file there."
         )
 
-    here = Path(__file__).parent
-    for folder in BUNDLED:
-        root = here / folder
-        if not root.is_dir():
-            continue
-        for name in ("chrome.exe", "headless_shell.exe", "chrome",
-                     "headless_shell", "chrome-headless-shell"):
-            for found in root.rglob(name):
-                if found.is_file():
-                    return found
+    for found in bundled_engine(home):
+        return found
 
     if sys.platform.startswith("win"):
         for candidate in WINDOWS_CANDIDATES:
@@ -132,10 +144,32 @@ def find_engine() -> Path:
                 return Path(found)
 
     raise BrowserError(
-        "No browser was found to drive. Install Chrome, Chromium or Edge, or "
-        "set AWORG_BROWSER to the path of one, or put a Chromium in the "
-        "chromium/ folder inside this capability."
+        "No Chromium was found to drive. Run install_engine to fetch one into "
+        "this capability's own folder -- it is a single download and needs "
+        "nothing else -- or install Chromium or Chrome, or set AWORG_BROWSER "
+        "to the path of a Chromium binary."
     )
+
+
+def bundled_engine(home: Path | None = None):
+    """Every engine AWORG has put somewhere itself, best first.
+
+    A generator so that `find_engine` can take the first and
+    `install_engine` can ask whether there is one at all, without either of
+    them duplicating where to look.
+    """
+    here = Path(__file__).parent
+    roots = [here / folder for folder in BUNDLED]
+    fetched = engine_root(home)
+    if fetched is not None:
+        roots.append(fetched)
+    for root in roots:
+        if not root.is_dir():
+            continue
+        for name in ENGINE_NAMES:
+            for found in sorted(root.rglob(name)):
+                if found.is_file():
+                    yield found
 
 
 # ---------------------------------------------------------------------------
@@ -279,14 +313,20 @@ class Browser:
     def running(self) -> bool:
         return self.process is not None and self.process.returncode is None
 
-    async def start(self) -> str:
+    async def start(self, home: Path | None = None) -> str:
         """Launch the engine and attach to its first page."""
-        engine = find_engine()
+        engine = find_engine(home)
         port = _free_port()
         self.profile = Path(tempfile.mkdtemp(prefix="aworg-browser-"))
+        # The headless shell is already headless and rejects the flag that
+        # asks a full browser to be; a full Chromium needs it. Told apart by
+        # the name Google gives the binary, which is the only thing that
+        # distinguishes them from out here.
+        flags = [] if "headless-shell" in engine.name or "headless_shell" in engine.name \
+            else ["--headless=new"]
         self.process = await asyncio.create_subprocess_exec(
             str(engine),
-            "--headless=new",
+            *flags,
             f"--remote-debugging-port={port}",
             f"--user-data-dir={self.profile}",
             "--no-first-run",
@@ -314,9 +354,9 @@ class Browser:
             while asyncio.get_event_loop().time() < deadline:
                 if not self.running:
                     raise BrowserError(
-                        "The browser exited immediately. On a server this is "
-                        "usually a missing library; try running it by hand to "
-                        "see what it says."
+                        "Chromium exited immediately. On a server this is "
+                        "usually a missing shared library; try running the "
+                        "binary by hand to see what it says."
                     )
                 try:
                     reply = await client.get(f"http://127.0.0.1:{port}/json/list")
@@ -492,11 +532,11 @@ def _free_port() -> int:
 _browser = Browser()
 
 
-async def browser(start_if_needed: bool = True) -> Browser:
+async def browser(start_if_needed: bool = True, home: Path | None = None) -> Browser:
     if not _browser.running:
         if not start_if_needed:
             raise BrowserError("No page is open. Use open_page first.")
-        await _browser.start()
+        await _browser.start(home)
     return _browser
 
 

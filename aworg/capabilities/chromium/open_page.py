@@ -62,8 +62,7 @@ async def run(
         url = "http://" + url
 
     try:
-        engine = browser
-        page_browser = await engine()
+        page_browser = await browser(home=context.paths.home)
         if context.activity is not None:
             context.activity.progress = f"loading {url}"
         await page_browser.navigate(url, settle=max(0.0, min(float(wait), MAX_WAIT)))

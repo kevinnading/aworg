@@ -52,10 +52,13 @@ log every minute and holds what is still outstanding.
 
 It can **look at a page the way a person would** — rendered, after its
 JavaScript has run, with whatever the console and the network complained
-about. That is the Browser capability rather than part of the runtime: it
-drives a Chrome, Chromium or Edge already on the machine, and deleting its
-folder removes it. AWORG ships it installed, along with a small Weather
-capability that exists to show what installing one looks like.
+about, and a picture of it the Resident can actually see rather than merely
+save. That is the Chromium Browser capability rather than part of the
+runtime: it drives Chromium, and if the machine has none, `install_engine`
+fetches Chrome for Testing's headless shell into `engines/` under the Aworg's
+home. Deleting the capability's folder removes it. AWORG ships it installed,
+along with a small Weather capability that exists to show what installing one
+looks like.
 
 What it does not have yet is the autonomous repair loop — the part that takes
 what the watch found at three in the morning and does something about it —
