@@ -40,8 +40,44 @@ INPUT_SCHEMA = {
                 "turn it off when you only want the words."
             ),
         },
+        "screen": {
+            "type": "string",
+            "description": (
+                "What kind of screen to open it on: 'phone' (390x844, touch), "
+                "'tablet' (820x1180, touch) or 'desktop' (1280x900, the "
+                "default). Use phone to check that something you built works "
+                "at the width most people will open it at."
+            ),
+        },
+        "width": {
+            "type": "integer",
+            "description": (
+                "An exact viewport width in pixels, instead of 'screen'."
+            ),
+        },
+        "height": {
+            "type": "integer",
+            "description": "An exact viewport height in pixels.",
+        },
+        "dark": {
+            "type": "boolean",
+            "description": (
+                "Open it as a visitor whose system is set to dark mode, so a "
+                "page with a prefers-color-scheme rule shows its other face."
+            ),
+        },
     },
     "required": ["url"],
+}
+
+#: The two that are worth a name. Not a device list: this is a viewport and a
+#: touch flag, not an iPhone, and pretending otherwise would have AWORG
+#: maintaining a table of somebody else's hardware.
+SCREENS = {
+    "phone": (390, 844, True),
+    "mobile": (390, 844, True),
+    "tablet": (820, 1180, True),
+    "desktop": (1280, 900, False),
 }
 
 MAX_WAIT = 15
@@ -52,6 +88,10 @@ async def run(
     url: str,
     wait: float = 0.6,
     links: bool = True,
+    screen: str | None = None,
+    width: int | None = None,
+    height: int | None = None,
+    dark: bool | None = None,
 ) -> ToolResult:
     url = (url or "").strip()
     if not url:
@@ -61,8 +101,25 @@ async def run(
         # model a rule rather than getting it the page.
         url = "http://" + url
 
+    named = SCREENS.get((screen or "").strip().lower()) if screen else None
+    if screen and named is None:
+        raise ToolError(
+            f"{screen!r} is not a screen this knows. It knows "
+            + ", ".join(sorted(SCREENS))
+            + " -- or give width and height."
+        )
+
     try:
         page_browser = await browser(processes=context.processes)
+        # Set before navigating, so the page lays out at the size it is
+        # being asked about rather than reflowing into it afterwards.
+        if named or width or height or dark is not None:
+            await page_browser.emulate(
+                width=width or (named[0] if named else None),
+                height=height or (named[1] if named else None),
+                mobile=bool(named[2]) if named else False,
+                dark=dark,
+            )
         if context.activity is not None:
             context.activity.progress = f"loading {url}"
         await page_browser.navigate(url, settle=max(0.0, min(float(wait), MAX_WAIT)))
@@ -70,8 +127,18 @@ async def run(
     except BrowserError as exc:
         raise ToolError(str(exc)) from exc
 
+    how = ""
+    if named or width or height:
+        size = f"{width or (named[0] if named else 1280)}" \
+               f"x{height or (named[1] if named else 900)}"
+        how = f"[{screen or 'custom'} viewport, {size}]"
+    if dark is not None:
+        how = (how + " " if how else "") + f"[prefers-color-scheme: " \
+              f"{'dark' if dark else 'light'}]"
+
     return ToolResult(
-        text=describe(page_browser, page, want_links=links),
+        text=(f"{how}\n" if how else "")
+        + describe(page_browser, page, want_links=links),
         payload=page,
         summary=summary(page_browser, page),
     )

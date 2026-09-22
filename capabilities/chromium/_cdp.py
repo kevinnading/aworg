@@ -70,6 +70,10 @@ LOAD_TIMEOUT = 20
 #: Console lines and failed requests kept per page. Enough to see what went
 #: wrong; not so many that one noisy loop fills the reply.
 KEEP_MESSAGES = 40
+#: Requests kept per page. A modern page makes a few dozen; a chatty one
+#: makes hundreds, and the oldest are the ones least likely to be the
+#: question.
+KEEP_REQUESTS = 150
 
 
 class BrowserError(Exception):
@@ -312,6 +316,10 @@ class Browser:
         #: half of a browser that a screenshot cannot show.
         self.console: list[str] = []
         self.failures: list[str] = []
+        #: Every request this page made, in order, with what came back.
+        #: Not shown unless asked for -- see the page_requests tool -- because
+        #: a list of ninety assets is not what most calls are about.
+        self.requests: list[dict[str, Any]] = []
         self._pending: dict[int, asyncio.Future] = {}
         self._events: asyncio.Queue = asyncio.Queue()
         self._reader_task: asyncio.Task | None = None
@@ -480,20 +488,58 @@ class Browser:
                 self._remember(
                     self.console, f"{entry['level']}: {entry.get('text', '')}"
                 )
+        elif method == "Network.requestWillBeSent":
+            request = params.get("request") or {}
+            self.requests.append({
+                "id": params.get("requestId"),
+                "method": request.get("method", "GET"),
+                "url": request.get("url", ""),
+                "type": params.get("type", ""),
+                "status": None,
+                "mime": "",
+                "bytes": None,
+                "error": "",
+            })
+            del self.requests[:-KEEP_REQUESTS]
         elif method == "Network.loadingFailed":
+            self._against(params.get("requestId"),
+                          error=params.get("errorText", "failed"))
             if not params.get("canceled"):
                 self._remember(
                     self.failures,
                     f"{params.get('type', 'request')} failed: "
                     f"{params.get('errorText', 'unknown error')}"
                 )
+        elif method == "Network.loadingFinished":
+            self._against(params.get("requestId"),
+                          bytes=params.get("encodedDataLength"))
         elif method == "Network.responseReceived":
             response = params.get("response") or {}
+            self._against(
+                params.get("requestId"),
+                status=response.get("status"),
+                mime=response.get("mimeType", ""),
+            )
             if response.get("status", 0) >= 400:
                 self._remember(
                     self.failures,
                     f"{response['status']} {response.get('url', '')[:120]}"
                 )
+
+    def _against(self, request_id: Any, **fields: Any) -> None:
+        """Fill in what came back, on the request that asked for it.
+
+        Searched from the end because the answer to a request almost always
+        arrives while it is still the most recent thing, and a page with a
+        hundred and fifty of them should not be scanned from the front on
+        every event.
+        """
+        if not request_id:
+            return
+        for record in reversed(self.requests):
+            if record["id"] == request_id:
+                record.update({k: v for k, v in fields.items() if v is not None})
+                return
 
     @staticmethod
     def _remember(where: list[str], line: str) -> None:
@@ -525,9 +571,46 @@ class Browser:
 
     # -- the things the tools actually ask for --------------------------
 
+    async def emulate(
+        self,
+        width: int | None = None,
+        height: int | None = None,
+        mobile: bool = False,
+        dark: bool | None = None,
+    ) -> None:
+        """Make the page believe it is somewhere else.
+
+        A phone-sized viewport is not a narrow window: `mobile` also sets the
+        touch flag and the device pixel ratio, so a page that asks whether it
+        is on a touch device gets the answer the emulation implies rather
+        than the one the desktop engine would give.
+        """
+        if width or height:
+            await self.command("Emulation.setDeviceMetricsOverride", {
+                "width": int(width or 1280),
+                "height": int(height or 900),
+                "deviceScaleFactor": 2 if mobile else 1,
+                "mobile": bool(mobile),
+            })
+            # maxTouchPoints must be 1-16 even when the answer is "none":
+            # the protocol refuses 0, and passing it made every switch back
+            # to a desktop viewport fail.
+            await self.command("Emulation.setTouchEmulationEnabled", {
+                "enabled": bool(mobile),
+                "maxTouchPoints": 5 if mobile else 1,
+            })
+        if dark is not None:
+            await self.command("Emulation.setEmulatedMedia", {
+                "features": [
+                    {"name": "prefers-color-scheme",
+                     "value": "dark" if dark else "light"},
+                ],
+            })
+
     async def navigate(self, url: str, settle: float = 0.6) -> None:
         self.console.clear()
         self.failures.clear()
+        self.requests.clear()
         loaded = asyncio.get_event_loop().create_future()
 
         # Page.loadEventFired arrives as an event, and events go to _note.
