@@ -25,6 +25,15 @@ that are how the Resident reaches AWORG's own subsystems -- are deliberately
 not seeded. They stay inside the package because an Aworg missing them is not
 a plainer Aworg, it is a broken one, and a folder an owner can delete should
 never be load-bearing.
+
+Nothing else is in the package either. AWORG ships no installable
+capabilities: the two it has live in `capabilities/` at the top of the
+repository, destined for the store, and are installed by copying a folder
+until that exists. The seeding below still applies to them, because a per-OS
+package that wants to arrive with Chromium included copies the folder into
+its own `aworg/capabilities/` at build time and the installer sows it from
+there like anything else. In a wheel there is nothing to sow, and the
+installer says "nothing shipped" rather than implying otherwise.
 """
 
 from __future__ import annotations
@@ -176,6 +185,13 @@ def install(
         already = set((previous.get("seeded") or {}).get(kind) or [])
         result = _seed(shipped_root(kind), getattr(paths, kind), already, force,
                        wanted=set(also) if kind == "capabilities" else None)
+        if kind == "capabilities":
+            # Named but not here at all. Silence would read as success, and
+            # the owner would go looking for a capability that this build
+            # never contained.
+            here = {folder.name for folder in shipped_root(kind).iterdir()
+                    if folder.is_dir()} if shipped_root(kind).is_dir() else set()
+            result["unknown"] = sorted(set(also) - here)
         report["seeded"][kind] = result
         # Everything that shipped is recorded as sown whether or not it was
         # copied this time -- including what the owner has deleted, which is
@@ -348,6 +364,15 @@ def describe(report: dict[str, Any]) -> str:
             if result.get(outcome):
                 parts.append(f"{len(result[outcome])} {word}")
         lines.append(f"{kind:<15}{', '.join(parts) if parts else 'nothing shipped'}")
+
+    unknown = report["seeded"].get("capabilities", {}).get("unknown") or []
+    if unknown:
+        lines.append("")
+        lines.append(
+            "Asked for, and not in this build of AWORG: " + ", ".join(unknown)
+            + ". The prepackaged downloads carry more than the pip install "
+            "does."
+        )
 
     skipped = report["seeded"].get("capabilities", {}).get("optional") or []
     if skipped:

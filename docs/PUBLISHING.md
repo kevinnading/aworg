@@ -114,3 +114,43 @@ post to it, and those outlive the Aworg that made them. It may deserve a
 version of its own, independent of the product's, so the interface can be
 reshaped freely at 0.x without breaking every application already written
 against it.
+
+
+## What each route ships
+
+Not the same thing, on purpose.
+
+| | Skills | Personas | Weather | Chromium Browser |
+|---|---|---|---|---|
+| wheel (`pip install aworg`) | yes | yes | **no** | **no** |
+| Docker | yes | yes | **no** | **no** |
+| per-OS package | yes | yes | if the build adds it | if the build adds it, engine included |
+
+No installable capability is in the package. Both of them live in
+`capabilities/` at the top of the repository, outside `aworg/`, where
+`packages.find` cannot reach them. They are bound for the store; until it
+exists, installing one is copying its folder into `capabilities/` in an
+Aworg's home.
+
+Chromium could not have gone in a wheel regardless: it is a hundred and
+fifteen megabytes of engine short of working, carrying the engine would mean
+per-platform wheels and is past PyPI's size limit, and the source on its own
+would give every pip install a Browser capability that is switched on, priced
+into every message and broken the first time it is used.
+
+**The per-OS build step**, when it exists, has to do two things the wheel
+build does not:
+
+1. Copy `capabilities/chromium/` into the packaged application's
+   `aworg/capabilities/` directory.
+2. Fetch that platform's `chrome-headless-shell` from Chrome for Testing into
+   `chromium/` inside that folder -- the same archive `install_engine`
+   fetches, unpacked the same way.
+
+The installer then seeds it like anything else, because a capability that
+arrived with what it declares it needs is not optional any more. Reset puts
+it back from the package rather than downloading it again.
+
+Still to settle: whether Google's terms allow redistributing the Chrome for
+Testing headless shell inside a package we publish. Fetching it at runtime,
+which is what `install_engine` does, raises no such question.
