@@ -972,27 +972,49 @@ def create_app(paths: Paths, address: str = "http://127.0.0.1:8420") -> FastAPI:
         # The preview is showing a page from the Aworg that no longer exists.
         resident._bump_preview()
 
-        # Written after the wipe, not before, so it survives it. A reset is
-        # the largest thing that can happen to an Aworg and a Living Log that
-        # came back from one with no explanation for the silence above it
-        # would be the pane failing at its only job.
+        # Recorded only when the log survived.
+        #
+        # This used to be written after the wipe so that it survived it, on
+        # the argument that a Living Log with unexplained silence above it
+        # fails at its only job. True -- but only where there is something
+        # above it. An Aworg whose log was cleared came back holding exactly
+        # one entry saying it had been reset: a memory of a life it is not
+        # supposed to have, and the first thing its Resident reads about
+        # itself.
+        #
+        # So the rule follows the choice the owner made. Wiped the log: say
+        # nothing, and let it be new. Kept the log: say what happened, since
+        # the conversation or the workspace may have gone out from under
+        # entries that are still there.
         detail = _reset_detail(removed, stopped, chosen)
         if left_behind:
             detail += (
                 " Could not remove, and still there: "
                 + "; ".join(left_behind) + "."
             )
-        resident.journal.record(
-            "This Aworg was reset" if len(chosen) == len(Store.RESET_PARTS)
-            else f"Reset {len(chosen)} of {len(Store.RESET_PARTS)} parts",
-            kind="aworg",
-            source="owner",
-            detail=detail,
-            # Incomplete is a concern rather than a note: the owner asked for
-            # a clean Aworg and did not entirely get one, and that should be
-            # findable rather than a clause at the end of a sentence.
-            **({"level": "concern"} if left_behind else {}),
-        )
+        if "journal" not in chosen:
+            resident.journal.record(
+                f"Reset {len(chosen)} of {len(Store.RESET_PARTS)} parts",
+                kind="aworg",
+                source="owner",
+                detail=detail,
+                # Incomplete is a concern rather than a note: the owner asked
+                # for a clean Aworg and did not entirely get one, and that
+                # should be findable rather than a clause at the end of a
+                # sentence.
+                **({"level": "concern"} if left_behind else {}),
+            )
+        elif left_behind:
+            # The one thing worth breaking that rule for. Something is still
+            # on disk that the owner asked to be gone, and an empty log is
+            # not the place to hide it.
+            resident.journal.record(
+                "Reset did not remove everything",
+                kind="aworg",
+                source="owner",
+                level="concern",
+                detail="Could not remove: " + "; ".join(left_behind) + ".",
+            )
 
         return {
             "status": "reset" if not left_behind else "reset, incompletely",
