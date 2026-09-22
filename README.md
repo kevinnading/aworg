@@ -50,6 +50,13 @@ Applications it builds can **report their own trouble** back to it, without
 being wired up: the channel arrives in their environment. AWORG reads that
 log every minute and holds what is still outstanding.
 
+It can **look at a page the way a person would** — rendered, after its
+JavaScript has run, with whatever the console and the network complained
+about. That is the Browser capability rather than part of the runtime: it
+drives a Chrome, Chromium or Edge already on the machine, and deleting its
+folder removes it. AWORG ships it installed, along with a small Weather
+capability that exists to show what installing one looks like.
+
 What it does not have yet is the autonomous repair loop — the part that takes
 what the watch found at three in the morning and does something about it —
 and History and Reversibility. See
