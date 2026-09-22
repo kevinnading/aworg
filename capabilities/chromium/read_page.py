@@ -5,7 +5,14 @@ from __future__ import annotations
 from aworg.tools.base import ToolContext, ToolError, ToolResult
 
 from ._cdp import BrowserError, browser
-from ._page import TEXT_LIMIT, describe, extract, summary
+from ._page import (
+    TEXT_LIMIT,
+    describe,
+    describe_outline,
+    extract,
+    outline as page_outline,
+    summary,
+)
 
 
 NAME = "read_page"
@@ -33,6 +40,15 @@ INPUT_SCHEMA = {
                 "Only useful when you need the markup itself."
             ),
         },
+        "outline": {
+            "type": "boolean",
+            "description": (
+                "Return the page's structure -- landmarks, headings, lists, "
+                "controls, nested as they are on the page -- instead of its "
+                "text. For working out how something is laid out, or finding "
+                "a thing to click when the text alone is ambiguous."
+            ),
+        },
     },
 }
 
@@ -46,9 +62,19 @@ async def run(
     context: ToolContext,
     selector: str | None = None,
     html: bool = False,
+    outline: bool = False,
 ) -> ToolResult:
     try:
         page_browser = await browser(start_if_needed=False)
+
+        if outline:
+            rows = await page_outline(page_browser)
+            return ToolResult(
+                text=f"The shape of {page_browser.url}:\n\n"
+                + describe_outline(rows),
+                payload=rows,
+                summary=f"{len(rows)} element(s)",
+            )
 
         if selector:
             # Passed as an argument rather than spliced into the expression,

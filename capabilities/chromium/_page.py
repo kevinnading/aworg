@@ -29,8 +29,16 @@ EXTRACT = """
 (() => {
   const clean = (s) => (s || "").replace(/\\s+/g, " ").trim();
   const main = document.querySelector("main, article, [role=main]") || document.body;
+  // Handles. Kept on the page rather than derived from a selector, so that
+  // "that one" survives two buttons with the same words on them. The array
+  // is rebuilt on every read and dies with the document, which is what makes
+  // a stale ref a stale ref rather than a wrong click.
+  window.__aworg_refs = [];
+  const handle = (el) => (window.__aworg_refs.push(el) - 1);
   const links = [...document.querySelectorAll("a[href]")]
-    .map((a) => ({ text: clean(a.innerText).slice(0, 80), href: a.href }))
+    .map((a) => ({ text: clean(a.innerText).slice(0, 80), href: a.href,
+                   ref: handle(a),
+                   blank: a.target === "_blank" }))
     .filter((l) => l.text || l.href);
   const controls = [...document.querySelectorAll(
       "button, input, select, textarea, [role=button], [contenteditable=true]")]
@@ -41,7 +49,8 @@ EXTRACT = """
       const kind = el.tagName.toLowerCase() +
         (el.type ? `[${el.type}]` : "");
       const where = el.id ? `#${el.id}` : (el.name ? `[name="${el.name}"]` : "");
-      return { kind, label: label.slice(0, 60), selector: where };
+      return { kind, label: label.slice(0, 60), selector: where,
+               ref: handle(el), disabled: !!el.disabled };
     });
   return {
     title: document.title || "",
@@ -52,6 +61,77 @@ EXTRACT = """
   };
 })()
 """
+
+
+#: The page's shape rather than its words: what a screen reader would walk.
+#: Roles are taken from the element's own role attribute where it has one and
+#: inferred from the tag where it does not -- the same inference a browser
+#: makes, done here because reading it out of Chromium's accessibility tree
+#: would mean resolving backend node ids for every entry to get a handle
+#: back, and this is the half that is actually useful.
+OUTLINE = """
+(() => {
+  const clean = (s) => (s || "").replace(/\\s+/g, " ").trim();
+  const ROLES = {
+    MAIN: "main", NAV: "navigation", HEADER: "banner", FOOTER: "contentinfo",
+    ASIDE: "complementary", FORM: "form", SECTION: "region",
+    ARTICLE: "article", H1: "heading", H2: "heading", H3: "heading",
+    H4: "heading", H5: "heading", H6: "heading", BUTTON: "button",
+    A: "link", INPUT: "textbox", SELECT: "combobox", TEXTAREA: "textbox",
+    UL: "list", OL: "list", LI: "listitem", TABLE: "table", IMG: "image",
+    DIALOG: "dialog",
+  };
+  window.__aworg_refs = window.__aworg_refs || [];
+  const out = [];
+  const walk = (node, depth) => {
+    if (depth > 12) return;
+    for (const el of node.children) {
+      const role = el.getAttribute("role") || ROLES[el.tagName] || "";
+      const hidden = el.hidden || el.getAttribute("aria-hidden") === "true";
+      if (!hidden && role) {
+        const name = clean(
+          el.getAttribute("aria-label") ||
+          (el.tagName.startsWith("H") && el.tagName.length === 2
+            ? el.innerText : "") ||
+          el.getAttribute("alt") || el.getAttribute("title") ||
+          (el.children.length === 0 ? el.innerText : "")
+        ).slice(0, 70);
+        const ref = window.__aworg_refs.push(el) - 1;
+        out.push({ depth, role, name,
+                   tag: el.tagName.toLowerCase(), ref });
+      }
+      walk(el, hidden || !role ? depth : depth + 1);
+    }
+  };
+  walk(document.body, 0);
+  return out;
+})()
+"""
+
+#: A page's structure is long before it is useful. This is about two screens.
+MAX_OUTLINE = 120
+
+
+async def outline(browser) -> list:
+    found = await browser.evaluate(OUTLINE)
+    return found if isinstance(found, list) else []
+
+
+def describe_outline(rows: list) -> str:
+    """The shape of the page, indented the way it is nested."""
+    if not rows:
+        return "(nothing with a role on this page)"
+    lines = []
+    for row in rows[:MAX_OUTLINE]:
+        name = row.get("name") or ""
+        lines.append(
+            "  " * min(int(row.get("depth") or 0), 10)
+            + f"[ref_{row.get('ref')}] {row.get('role')}"
+            + (f" {name!r}" if name else "")
+        )
+    if len(rows) > MAX_OUTLINE:
+        lines.append(f"... and {len(rows) - MAX_OUTLINE} more")
+    return "\n".join(lines)
 
 
 async def extract(browser) -> dict:
@@ -85,7 +165,11 @@ def describe(browser, page: dict, want_links: bool = True) -> str:
             lines.append("")
             lines.append(f"Links ({len(links)}):")
             for link in links[:MAX_LINKS]:
-                lines.append(f"  {link.get('text') or '(no text)'} -> {link.get('href')}")
+                lines.append(
+                    f"  [ref_{link.get('ref')}] {link.get('text') or '(no text)'}"
+                    f" -> {link.get('href')}"
+                    + ("  (opens a new tab)" if link.get("blank") else "")
+                )
             if len(links) > MAX_LINKS:
                 lines.append(f"  ... and {len(links) - MAX_LINKS} more")
 
@@ -96,8 +180,10 @@ def describe(browser, page: dict, want_links: bool = True) -> str:
             for control in controls[:MAX_CONTROLS]:
                 where = control.get("selector") or ""
                 lines.append(
-                    f"  {control.get('kind')} {control.get('label') or ''}"
+                    f"  [ref_{control.get('ref')}] {control.get('kind')} "
+                    f"{control.get('label') or ''}"
                     + (f"  {where}" if where else "")
+                    + ("  (disabled)" if control.get("disabled") else "")
                 )
             if len(controls) > MAX_CONTROLS:
                 lines.append(f"  ... and {len(controls) - MAX_CONTROLS} more")

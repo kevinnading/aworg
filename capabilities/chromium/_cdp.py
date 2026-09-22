@@ -307,6 +307,8 @@ class Browser:
         #: this one was killed before it could stop -- see start().
         self.record: Any = None
         self.processes: Any = None
+        #: Which page we are driving, so a second one can be told apart.
+        self.target_id: str = ""
         self.next_id = 0
         self.url = ""
         self.title = ""
@@ -383,14 +385,14 @@ class Browser:
                 # browser. Worse orphan handling, still a working tool.
                 self.record = None
 
-        target = await self._wait_for_page(port)
+        target, self.target_id = await self._wait_for_page(port)
         self.socket = await WebSocket.connect(target)
         self._reader_task = asyncio.ensure_future(self._read_forever())
         for domain in ("Page", "Runtime", "Log", "Network"):
             await self.command(f"{domain}.enable")
         return str(engine)
 
-    async def _wait_for_page(self, port: int) -> str:
+    async def _wait_for_page(self, port: int) -> tuple[str, str]:
         deadline = asyncio.get_event_loop().time() + START_TIMEOUT
         async with httpx.AsyncClient(timeout=3) as client:
             while asyncio.get_event_loop().time() < deadline:
@@ -404,7 +406,8 @@ class Browser:
                     reply = await client.get(f"http://127.0.0.1:{port}/json/list")
                     for target in reply.json():
                         if target.get("type") == "page":
-                            return target["webSocketDebuggerUrl"]
+                            return (target["webSocketDebuggerUrl"],
+                                    target.get("id", ""))
                 except Exception:                             # noqa: BLE001
                     pass
                 await asyncio.sleep(0.2)
@@ -629,6 +632,49 @@ class Browser:
         await asyncio.sleep(settle)
         self.url = await self.evaluate("location.href") or url
         self.title = await self.evaluate("document.title") or ""
+
+    async def popup(self) -> str | None:
+        """A page this click opened in a new tab, if there is one.
+
+        Asked for rather than watched: attaching to every target that opens
+        would mean holding several pages and deciding which one the Resident
+        means, which is tab management. This answers the question that
+        actually comes up -- something opened, do you want to follow it --
+        and the answer is one URL.
+        """
+        try:
+            targets = await self.command("Target.getTargets")
+        except BrowserError:
+            return None
+        for info in targets.get("targetInfos", []):
+            if (
+                info.get("type") == "page"
+                and info.get("targetId") != self.target_id
+                and (info.get("url") or "") not in ("", "about:blank")
+            ):
+                return info["url"]
+        return None
+
+    async def follow(self, url: str) -> None:
+        """Go to a page that opened in a tab, in the one page we drive.
+
+        The tab itself is left behind and closed: two live pages is the
+        thing this capability deliberately does not have, and a Resident
+        that has been shown the popup's content has what it opened it for.
+        """
+        try:
+            targets = await self.command("Target.getTargets")
+            for info in targets.get("targetInfos", []):
+                if (
+                    info.get("type") == "page"
+                    and info.get("targetId") != self.target_id
+                    and info.get("url") == url
+                ):
+                    await self.command("Target.closeTarget",
+                                       {"targetId": info["targetId"]})
+        except BrowserError:
+            pass
+        await self.navigate(url)
 
     async def evaluate(self, expression: str):
         """Run JavaScript in the page and bring back a plain value."""
