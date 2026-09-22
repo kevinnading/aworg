@@ -641,8 +641,49 @@ function machineryNode(role, content, blocks) {
   const body = document.createElement("pre");
   body.className = "machinery-body";
   body.textContent = content || "";
+  if (!(content || "").trim()) body.hidden = true;
   wrapper.appendChild(body);
+
+  // Pictures a tool returned. Drawn from the same base64 the model was
+  // shown, so what the owner opens is exactly what the Resident saw -- not
+  // the full-size file beside it, which may have been saved with different
+  // dimensions or not saved at all.
+  const shown = pictures(blocks);
+  // A picture the owner asked for is open; one the Resident took while
+  // working is folded with everything else. The Resident says which,
+  // because it is the one that was asked.
+  if (shown.some((p) => p.for_owner)) {
+    wrapper.open = true;
+    wrapper.classList.add("for-owner");
+  }
+  for (const picture of shown) {
+    const image = document.createElement("img");
+    image.className = "machinery-image";
+    image.loading = "lazy";
+    image.alt = "What the Resident was shown";
+    image.src = `data:${picture.media_type || "image/png"};base64,${picture.data}`;
+    wrapper.appendChild(image);
+  }
   return wrapper;
+}
+
+/* Every image block inside a message's tool results. */
+function pictures(blocks) {
+  const found = [];
+  for (const block of Array.isArray(blocks) ? blocks : []) {
+    const content = block && block.content;
+    if (!Array.isArray(content)) continue;
+    for (const part of content) {
+      if (part && part.type === "image" && part.source && part.source.data) {
+        found.push({
+          media_type: part.source.media_type,
+          data: part.source.data,
+          for_owner: !!part.for_owner,
+        });
+      }
+    }
+  }
+  return found;
 }
 
 /* What the folded line says. Names rather than counts where the names are
@@ -660,9 +701,13 @@ function machineryLabel(role, content, blocks) {
   }
   const failed = list.filter((b) => b && b.is_error).length;
   const count = list.length || 1;
+  const shown = pictures(list).length;
   return (
     `${count} result${count === 1 ? "" : "s"}` +
-    (failed ? ` — ${failed} failed` : "")
+    (failed ? ` — ${failed} failed` : "") +
+    // Said on the folded line, or a picture nobody opens is a picture
+    // nobody knows is there.
+    (shown ? ` — ${shown} picture${shown === 1 ? "" : "s"}` : "")
   );
 }
 

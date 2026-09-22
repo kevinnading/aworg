@@ -2429,6 +2429,29 @@ button.danger:disabled { opacity: 0.4; cursor: not-allowed; }
 
 /* Bounded, because the whole point is that a 25,000-token page does not take
    over the pane even when someone opens it deliberately. */
+/* A result holding a picture the owner asked for. Open rather than folded,
+   and without the dimming the other machinery gets: this one is the answer
+   rather than the workings. */
+.msg.machinery.for-owner { opacity: 1; }
+.msg.machinery.for-owner > summary { color: var(--muted); }
+
+/* A picture a tool handed back, inside the folded result it came with.
+   Bounded by the width of the conversation and by a height that keeps a tall
+   page from pushing the reply off the screen -- it is evidence to glance at,
+   and the file itself is in the workspace at full size. */
+.machinery-image {
+  display: block;
+  max-width: 100%;
+  max-height: 420px;
+  width: auto;
+  margin: 6px 0 2px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  object-fit: contain;
+  object-position: top left;
+  background: var(--panel-2);
+}
+
 .machinery-body {
   margin: 6px 0 0 20px;
   padding: 9px 11px;

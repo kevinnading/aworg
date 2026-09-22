@@ -330,6 +330,10 @@ class AgentLoop:
                         "media_type": image.get("media_type", "image/png"),
                         "data": image.get("data", ""),
                     },
+                    # AWORG's own, for the interface: whether this one was
+                    # meant for the owner to see or is the Resident checking
+                    # its work. Stripped before any of it reaches a model.
+                    **({"for_owner": True} if image.get("for_owner") else {}),
                 }
                 for image in result.images
                 if image.get("data")

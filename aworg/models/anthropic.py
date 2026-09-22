@@ -204,7 +204,10 @@ def _wire_messages(messages: list[Message]) -> list[dict[str, Any]]:
     wire: list[dict[str, Any]] = []
     for message in messages:
         role = "assistant" if message.role == "resident" else "user"
-        content: Any = message.blocks if message.blocks else message.content
+        content: Any = (
+            [_clean(block) for block in message.blocks]
+            if message.blocks else message.content
+        )
 
         if wire and wire[-1]["role"] == role:
             previous = wire[-1]["content"]
@@ -216,6 +219,23 @@ def _wire_messages(messages: list[Message]) -> list[dict[str, Any]]:
         else:
             wire.append({"role": role, "content": content})
     return wire
+
+
+#: Keys AWORG puts on a content block for its own interface, which are no
+#: part of the API's shape. Dropped rather than tolerated: this API is strict
+#: about content blocks, and a field invented here is not its problem.
+OURS = ("for_owner",)
+
+
+def _clean(block: dict[str, Any]) -> dict[str, Any]:
+    """One block with AWORG's own annotations taken off, recursively."""
+    if not isinstance(block, dict):
+        return block
+    out = {k: v for k, v in block.items() if k not in OURS}
+    content = out.get("content")
+    if isinstance(content, list):
+        out["content"] = [_clean(part) for part in content]
+    return out
 
 
 def _describe(status: int, body: str) -> str:

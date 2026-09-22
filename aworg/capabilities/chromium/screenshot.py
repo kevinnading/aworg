@@ -7,11 +7,17 @@ result, because that one is for the Resident, and a model reading a
 four-megabyte screenshot pays for every pixel of a resolution it cannot use.
 
 Looking costs real tokens -- roughly a thousand per picture, every time the
-conversation is sent afterwards -- so `show` can be turned off when the point
-is to leave the owner an image rather than to see the page. Reading the page
-with read_page is still cheaper and more precise for anything made of words.
-What a picture is for is the question words cannot answer: whether it looks
-right.
+conversation is sent afterwards -- so `only_save` exists for the case where
+the owner wants a file and the Resident has no need to see the page. It is a
+negative on purpose. The first version had a `show` that defaulted to true,
+and asked to screenshot a page and say what it looked like, the Resident
+turned it off and then described the page from what it already knew about
+that site: plausible, unverified, and the exact failure this capability
+exists to remove.
+
+Reading the page with read_page is still cheaper and more precise for
+anything made of words. What a picture is for is the question words cannot
+answer: whether it looks right.
 """
 
 from __future__ import annotations
@@ -27,11 +33,13 @@ from ._cdp import BrowserError, browser
 NAME = "screenshot"
 
 DESCRIPTION = (
-    "Take a picture of the page that is open: saved as a PNG in the Living "
-    "Workspace for the owner, and shown to you so you can see what the page "
-    "looks like. Use it to check layout, spacing and whether something "
-    "renders correctly -- for reading the page, read_page is cheaper and "
-    "more exact."
+    "Take a picture of the page that is open. It is saved as a PNG in the "
+    "Living Workspace and you are shown it, so this is how you find out "
+    "what a page actually looks like -- layout, spacing, whether something "
+    "renders correctly. Pass for_owner when the owner asked to see it, "
+    "which puts it in the chat rather than folded away. Never describe how "
+    "a page looks from a screenshot you did not see; for what a page says "
+    "rather than how it looks, read_page is cheaper and more exact."
 )
 
 INPUT_SCHEMA = {
@@ -51,12 +59,22 @@ INPUT_SCHEMA = {
                 "fits on screen. Defaults to false."
             ),
         },
-        "show": {
+        "for_owner": {
             "type": "boolean",
             "description": (
-                "Show the picture to you as well as saving it. Defaults to "
-                "true. Turn it off when the owner wants the file but you do "
-                "not need to look."
+                "Put the picture in the chat where the owner will see it "
+                "straight away. Use it when they asked to see something. "
+                "Leave it off when you are checking your own work -- those "
+                "are still there, folded away with the other results."
+            ),
+        },
+        "only_save": {
+            "type": "boolean",
+            "description": (
+                "Save the file without showing it to you. Defaults to false. "
+                "Only for when the owner asked for a file and you have no "
+                "need to see the page yourself -- with this on you will not "
+                "have seen it, and must not describe it."
             ),
         },
     },
@@ -76,7 +94,8 @@ async def run(
     context: ToolContext,
     path: str | None = None,
     full_page: bool = False,
-    show: bool = True,
+    only_save: bool = False,
+    for_owner: bool = False,
 ) -> ToolResult:
     try:
         page_browser = await browser(start_if_needed=False)
@@ -84,7 +103,7 @@ async def run(
             "format": "png",
             "captureBeyondViewport": bool(full_page),
         })
-        look = await _for_the_model(page_browser, full_page) if show else None
+        look = None if only_save else await _for_the_model(page_browser, full_page)
     except BrowserError as exc:
         raise ToolError(str(exc)) from exc
 
@@ -107,16 +126,21 @@ async def run(
         f"Here is {page_browser.url}. The full-size picture is saved at "
         f"{destination} ({size // 1024} KB) for the owner."
         if look else
-        f"Saved a picture of {page_browser.url} to {destination} "
-        f"({size // 1024} KB). You have not been shown it -- pass show=true "
-        f"if you need to see the page."
+        f"You have not seen this page. The picture was saved to {destination} "
+        f"({size // 1024} KB) for the owner and not shown to you, because you "
+        f"asked for only_save. Do not describe what it looks like; call "
+        f"screenshot again without only_save if you need to see it."
     )
 
     return ToolResult(
         text=told,
         payload={"path": str(destination), "bytes": size, "url": page_browser.url},
-        summary=f"{size // 1024} KB png" + (", looked" if look else ""),
-        images=[{"media_type": "image/jpeg", "data": look}] if look else [],
+        summary=f"{size // 1024} KB png" + (", looked" if look else ", unseen"),
+        images=(
+            [{"media_type": "image/jpeg", "data": look,
+              "for_owner": bool(for_owner)}]
+            if look else []
+        ),
     )
 
 
