@@ -46,8 +46,10 @@ import contextlib
 import json
 import os
 import shutil
+import signal
 import socket
 import struct
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -353,6 +355,10 @@ class Browser:
             "about:blank",
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.DEVNULL,
+            # Its own process group, so that everything Chromium starts can
+            # be signalled together. Windows has no groups worth using here
+            # and gets taskkill /T instead; see _kill_tree.
+            **({"start_new_session": True} if os.name != "nt" else {}),
         )
 
         if processes is not None:
@@ -413,7 +419,10 @@ class Browser:
                 await self.processes.stop(self.record.id)
             self.record = None
         if self.process is not None and self.process.returncode is None:
-            self.process.terminate()
+            # The tree, not the process. Chromium's renderer and GPU children
+            # outlive their parent on Windows, and nothing in AWORG would
+            # ever mention them again.
+            _kill_tree(self.process.pid)
             try:
                 await asyncio.wait_for(self.process.wait(), timeout=5)
             except (asyncio.TimeoutError, ProcessLookupError):
@@ -554,6 +563,27 @@ class Browser:
         return (result.get("result") or {}).get("value")
 
 
+def _kill_tree(pid: int) -> None:
+    """Kill a process and everything it started.
+
+    Both halves are best-effort and silent: this runs while something is
+    already being torn down, and a tidy-up that raises is worse than one
+    that misses.
+    """
+    if os.name == "nt":
+        with contextlib.suppress(Exception):
+            subprocess.run(
+                ["taskkill", "/T", "/F", "/PID", str(pid)],
+                capture_output=True,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+        return
+    with contextlib.suppress(Exception):
+        os.killpg(os.getpgid(pid), signal.SIGTERM)
+    with contextlib.suppress(Exception):
+        os.kill(pid, signal.SIGTERM)
+
+
 def _free_port() -> int:
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", 0))
@@ -584,10 +614,7 @@ def _kill_on_exit() -> None:
     """
     process = _browser.process
     if process is not None and process.returncode is None:
-        try:
-            process.kill()
-        except Exception:                                     # noqa: BLE001
-            pass
+        _kill_tree(process.pid)
     if _browser.profile is not None:
         shutil.rmtree(_browser.profile, ignore_errors=True)
 
