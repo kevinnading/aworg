@@ -76,6 +76,12 @@ class ToolResult:
     is_error: bool = False
     #: One short line for the Activities panel: "3 files", "exit 0".
     summary: str = ""
+    #: Pictures the model should see, as {"media_type", "data"} with the data
+    #: base64. Rare and expensive on purpose: an image costs around a
+    #: thousand tokens every time the conversation is sent afterwards, so a
+    #: tool returns one when looking *is* the answer -- what a page looks
+    #: like -- and not as a garnish on a result that is already words.
+    images: list[dict[str, str]] = field(default_factory=list)
 
 
 @dataclass

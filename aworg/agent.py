@@ -142,7 +142,7 @@ class AgentLoop:
 
             try:
                 async for fragment in self.adapter.stream(
-                    working, system=system, tools=tools or None
+                    recent_images(working), system=system, tools=tools or None
                 ):
                     if should_stop():
                         yield {"type": "stopped", "partial": bool("".join(said).strip())}
@@ -317,11 +317,29 @@ class AgentLoop:
         else:
             self.activities.completed(activity, result.summary, result.payload)
 
+        # A result with pictures becomes a list of content blocks in MCP's
+        # shape rather than a string. Text first, so a model that ignores
+        # images still gets the whole answer.
+        content: Any = result.text
+        if result.images:
+            content = [{"type": "text", "text": result.text}] + [
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": image.get("media_type", "image/png"),
+                        "data": image.get("data", ""),
+                    },
+                }
+                for image in result.images
+                if image.get("data")
+            ]
+
         results.append(
             {
                 "type": "tool_result",
                 "tool_use_id": call.id,
-                "content": result.text,
+                "content": content,
                 "is_error": result.is_error,
             }
         )
@@ -419,10 +437,84 @@ class AgentLoop:
         if not results:
             return
         rendered = "\n\n".join(
-            f"{'[failed] ' if r['is_error'] else ''}{r['content']}" for r in results
+            f"{'[failed] ' if r['is_error'] else ''}{text_of(r['content'])}"
+            for r in results
         )
         record("tool", rendered, blocks=results)
         working.append(Message(role="tool", content=rendered, blocks=results))
+
+
+#: How many pictures stay attached to the conversation. Two, because the
+#: useful comparison is "before this change, and after it", and a third is
+#: almost always a page the Resident has finished with.
+IMAGES_KEPT = 2
+
+
+def recent_images(messages: list[Message]) -> list[Message]:
+    """The conversation with all but the last few images taken back out.
+
+    Copied rather than edited: what was stored is what was sent at the time,
+    and rewriting history to save tokens would make the record a lie. This
+    only changes what goes on the wire for *this* request.
+
+    Each one that goes leaves a line saying it was there. A model that sees
+    its own screenshot silently vanish has no way to tell that from never
+    having taken it, and will take it again.
+    """
+    seen = 0
+    out: list[Message] = []
+    for message in reversed(messages):
+        if not message.blocks or not _has_image(message.blocks):
+            out.append(message)
+            continue
+        blocks: list[dict[str, Any]] = []
+        for block in message.blocks:
+            content = block.get("content")
+            if block.get("type") != "tool_result" or not isinstance(content, list):
+                blocks.append(block)
+                continue
+            kept: list[dict[str, Any]] = []
+            for part in content:
+                if not isinstance(part, dict) or part.get("type") != "image":
+                    kept.append(part)
+                    continue
+                seen += 1
+                if seen <= IMAGES_KEPT:
+                    kept.append(part)
+                else:
+                    kept.append({
+                        "type": "text",
+                        "text": "[a picture was here; it is no longer attached "
+                                "to save room, but you did see it]",
+                    })
+            blocks.append({**block, "content": kept})
+        out.append(Message(role=message.role, content=message.content, blocks=blocks))
+    out.reverse()
+    return out
+
+
+def _has_image(blocks: list[dict[str, Any]]) -> bool:
+    return any(
+        isinstance(block.get("content"), list)
+        and any(
+            isinstance(part, dict) and part.get("type") == "image"
+            for part in block["content"]
+        )
+        for block in blocks
+    )
+
+
+def text_of(content: Any) -> str:
+    """The words in a tool result, whatever shape it is in."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "\n".join(
+            part.get("text", "[a picture]" if part.get("type") == "image" else "")
+            if isinstance(part, dict) else str(part)
+            for part in content
+        ).strip()
+    return "" if content is None else str(content)
 
 
 def _signature(call: ToolCall) -> str:

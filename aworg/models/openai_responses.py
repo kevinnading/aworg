@@ -120,6 +120,9 @@ class OpenAIResponsesAdapter(ModelAdapter):
                 continue
 
             if message.role == "tool":
+                # `output` is a string here, so a picture follows as a user
+                # message -- the one place this API does take an image.
+                pictures: list[dict[str, Any]] = []
                 for block in message.blocks:
                     if block.get("type") != "tool_result":
                         continue
@@ -130,6 +133,20 @@ class OpenAIResponsesAdapter(ModelAdapter):
                             "output": _as_text(block.get("content")),
                         }
                     )
+                    pictures.extend(_images(block.get("content")))
+                if pictures:
+                    items.append({
+                        "role": "user",
+                        "content": [
+                            {"type": "input_text",
+                             "text": "The picture that tool returned:"},
+                            *[
+                                {"type": "input_image",
+                                 "image_url": _data_url(picture)}
+                                for picture in pictures
+                            ],
+                        ],
+                    })
                 continue
 
             text = "".join(
@@ -516,6 +533,25 @@ def _arguments(raw: str) -> dict[str, Any] | None:
     except json.JSONDecodeError:
         return None
     return parsed if isinstance(parsed, dict) else {}
+
+
+def _images(content: Any) -> list[dict[str, Any]]:
+    """The image blocks in a tool result, if it carries any."""
+    if not isinstance(content, list):
+        return []
+    return [
+        part for part in content
+        if isinstance(part, dict) and part.get("type") == "image"
+        and (part.get("source") or {}).get("data")
+    ]
+
+
+def _data_url(image: dict[str, Any]) -> str:
+    source = image.get("source") or {}
+    return (
+        f"data:{source.get('media_type', 'image/png')};base64,"
+        f"{source.get('data', '')}"
+    )
 
 
 def _as_text(content: Any) -> str:

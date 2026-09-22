@@ -197,6 +197,10 @@ class OpenAICompatibleAdapter(ModelAdapter):
                 continue
 
             if message.role == "tool":
+                # Images cannot ride in a tool message here -- this API takes
+                # a string and nothing else -- so they follow as a user
+                # message, which is where it does accept them.
+                pictures: list[dict[str, Any]] = []
                 for block in message.blocks:
                     if block.get("type") != "tool_result":
                         continue
@@ -207,6 +211,19 @@ class OpenAICompatibleAdapter(ModelAdapter):
                             "content": _as_text(block.get("content")),
                         }
                     )
+                    pictures.extend(_images(block.get("content")))
+                if pictures:
+                    wire.append({
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": "The picture that tool returned:"},
+                            *[
+                                {"type": "image_url",
+                                 "image_url": {"url": _data_url(picture)}}
+                                for picture in pictures
+                            ],
+                        ],
+                    })
                 continue
 
             text = "".join(
@@ -532,6 +549,25 @@ def _arguments(raw: str) -> dict[str, Any] | None:
     except json.JSONDecodeError:
         return None
     return parsed if isinstance(parsed, dict) else {}
+
+
+def _images(content: Any) -> list[dict[str, Any]]:
+    """The image blocks in a tool result, if it carries any."""
+    if not isinstance(content, list):
+        return []
+    return [
+        part for part in content
+        if isinstance(part, dict) and part.get("type") == "image"
+        and (part.get("source") or {}).get("data")
+    ]
+
+
+def _data_url(image: dict[str, Any]) -> str:
+    source = image.get("source") or {}
+    return (
+        f"data:{source.get('media_type', 'image/png')};base64,"
+        f"{source.get('data', '')}"
+    )
 
 
 def _as_text(content: Any) -> str:
