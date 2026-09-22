@@ -1256,6 +1256,27 @@ class Store:
                 "UPDATE appearance SET preset = 'midnight', overrides = '{}' WHERE id = 1"
             )
             self._seed_workers(conn)
+
+        # Scrub what was deleted, rather than merely unlinking it.
+        #
+        # DELETE takes rows out of the tables and leaves their content in the
+        # file's free pages. Checked rather than assumed: after a reset that
+        # emptied a conversation, a sentence from it was still findable in
+        # the bytes at a fixed offset. An owner who resets an Aworg because
+        # they typed something into it they regret has not been given what
+        # they asked for.
+        #
+        # secure_delete zeroes pages as they are freed from here on;
+        # VACUUM rewrites the file now, dropping every free page the deletes
+        # above just made. Both are needed: the pragma is for the future, the
+        # vacuum is for what has already happened. VACUUM cannot run inside a
+        # transaction, hence its own connection with autocommit.
+        scrub = sqlite3.connect(self.path, isolation_level=None)
+        try:
+            scrub.execute("PRAGMA secure_delete = ON")
+            scrub.execute("VACUUM")
+        finally:
+            scrub.close()
         return removed
 
     # -- tasks ----------------------------------------------------------
