@@ -2651,7 +2651,7 @@ async function doReset() {
     // the theme and the conversation at once, and every one of those is read
     // at boot -- patching them all up in place would be a second, less
     // tested, path to the same state.
-    sessionStorage.setItem("aworg-reset", JSON.stringify(result.backups || []));
+    sessionStorage.setItem("aworg-reset", JSON.stringify(result.left_behind || []));
     location.reload();
   } catch (error) {
     el("reset-error").textContent = error.message;
@@ -2673,15 +2673,18 @@ function wireReset() {
   // Say what happened, once, on the far side of the reload -- in the panel
   // the owner was standing in when they did it, rather than in a toast
   // invented for one message.
-  const backups = sessionStorage.getItem("aworg-reset");
-  if (backups !== null) {
+  const outcome = sessionStorage.getItem("aworg-reset");
+  if (outcome !== null) {
     sessionStorage.removeItem("aworg-reset");
-    const saved = JSON.parse(backups);
+    // Anything that could not be removed is named here rather than left for
+    // the owner to discover. A reset that was not complete should not read
+    // the same as one that was.
+    const stuck = JSON.parse(outcome);
     const done = el("reset-error");
-    done.classList.add("ok");
-    done.textContent = saved.length
-      ? `Reset. Your previous state is in backups/ as ${saved.join(" and ")}.`
-      : "Reset.";
+    done.classList.toggle("ok", !stuck.length);
+    done.textContent = stuck.length
+      ? `Reset, but these could not be removed: ${stuck.join("; ")}`
+      : "Reset. Nothing was kept.";
   }
 }
 

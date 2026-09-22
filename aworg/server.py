@@ -76,16 +76,12 @@ RESET_NAMES = {
 }
 
 
-def _reset_detail(
-    removed: dict[str, int], stopped: int, saved: list[str]
-) -> str:
+def _reset_detail(removed: dict[str, int], stopped: int) -> str:
     """What a reset actually took, in a sentence.
 
-    Assembled rather than formatted inline because the two facts are
-    independent: what was erased, and whether it can be got back. An earlier
-    version joined them with a conditional that swallowed the counts whenever
-    there was no backup -- which is exactly the case where knowing what went
-    matters most.
+    The counts are the whole of it now. There was a second half naming the
+    backups it had made, until the backups turned out to be a promise this
+    could not keep -- see reset_aworg.
     """
     gone = ", ".join(
         f"{count} {RESET_NAMES.get(table, table)}"
@@ -97,11 +93,7 @@ def _reset_detail(
         parts.append(
             f"{stopped} running program(s) were stopped."
         )
-    parts.append(
-        f"The databases were copied to backups/ first, as {', '.join(saved)}."
-        if saved else
-        "Nothing was backed up -- there was no database to copy."
-    )
+    parts.append("Nothing was kept.")
     return " ".join(parts)
 
 
@@ -841,9 +833,17 @@ def create_app(paths: Paths, address: str = "http://127.0.0.1:8420") -> FastAPI:
     async def reset_aworg(body: ResetBody) -> dict[str, Any]:
         """Put this Aworg back the way it arrived.
 
-        The databases are copied to backups/ before anything is touched. A
-        reset the owner regrets is then a file copy away from being undone,
-        which is cheap to provide and impossible to add afterwards.
+        **Nothing is kept.** This used to copy both databases to backups/
+        and call the result recoverable, which it was not: the workspace was
+        deleted either way, so what came back was a conversation about an
+        application whose files no longer existed. A half-recovery offered as
+        a recovery is worse than none, because the owner discovers which one
+        it was at the moment they need it.
+
+        The honest arrangement is that a reset destroys, the dialog says so
+        before the owner types the code, and anyone who wants their work kept
+        copies it out first. When History arrives it can offer the real
+        thing.
         """
         expected = pending_code.get("code")
         if not expected or body.confirm.strip().upper() != expected:
@@ -879,17 +879,6 @@ def create_app(paths: Paths, address: str = "http://127.0.0.1:8420") -> FastAPI:
         # it in its own description of the workspace.
         stopped = await resident.processes.clear()
 
-        stamp = time.strftime("%Y%m%d-%H%M%S")
-        backups = paths.home / "backups"
-        backups.mkdir(exist_ok=True)
-        saved = []
-        for name in ("state.db", "secrets.db"):
-            source = paths.home / name
-            if source.exists():
-                target = backups / f"{source.stem}-{stamp}.db"
-                shutil.copy2(source, target)
-                saved.append(target.name)
-
         removed = store.factory_reset(keep_connections=body.keep_connections)
         if not body.keep_connections:
             secrets.clear()
@@ -907,22 +896,16 @@ def create_app(paths: Paths, address: str = "http://127.0.0.1:8420") -> FastAPI:
                         left_behind.append(f"{item} ({exc.strerror or exc})")
             folder.mkdir(exist_ok=True)
 
-        # The trash goes to backups/ rather than away.
-        #
-        # It was never touched, so everything the Resident had ever deleted
-        # was still on disk inside the home it lives in -- readable by the
-        # next Resident with an absolute path. Kept rather than destroyed,
-        # beside the databases, because the trash is the one thing that
-        # exists so something deleted can come back, and a reset is the
-        # largest deletion there is.
+        # The trash goes too. It was never touched before, so everything the
+        # Resident had ever deleted stayed on disk inside the home it lives
+        # in, readable by the next Resident with an absolute path.
         trash = paths.trash
-        if trash.exists() and any(trash.iterdir()):
-            kept = backups / f"trash-{stamp}"
-            try:
-                shutil.move(str(trash), str(kept))
-                saved.append(kept.name)
-            except OSError as exc:
-                left_behind.append(f"{trash} ({exc.strerror or exc})")
+        if trash.exists():
+            for item in trash.iterdir():
+                try:
+                    shutil.rmtree(item) if item.is_dir() else item.unlink()
+                except OSError as exc:
+                    left_behind.append(f"{item} ({exc.strerror or exc})")
         trash.mkdir(exist_ok=True)
 
         # Runtime state is not in the database and has to be dropped by
@@ -947,7 +930,7 @@ def create_app(paths: Paths, address: str = "http://127.0.0.1:8420") -> FastAPI:
         # the largest thing that can happen to an Aworg and a Living Log that
         # came back from one with no explanation for the silence above it
         # would be the pane failing at its only job.
-        detail = _reset_detail(removed, stopped, saved)
+        detail = _reset_detail(removed, stopped)
         if left_behind:
             detail += (
                 " Could not remove, and still there: "
@@ -966,7 +949,6 @@ def create_app(paths: Paths, address: str = "http://127.0.0.1:8420") -> FastAPI:
 
         return {
             "status": "reset" if not left_behind else "reset, incompletely",
-            "backups": saved,
             "removed": removed,
             "processes_stopped": stopped,
             "left_behind": left_behind,
