@@ -28,6 +28,13 @@ fetches Chrome for Testing's headless shell into `chromium/` inside this
 capability's own folder, and that copy is preferred over anything installed.
 An owner who already has Chromium or Chrome pays for no download; one who has
 neither runs one tool. Either way what runs is Chromium.
+
+Inside the capability, deliberately, and not somewhere safer. A capability is
+a folder: deleting it removes what it could do, and an owner who resets and
+chooses Capabilities has asked for exactly that. An engine tucked away
+elsewhere would survive both and sit in their home as a hundred megabytes
+nothing on screen accounts for. The cost of doing it this way is a re-fetch
+after a reset, which is one call and announces itself.
 """
 
 from __future__ import annotations
@@ -35,6 +42,7 @@ from __future__ import annotations
 import asyncio
 import atexit
 import base64
+import contextlib
 import json
 import os
 import shutil
@@ -43,6 +51,7 @@ import struct
 import sys
 import tempfile
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlparse
 
 import httpx
@@ -99,18 +108,16 @@ LINUX_NAMES = (
 )
 
 
-def engine_root(home: Path | None) -> Path | None:
-    """Where a fetched engine lives: engines/ under the Aworg's home.
+def engine_root() -> Path:
+    """Where a fetched engine lives: inside this capability's own folder.
 
-    Outside the capability folder on purpose. That folder is content now --
-    reinstalled by `aworg install --force`, emptied by the Capabilities part
-    of a reset -- and a hundred megabytes that a routine reset throws away
-    is a download the owner pays for twice.
+    So that removing the capability removes the engine. See the note at the
+    top of this file.
     """
-    return None if home is None else Path(home) / "engines" / "chromium"
+    return Path(__file__).parent / BUNDLED[0]
 
 
-def find_engine(home: Path | None = None) -> Path:
+def find_engine() -> Path:
     """The browser this capability will drive, or a refusal that says why.
 
     Order: one the owner named, one bundled with this capability, then
@@ -125,7 +132,7 @@ def find_engine(home: Path | None = None) -> Path:
             f"AWORG_BROWSER is set to {named!r}, and there is no file there."
         )
 
-    for found in bundled_engine(home):
+    for found in bundled_engine():
         return found
 
     if sys.platform.startswith("win"):
@@ -151,19 +158,15 @@ def find_engine(home: Path | None = None) -> Path:
     )
 
 
-def bundled_engine(home: Path | None = None):
-    """Every engine AWORG has put somewhere itself, best first.
+def bundled_engine():
+    """Every engine this capability is carrying, best first.
 
     A generator so that `find_engine` can take the first and
     `install_engine` can ask whether there is one at all, without either of
     them duplicating where to look.
     """
     here = Path(__file__).parent
-    roots = [here / folder for folder in BUNDLED]
-    fetched = engine_root(home)
-    if fetched is not None:
-        roots.append(fetched)
-    for root in roots:
+    for root in (here / folder for folder in BUNDLED):
         if not root.is_dir():
             continue
         for name in ENGINE_NAMES:
@@ -293,6 +296,11 @@ class Browser:
         self.process: asyncio.subprocess.Process | None = None
         self.socket: WebSocket | None = None
         self.profile: Path | None = None
+        #: The row this engine has in AWORG's process ledger, when it was
+        #: given one. That ledger is what lets the next Aworg kill an engine
+        #: this one was killed before it could stop -- see start().
+        self.record: Any = None
+        self.processes: Any = None
         self.next_id = 0
         self.url = ""
         self.title = ""
@@ -313,9 +321,15 @@ class Browser:
     def running(self) -> bool:
         return self.process is not None and self.process.returncode is None
 
-    async def start(self, home: Path | None = None) -> str:
-        """Launch the engine and attach to its first page."""
-        engine = find_engine(home)
+    async def start(self, processes: Any = None) -> str:
+        """Launch the engine and attach to its first page.
+
+        `processes` is AWORG's process table, handed in by whichever tool
+        started this. Registering there costs nothing and buys the one thing
+        atexit cannot: an Aworg that was killed rather than closed leaves an
+        engine running, and the next one reads the ledger and clears it out.
+        """
+        engine = find_engine()
         port = _free_port()
         self.profile = Path(tempfile.mkdtemp(prefix="aworg-browser-"))
         # The headless shell is already headless and rejects the flag that
@@ -340,6 +354,20 @@ class Browser:
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.DEVNULL,
         )
+
+        if processes is not None:
+            self.processes = processes
+            try:
+                self.record = processes.add(
+                    self.process,
+                    command=f"{engine.name} --remote-debugging-port={port}",
+                    label="Chromium (browser capability)",
+                    cwd=str(engine.parent),
+                )
+            except Exception:                                 # noqa: BLE001
+                # A ledger that would not take it is not a reason to have no
+                # browser. Worse orphan handling, still a working tool.
+                self.record = None
 
         target = await self._wait_for_page(port)
         self.socket = await WebSocket.connect(target)
@@ -378,6 +406,12 @@ class Browser:
         if self.socket is not None:
             await self.socket.close()
             self.socket = None
+        if self.record is not None and self.processes is not None:
+            # Through the table when it owns the row, so the ledger is
+            # rewritten and the Living Log hears about it exactly once.
+            with contextlib.suppress(Exception):
+                await self.processes.stop(self.record.id)
+            self.record = None
         if self.process is not None and self.process.returncode is None:
             self.process.terminate()
             try:
@@ -532,11 +566,11 @@ def _free_port() -> int:
 _browser = Browser()
 
 
-async def browser(start_if_needed: bool = True, home: Path | None = None) -> Browser:
+async def browser(start_if_needed: bool = True, processes: Any = None) -> Browser:
     if not _browser.running:
         if not start_if_needed:
             raise BrowserError("No page is open. Use open_page first.")
-        await _browser.start(home)
+        await _browser.start(processes)
     return _browser
 
 

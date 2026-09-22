@@ -55,8 +55,9 @@ JavaScript has run, with whatever the console and the network complained
 about, and a picture of it the Resident can actually see rather than merely
 save. That is the Chromium Browser capability rather than part of the
 runtime: it drives Chromium, and if the machine has none, `install_engine`
-fetches Chrome for Testing's headless shell into `engines/` under the Aworg's
-home. Deleting the capability's folder removes it. AWORG ships it installed,
+fetches Chrome for Testing's headless shell into the capability's own folder.
+Deleting that folder removes the capability and the engine with it, which is
+the point of a capability being a folder. AWORG ships it installed,
 along with a small Weather capability that exists to show what installing one
 looks like.
 

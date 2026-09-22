@@ -1,14 +1,15 @@
-"""Fetch the Chromium this capability drives.
+"""Fetch the Chromium this capability drives, into its own folder.
 
 The capability ships as source and no engine, which is the right trade for a
 download and the wrong one for a machine that has no Chromium at all. This
-closes that: one call, one archive, and an engine in `engines/chromium` under
-the Aworg's home, where `find_engine` looks.
+closes that: one call, one archive, and an engine in `chromium/` beside this
+file, where `find_engine` looks first.
 
-Under the home rather than inside the capability, which is the obvious place
-and the wrong one. That folder is content now -- replaced by `aworg install
---force`, emptied by the Capabilities part of a reset -- and either would
-silently throw away a hundred megabytes that then has to be fetched again.
+Inside the capability so that the capability is the whole of it. Delete the
+folder and the engine goes; reset and choose Capabilities and it goes. The
+price is fetching it again afterwards, which is this tool, and which is the
+right way round: a reset that left a hundred megabytes behind to save the
+owner a download would be deciding something that is theirs to decide.
 
 What it fetches is Chrome for Testing's **headless shell** -- the build
 Google publishes for automation, pinned to a known-good version, with no
@@ -43,7 +44,8 @@ NAME = "install_engine"
 DESCRIPTION = (
     "Download the Chromium this capability needs, if the machine has none. "
     "Fetches Chrome for Testing's headless shell (about 100 MB) into this "
-    "Aworg's home. Call this when open_page says no Chromium was found."
+    "capability's own folder. Call this when open_page says no Chromium was "
+    "found."
 )
 
 INPUT_SCHEMA = {
@@ -90,11 +92,8 @@ def _platform() -> str:
 
 
 async def run(context: ToolContext, replace: bool = False) -> ToolResult:
-    destination = engine_root(context.paths.home)
-    if destination is None:
-        raise ToolError("This Aworg has no home, so there is nowhere to put it.")
-
-    existing = next(bundled_engine(context.paths.home), None)
+    destination = engine_root()
+    existing = next(bundled_engine(), None)
     if existing is not None and not replace:
         return ToolResult(
             text=(
@@ -144,7 +143,7 @@ async def run(context: ToolContext, replace: bool = False) -> ToolResult:
     except zipfile.BadZipFile as exc:
         raise ToolError(f"What came back was not a zip archive: {exc}") from exc
 
-    engine = next(bundled_engine(context.paths.home), None)
+    engine = next(bundled_engine(), None)
     if engine is None:
         raise ToolError(
             "The archive unpacked, but no Chromium binary was found inside it."

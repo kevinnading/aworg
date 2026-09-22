@@ -225,3 +225,9 @@ __marimo__/
 *.db
 *.sqlite
 *.sqlite3
+
+# An engine fetched by the Chromium capability. It belongs to whichever Aworg
+# fetched it, never to the repository -- a hundred megabytes of Chromium is
+# not source, and this line is here in case anyone ever runs install_engine
+# against a checkout.
+aworg/capabilities/*/chromium/

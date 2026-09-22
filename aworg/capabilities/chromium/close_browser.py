@@ -27,6 +27,8 @@ async def run(context: ToolContext) -> ToolResult:
         return ToolResult(text="No browser was open.", summary="already closed")
 
     was = _browser.url or "about:blank"
+    # Nothing is passed in: the browser is holding the table it was given
+    # when it started, which is the one that has the row to clear.
     await _browser.stop()
     return ToolResult(
         text=f"Closed the browser. It was showing {was}.",
