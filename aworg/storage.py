@@ -1196,66 +1196,133 @@ class Store:
             out.append(record)
         return out
 
-    def factory_reset(self, keep_connections: bool = True) -> dict[str, int]:
-        """Put the database back the way a fresh Aworg starts.
+    #: What a reset can put back, and what each part is called where the
+    #: owner chooses it.
+    #:
+    #: A list rather than one verb because "reset" turned out to mean several
+    #: different things an owner might want separately: a fresh conversation
+    #: is a different request from a fresh machine, and neither should cost
+    #: them their model connections. Each part stands alone -- none of them
+    #: depends on another having been chosen.
+    RESET_PARTS = {
+        "conversation": "Conversation and messages",
+        "tasks": "Tasks in the plan",
+        "journal": "The Living Log",
+        "workspace": "Files in the Living Workspace",
+        "trash": "The trash",
+        "processes": "Running programs (servers and the like)",
+        "workers": "Workers, back to the shipped four",
+        "capabilities": "Capability switches",
+        "skills": "Skill switches",
+        "project": "The project's name and version",
+        "layout": "Pane sizes",
+        "appearance": "Colour scheme",
+        "persona": "The chosen Persona",
+        "prompt": "The Resident's standing instructions",
+        "connections": "Model connections and their credentials",
+    }
+
+    #: Chosen for them when the dialog opens. The four left out are the ones
+    #: an owner sets up once and would not expect a reset to take: what the
+    #: Resident is connected to, what it looks like, who it is, and the
+    #: instructions they wrote it. Every part is still available; these
+    #: simply are not assumed.
+    RESET_DEFAULTS = tuple(
+        part for part in RESET_PARTS
+        if part not in ("connections", "appearance", "persona", "prompt")
+    )
+
+    #: Tables emptied wholesale, by the part that owns them.
+    _RESET_TABLES = {
+        "conversation": ("messages", "conversations"),
+        "tasks": ("tasks",),
+        "journal": ("journal",),
+        "workers": ("workers",),
+        "capabilities": ("capability_state",),
+        "skills": ("skill_state",),
+        "connections": ("connections",),
+    }
+
+    def count_capability_state(self) -> int:
+        """How many capability switches the owner has moved."""
+        with self._connect() as conn:
+            return conn.execute(
+                "SELECT COUNT(*) c FROM capability_state"
+            ).fetchone()["c"]
+
+    def count_skill_state(self) -> int:
+        """How many skill switches the owner has moved."""
+        with self._connect() as conn:
+            return conn.execute(
+                "SELECT COUNT(*) c FROM skill_state"
+            ).fetchone()["c"]
+
+    def factory_reset(self, parts: Any = None) -> dict[str, int]:
+        """Put the chosen parts back the way a fresh Aworg has them.
 
         Deliberately explicit about every table rather than dropping the file
         and rebuilding. A reset that recreates the schema from scratch is a
         reset that silently discards any migration an owner's database has
         been through, and the failure would only show on the next upgrade.
 
-        The shipped workers come back, because a fresh Aworg has them. The
-        shipped prompt comes back too -- an owner who edited theirs asked for
-        a factory reset, and this is the one moment where overwriting it is
-        the thing they requested rather than a liberty.
+        `parts` is a set of RESET_PARTS keys; None means all of them, which
+        is what a factory reset has always meant. Counts come back per part
+        rather than per table, because the part is what the owner chose.
         """
+        chosen = set(self.RESET_PARTS if parts is None else parts)
         removed: dict[str, int] = {}
         with self._connect() as conn:
-            # skill_state was missing from this list, which meant the
-            # owner's skill switches survived a reset: an Aworg reset with
-            # three skills off came back with three skills off. It is the
-            # same kind of row as capability_state, and goes the same way.
-            for table in ("messages", "conversations", "tasks", "workers",
-                          "capability_state", "skill_state", "journal"):
-                removed[table] = conn.execute(
-                    f"SELECT COUNT(*) c FROM {table}"
-                ).fetchone()["c"]
-                conn.execute(f"DELETE FROM {table}")
+            for part, tables in self._RESET_TABLES.items():
+                if part not in chosen:
+                    continue
+                count = 0
+                for table in tables:
+                    count += conn.execute(
+                        f"SELECT COUNT(*) c FROM {table}"
+                    ).fetchone()["c"]
+                    conn.execute(f"DELETE FROM {table}")
+                removed[part] = count
 
-            if not keep_connections:
-                removed["connections"] = conn.execute(
-                    "SELECT COUNT(*) c FROM connections"
-                ).fetchone()["c"]
-                conn.execute("DELETE FROM connections")
-
-            conn.execute(
-                "UPDATE resident SET system_prompt = ?, current_conversation_id = NULL,"
-                " persona = NULL"
-                + ("" if keep_connections
-                   else ", primary_connection_id = NULL, worker_connection_id = NULL")
-                + " WHERE id = 1",
-                (DEFAULT_SYSTEM_PROMPT,),
-            )
-            # The project's name and version, back to what a fresh Aworg
-            # calls a thing it has not been told about yet.
-            #
-            # Missed until a reset left one behind. The workspace was emptied
-            # and the conversation was gone, but the name survived into the
-            # next prompt -- so the Resident, asked for something new, read
-            # that it was working on "Signal Garden" and dutifully built
-            # Signal Garden v2.0. It was not remembering; it was told, by a
-            # row nothing had cleared. The same class of miss as the running
-            # server below: state that lives outside the tables this loop
-            # names.
-            conn.execute(
-                "UPDATE project SET name = 'Unnamed Project', version = '1.0',"
-                " updated_at = datetime('now') WHERE id = 1"
-            )
-            conn.execute("UPDATE layout SET sizes = '{}' WHERE id = 1")
-            conn.execute(
-                "UPDATE appearance SET preset = 'midnight', overrides = '{}' WHERE id = 1"
-            )
-            self._seed_workers(conn)
+            if "conversation" in chosen:
+                # The pointer goes with the messages it points at; a
+                # conversation id surviving its conversation is a Resident
+                # writing into a row that is no longer there.
+                conn.execute(
+                    "UPDATE resident SET current_conversation_id = NULL WHERE id = 1"
+                )
+            if "connections" in chosen:
+                conn.execute(
+                    "UPDATE resident SET primary_connection_id = NULL,"
+                    " worker_connection_id = NULL WHERE id = 1"
+                )
+            if "prompt" in chosen:
+                # An owner who edited theirs and asked for it back gets the
+                # shipped one; anyone who did not choose this keeps what they
+                # wrote, which is the whole point of it being separate.
+                conn.execute(
+                    "UPDATE resident SET system_prompt = ? WHERE id = 1",
+                    (DEFAULT_SYSTEM_PROMPT,),
+                )
+            if "persona" in chosen:
+                conn.execute("UPDATE resident SET persona = NULL WHERE id = 1")
+            if "project" in chosen:
+                # The name survived a reset once, and the Resident -- asked
+                # for something new -- read that it was working on "Signal
+                # Garden" and dutifully built Signal Garden v2.0. It was not
+                # remembering; it was told, by a row nothing had cleared.
+                conn.execute(
+                    "UPDATE project SET name = 'Unnamed Project', version = '1.0',"
+                    " updated_at = datetime('now') WHERE id = 1"
+                )
+            if "layout" in chosen:
+                conn.execute("UPDATE layout SET sizes = '{}' WHERE id = 1")
+            if "appearance" in chosen:
+                conn.execute(
+                    "UPDATE appearance SET preset = 'midnight',"
+                    " overrides = '{}' WHERE id = 1"
+                )
+            if "workers" in chosen:
+                self._seed_workers(conn)
 
         # Scrub what was deleted, rather than merely unlinking it.
         #
@@ -1266,9 +1333,9 @@ class Store:
         # they typed something into it they regret has not been given what
         # they asked for.
         #
-        # secure_delete zeroes pages as they are freed from here on;
-        # VACUUM rewrites the file now, dropping every free page the deletes
-        # above just made. Both are needed: the pragma is for the future, the
+        # secure_delete zeroes pages as they are freed from here on; VACUUM
+        # rewrites the file now, dropping every free page the deletes above
+        # just made. Both are needed: the pragma is for the future, the
         # vacuum is for what has already happened. VACUUM cannot run inside a
         # transaction, hence its own connection with autocommit.
         scrub = sqlite3.connect(self.path, isolation_level=None)

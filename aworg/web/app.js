@@ -2598,20 +2598,33 @@ async function startReset() {
   el("reset-code").textContent = preview.code;
   el("reset-code-input").value = "";
   el("reset-error").textContent = "";
+  el("reset-error").classList.remove("ok");
   el("reset-go").disabled = true;
 
   const list = el("reset-list");
   list.innerHTML = "";
-  for (const row of preview.erases) {
-    // A line for everything, including the zeroes. "0 tasks" tells the owner
-    // the plan is already empty, where an absent line leaves them wondering
+  for (const part of preview.parts) {
+    // A row for everything, including the zeroes. "0 tasks" tells the owner
+    // the plan is already empty, where an absent row leaves them wondering
     // whether tasks are even covered by this.
-    const item = document.createElement("li");
-    const count = document.createElement("strong");
-    count.textContent = row.count;
-    item.append(count, document.createTextNode(` ${row.what.toLowerCase()}`));
-    if (row.what === "Model connections") item.classList.add("conditional");
-    list.appendChild(item);
+    const row = document.createElement("label");
+    row.className = "check reset-part";
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.checked = part.default;
+    box.dataset.part = part.id;
+    box.onchange = syncResetList;
+    const what = document.createElement("span");
+    what.textContent = part.what;
+    const count = document.createElement("em");
+    // The four that are not lists of things answer a different question --
+    // whether they differ from a fresh Aworg at all -- so they say that
+    // rather than pretending to a count.
+    count.textContent = COUNTLESS.has(part.id)
+      ? (part.count ? "changed" : "as it ships")
+      : String(part.count);
+    row.append(box, what, count);
+    list.appendChild(row);
   }
 
   el("reset-start-row").hidden = true;
@@ -2620,13 +2633,30 @@ async function startReset() {
   syncResetList();
 }
 
-/* Connections are struck through when they are being kept, so the list always
- * describes what this particular reset will actually do. */
+/* The parts whose "count" is really a yes or no. */
+const COUNTLESS = new Set(["project", "layout", "appearance", "persona", "prompt"]);
+
+function chosenParts() {
+  return [...document.querySelectorAll("#reset-list input:checked")]
+    .map((box) => box.dataset.part);
+}
+
+/* Nothing chosen is not a reset, and the button says so rather than failing
+ * at the server after the owner has typed a confirmation code. */
 function syncResetList() {
-  const keeping = el("reset-keep-connections").checked;
-  for (const item of document.querySelectorAll("#reset-list .conditional")) {
-    item.classList.toggle("kept", keeping);
-  }
+  const chosen = chosenParts();
+  const typed = el("reset-code-input").value.trim().toUpperCase();
+  el("reset-chosen").textContent = chosen.length
+    ? `${chosen.length} of ${document.querySelectorAll("#reset-list input").length} chosen`
+    : "Nothing chosen";
+  el("reset-go").disabled = !chosen.length || typed !== el("reset-code").textContent;
+  el("reset-go").textContent = chosen.length > 1
+    ? `Reset ${chosen.length} parts` : "Reset";
+}
+
+function setAllParts(on) {
+  for (const box of document.querySelectorAll("#reset-list input")) box.checked = on;
+  syncResetList();
 }
 
 function cancelReset() {
@@ -2644,7 +2674,7 @@ async function doReset() {
       method: "POST",
       body: JSON.stringify({
         confirm: el("reset-code-input").value.trim(),
-        keep_connections: el("reset-keep-connections").checked,
+        parts: chosenParts(),
       }),
     });
     // Reloaded rather than repainted. A reset changes the panes, the layout,
@@ -2664,11 +2694,9 @@ function wireReset() {
   el("reset-start").onclick = startReset;
   el("reset-cancel").onclick = cancelReset;
   el("reset-go").onclick = doReset;
-  el("reset-keep-connections").onchange = syncResetList;
-  el("reset-code-input").oninput = (event) => {
-    const typed = event.target.value.trim().toUpperCase();
-    el("reset-go").disabled = typed !== el("reset-code").textContent;
-  };
+  el("reset-all").onclick = () => setAllParts(true);
+  el("reset-none").onclick = () => setAllParts(false);
+  el("reset-code-input").oninput = syncResetList;
 
   // Say what happened, once, on the far side of the reload -- in the panel
   // the owner was standing in when they did it, rather than in a toast

@@ -299,21 +299,22 @@
         <div class="panel-head">
           <div>
             <h2>Reset this Aworg</h2>
-            <p class="hint">Puts everything back the way it arrived. The
-              conversation, the plan, the Living Workspace and every setting
-              are erased, and running programs are stopped. <strong>Nothing is
-              kept and this cannot be undone</strong> — copy anything you want
-              to keep out of the workspace first.</p>
+            <p class="hint">Choose what goes back to how it arrived. Four
+              are left unticked because you set them up once and would not
+              expect a reset to take them: your connections, the look, the
+              Persona and your standing instructions. <strong>Nothing is kept
+              and this cannot be undone</strong> — copy anything you want out
+              of the workspace first.</p>
           </div>
         </div>
 
-        <ul class="reset-list" id="reset-list"></ul>
+        <div class="reset-list" id="reset-list"></div>
 
-        <label class="check">
-          <input type="checkbox" id="reset-keep-connections" checked>
-          <span>Keep my model connections and credentials — otherwise you
-            will have to add them again before the Resident can speak.</span>
-        </label>
+        <div class="row reset-bulk">
+          <button type="button" class="ghost tiny" id="reset-all">Everything</button>
+          <button type="button" class="ghost tiny" id="reset-none">Nothing</button>
+          <span class="hint" id="reset-chosen"></span>
+        </div>
 
         <div class="reset-confirm" id="reset-confirm" hidden>
           <p>Type <code id="reset-code"></code> to confirm. This cannot be

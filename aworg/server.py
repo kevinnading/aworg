@@ -36,7 +36,7 @@ from .resident import Busy, Resident
 from .secrets import SecretStore, credential_ref
 from . import layout as layout_settings
 from . import lifecycle, panes, providers
-from .storage import Store
+from .storage import DEFAULT_SYSTEM_PROMPT, Store
 from .theme import (
     PRESETS,
     TOKEN_GROUPS,
@@ -62,33 +62,42 @@ MEDIA_TYPES = {
 }
 
 
-#: Table names as an owner would say them. A reset entry reading "4 journal,
-#: 1 capability_state" is the schema leaking into the one record of the
-#: largest thing that can happen to an Aworg.
+#: What each part is called in the Living Log's own sentence, where it reads
+#: as a count of things rather than as a settings label.
 RESET_NAMES = {
-    "messages": "messages",
-    "conversations": "conversations",
+    "conversation": "messages",
     "tasks": "tasks",
-    "workers": "workers",
-    "capability_state": "capability settings",
     "journal": "Living Log entries",
+    "workers": "workers",
+    "capabilities": "capability settings",
+    "skills": "skill settings",
     "connections": "model connections",
 }
 
 
-def _reset_detail(removed: dict[str, int], stopped: int) -> str:
+def _reset_detail(
+    removed: dict[str, int], stopped: int, chosen: set[str] | None = None
+) -> str:
     """What a reset actually took, in a sentence.
 
-    The counts are the whole of it now. There was a second half naming the
-    backups it had made, until the backups turned out to be a promise this
-    could not keep -- see reset_aworg.
+    Two facts, kept apart: what was erased, and what was chosen. They differ
+    whenever a part was chosen and had nothing in it, and an owner reading
+    this later should be able to tell "I did not ask for the workspace" from
+    "I did, and it was already empty".
+
+    There was a third half naming the backups it had made, until the backups
+    turned out to be a promise this could not keep -- see reset_aworg.
     """
     gone = ", ".join(
-        f"{count} {RESET_NAMES.get(table, table)}"
-        for table, count in removed.items()
+        f"{count} {RESET_NAMES.get(part, part)}"
+        for part, count in removed.items()
         if count
     )
     parts = [f"Erased {gone}." if gone else "There was nothing to erase."]
+    if chosen is not None and len(chosen) < len(Store.RESET_PARTS):
+        parts.append(
+            "Chosen: " + ", ".join(sorted(chosen)) + "."
+        )
     if stopped:
         parts.append(
             f"{stopped} running program(s) were stopped."
@@ -155,10 +164,9 @@ class CapabilityPatch(BaseModel):
 
 class ResetBody(BaseModel):
     confirm: str
-    #: Defaults to keeping them, because the alternative is an owner who
-    #: wanted a clean conversation and finds their Resident mute with no
-    #: model to think with.
-    keep_connections: bool = True
+    #: Which parts to put back. None means all of them, which is what a
+    #: factory reset has always meant and what an older client sends.
+    parts: list[str] | None = None
 
 
 class TaskPatch(BaseModel):
@@ -796,11 +804,16 @@ def create_app(paths: Paths, address: str = "http://127.0.0.1:8420") -> FastAPI:
 
     @app.get("/api/reset/preview")
     def reset_preview() -> dict[str, Any]:
-        """What a reset would erase, counted, plus a fresh confirmation code.
+        """Every part a reset could put back, counted, plus a fresh code.
 
         Counted rather than described. "Your conversation" is easy to agree
         to; "47 messages" is the thing the owner actually has to weigh, and
         they deserve the real number before they type anything.
+
+        A count of zero is still listed. A part that vanished when it had
+        nothing in it would make the list change shape between visits, and an
+        owner reading it would have no way to tell "nothing to clear" from
+        "this Aworg cannot clear that".
         """
         code = secrets_module.token_hex(3).upper()
         pending_code["code"] = code
@@ -808,24 +821,44 @@ def create_app(paths: Paths, address: str = "http://127.0.0.1:8420") -> FastAPI:
         counts = store.task_counts()
         conversation = store.messages(store.current_conversation_id())
         workspace = paths.workspace
-        files = sum(1 for _ in workspace.rglob("*")) if workspace.exists() else 0
+        trash = paths.trash
+        resident_row = store.get_resident()
+
+        def count_files(folder: Any) -> int:
+            return sum(1 for _ in folder.rglob("*")) if folder.exists() else 0
+
+        sizes = {
+            "conversation": len(conversation),
+            "tasks": sum(counts.values()),
+            "journal": len(store.list_journal(limit=Journal.KEEP)),
+            "workspace": count_files(workspace),
+            "trash": count_files(trash),
+            "processes": sum(1 for p in resident.processes.all() if p.alive),
+            "workers": len(store.list_workers()),
+            "capabilities": store.count_capability_state(),
+            "skills": store.count_skill_state(),
+            # The four that are not lists of things are counted as whether
+            # they differ from a fresh Aworg at all: 1 means "you changed
+            # this", 0 means "already as it ships".
+            "project": int(store.get_project()["name"] != "Unnamed Project"),
+            "layout": int(bool(store.get_layout())),
+            "appearance": int(store.get_appearance()["preset"] != "midnight"
+                              or bool(store.get_appearance()["overrides"])),
+            "persona": int(bool(resident_row.get("persona"))),
+            "prompt": int(resident_row["system_prompt"] != DEFAULT_SYSTEM_PROMPT),
+            "connections": len(store.list_connections()),
+        }
 
         return {
             "code": code,
-            "erases": [
-                {"what": "Messages in the conversation", "count": len(conversation)},
-                {"what": "Tasks in the plan", "count": sum(counts.values())},
-                {"what": "Files in the Living Workspace", "count": files},
-                {"what": "Workers", "count": len(store.list_workers())},
+            "parts": [
                 {
-                    "what": "Living Log entries",
-                    "count": len(store.list_journal(limit=Journal.KEEP)),
-                },
-                {"what": "Model connections", "count": len(store.list_connections())},
-                {
-                    "what": "Running programs (servers and the like)",
-                    "count": sum(1 for p in resident.processes.all() if p.alive),
-                },
+                    "id": part,
+                    "what": label,
+                    "count": sizes.get(part, 0),
+                    "default": part in Store.RESET_DEFAULTS,
+                }
+                for part, label in Store.RESET_PARTS.items()
             ],
         }
 
@@ -848,6 +881,13 @@ def create_app(paths: Paths, address: str = "http://127.0.0.1:8420") -> FastAPI:
         expected = pending_code.get("code")
         if not expected or body.confirm.strip().upper() != expected:
             raise HTTPException(400, "That confirmation code does not match.")
+
+        chosen = set(Store.RESET_PARTS if body.parts is None else body.parts)
+        unknown = chosen - set(Store.RESET_PARTS)
+        if unknown:
+            raise HTTPException(400, f"No such part: {', '.join(sorted(unknown))}")
+        if not chosen:
+            raise HTTPException(400, "Nothing was chosen to reset.")
         # Spent, whether or not the rest succeeds. A code that survives its
         # use is a code a second click could reuse.
         pending_code.pop("code", None)
@@ -861,6 +901,9 @@ def create_app(paths: Paths, address: str = "http://127.0.0.1:8420") -> FastAPI:
         # underneath it, so the reset appeared to have remembered things.
         # Cancelled, not asked: `stopping` is polite and waits for the next
         # step, and the step it is on may be a worker with a long job.
+        # The reply in progress goes whatever was chosen: it is mid-way
+        # through work against state that is about to change underneath it,
+        # and there is no part of this an owner could want it to survive.
         turn = resident.turn
         if turn is not None and not turn.done:
             turn.stopping = True
@@ -877,17 +920,18 @@ def create_app(paths: Paths, address: str = "http://127.0.0.1:8420") -> FastAPI:
         # directory a process is using, and rmtree's ignore_errors swallowed
         # the refusal. The folder survived, empty, and the next Resident saw
         # it in its own description of the workspace.
-        stopped = await resident.processes.clear()
+        stopped = await resident.processes.clear() if "processes" in chosen else 0
 
-        removed = store.factory_reset(keep_connections=body.keep_connections)
-        if not body.keep_connections:
+        removed = store.factory_reset(chosen)
+        if "connections" in chosen:
             secrets.clear()
 
         # What could not be removed is collected rather than swallowed. A
         # reset that reports success over a folder it could not delete is
         # the failure this whole block exists to prevent.
         left_behind: list[str] = []
-        for folder in (paths.workspace, paths.logs):
+
+        def empty(folder: Any) -> None:
             if folder.exists():
                 for item in folder.iterdir():
                     try:
@@ -896,17 +940,18 @@ def create_app(paths: Paths, address: str = "http://127.0.0.1:8420") -> FastAPI:
                         left_behind.append(f"{item} ({exc.strerror or exc})")
             folder.mkdir(exist_ok=True)
 
-        # The trash goes too. It was never touched before, so everything the
-        # Resident had ever deleted stayed on disk inside the home it lives
-        # in, readable by the next Resident with an absolute path.
-        trash = paths.trash
-        if trash.exists():
-            for item in trash.iterdir():
-                try:
-                    shutil.rmtree(item) if item.is_dir() else item.unlink()
-                except OSError as exc:
-                    left_behind.append(f"{item} ({exc.strerror or exc})")
-        trash.mkdir(exist_ok=True)
+        if "workspace" in chosen:
+            # The logs are AWORG's own scratch output about the workspace, so
+            # they go with it rather than outliving what they describe.
+            empty(paths.workspace)
+            empty(paths.logs)
+
+        # The trash is its own choice. It was never touched before, so
+        # everything the Resident had ever deleted stayed on disk inside the
+        # home it lives in, readable by the next Resident with an absolute
+        # path.
+        if "trash" in chosen:
+            empty(paths.trash)
 
         # Runtime state is not in the database and has to be dropped by
         # hand -- including, and this was missed, the programs the Resident
@@ -916,7 +961,8 @@ def create_app(paths: Paths, address: str = "http://127.0.0.1:8420") -> FastAPI:
         # Cleared, not replaced. A new manager would leave the Living Log's
         # follower subscribed to the old one, and an Aworg that had been
         # reset would stop recording anything at all -- see forget_all.
-        resident.activities.forget_all()
+        if "journal" in chosen:
+            resident.activities.forget_all()
         # And the watch looks again, because what it is holding was erased a
         # moment ago. Without this it goes on reporting trouble from entries
         # that no longer exist -- observed doing exactly that, three
@@ -930,14 +976,15 @@ def create_app(paths: Paths, address: str = "http://127.0.0.1:8420") -> FastAPI:
         # the largest thing that can happen to an Aworg and a Living Log that
         # came back from one with no explanation for the silence above it
         # would be the pane failing at its only job.
-        detail = _reset_detail(removed, stopped)
+        detail = _reset_detail(removed, stopped, chosen)
         if left_behind:
             detail += (
                 " Could not remove, and still there: "
                 + "; ".join(left_behind) + "."
             )
         resident.journal.record(
-            "This Aworg was reset",
+            "This Aworg was reset" if len(chosen) == len(Store.RESET_PARTS)
+            else f"Reset {len(chosen)} of {len(Store.RESET_PARTS)} parts",
             kind="aworg",
             source="owner",
             detail=detail,

@@ -2104,6 +2104,25 @@ button.danger {
 button.danger:hover:not(:disabled) { background: var(--danger); color: var(--bg); }
 button.danger:disabled { opacity: 0.4; cursor: not-allowed; }
 
+/* One row per part: a switch, what it is, and how much of it there is. The
+   count sits at the end in the same register as a capability's price -- a
+   number to weigh, not a label to read. */
+.reset-part {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 9px;
+  padding: 5px 0;
+}
+.reset-part em {
+  font-style: normal;
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.reset-bulk { align-items: center; gap: 8px; margin: 6px 0 14px; }
+.reset-bulk .hint { margin: 0; }
+
 .reset-list {
   margin: 12px 0;
   padding-left: 18px;
