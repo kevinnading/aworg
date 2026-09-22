@@ -11,6 +11,11 @@ from __future__ import annotations
 import json
 import sqlite3
 import uuid
+
+# The only thing storage asks of another module: what a colour scheme
+# is called when nobody has chosen one, and which old names have moved.
+# theme.py depends on nothing, so this cannot become a cycle.
+from .theme import DEFAULT_PRESET, RENAMED_PRESETS
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
@@ -47,7 +52,7 @@ CREATE TABLE IF NOT EXISTS resident (
 
 CREATE TABLE IF NOT EXISTS appearance (
     id         INTEGER PRIMARY KEY CHECK (id = 1),
-    preset     TEXT NOT NULL DEFAULT 'midnight',
+    preset     TEXT NOT NULL DEFAULT 'aworg-light',
     overrides  TEXT NOT NULL DEFAULT '{}',
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -684,6 +689,7 @@ class Store:
             conn.execute(
                 "INSERT INTO layout (id) VALUES (1) ON CONFLICT(id) DO NOTHING"
             )
+            self._rename_presets(conn)
             self._refresh_default_prompt(conn)
             self._seed_workers(conn)
             self._refresh_worker_tools(conn)
@@ -774,6 +780,21 @@ class Store:
                     json.dumps(spec["tools"]),
                     json.dumps(spec.get("skills") or []),
                 ),
+            )
+
+    @staticmethod
+    def _rename_presets(conn) -> None:
+        """Move an Aworg off a colour scheme that has been renamed or retired.
+
+        Done here rather than on read, so that the stored value and the
+        scheme actually in force are never two different answers -- which is
+        what would leave the picker showing nothing selected while the
+        interface was plainly wearing something.
+        """
+        for old_name, new_name in RENAMED_PRESETS.items():
+            conn.execute(
+                "UPDATE appearance SET preset = ? WHERE id = 1 AND preset = ?",
+                (new_name, old_name),
             )
 
     @staticmethod
@@ -1318,8 +1339,9 @@ class Store:
                 conn.execute("UPDATE layout SET sizes = '{}' WHERE id = 1")
             if "appearance" in chosen:
                 conn.execute(
-                    "UPDATE appearance SET preset = 'midnight',"
-                    " overrides = '{}' WHERE id = 1"
+                    "UPDATE appearance SET preset = ?,"
+                    " overrides = '{}' WHERE id = 1",
+                    (DEFAULT_PRESET,),
                 )
             if "workers" in chosen:
                 self._seed_workers(conn)

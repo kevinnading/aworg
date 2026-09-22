@@ -100,22 +100,47 @@ TOKENS: list[str] = [name for group in TOKEN_GROUPS for name, _ in group["tokens
 #: recognisable ones from the editors they are named after, because a scheme
 #: that only approximates Nord is worse than one that does not claim to be it.
 PRESETS: dict[str, dict[str, Any]] = {
-    "midnight": {
-        "label": "Midnight",
+    # The two AWORG schemes are one scheme in two lights, and the values are
+    # the brand's own: graphite and slate for structure, silver for text,
+    # and the Resident's blue used only where something is live or asking to
+    # be pressed. Every pair here was checked against WCAG on every surface
+    # it can land on -- text at 4.5:1, secondary text and accents at 3:1 --
+    # rather than eyeballed, because "looks fine on my monitor" is how a
+    # scheme ends up unreadable on somebody else's.
+    "aworg-dark": {
+        "label": "AWORG Dark",
         "dark": True,
-        "note": "AWORG's own. Near-black with a teal accent.",
+        "note": "AWORG's own. Graphite and silver, lit by the Resident's blue.",
         "colors": {
-            "bg": "#0e1013", "panel": "#16191e", "panel-2": "#1c2026",
-            "line": "#262b33", "text": "#e6e8ec", "muted": "#8a9199",
-            "accent": "#5eead4", "accent-dim": "#2c7a70", "on-accent": "#06201c",
-            "owner": "#2a3138", "ok": "#4ade80", "warn": "#fbbf24",
-            "danger": "#f87171",
-            "code-bg": "#0b0e12", "code-gutter": "#4b535e",
-            "t-comment": "#6b7480", "t-string": "#98c379", "t-number": "#d19a66",
-            "t-keyword": "#c678dd", "t-builtin": "#56b6c2", "t-fn": "#61afef",
-            "t-key": "#61afef", "t-decorator": "#e5c07b", "t-tag": "#e06c75",
-            "t-attr": "#d19a66", "t-variable": "#e06c75", "t-flag": "#56b6c2",
-            "t-doctype": "#6b7480",
+            "bg": "#0B1118", "panel": "#111A24", "panel-2": "#172430",
+            "line": "#243342", "text": "#E6EDF5", "muted": "#8FA2B5",
+            "accent": "#159BFF", "accent-dim": "#0C5FB0", "on-accent": "#04121F",
+            "owner": "#172232", "ok": "#3FB950", "warn": "#D29922",
+            "danger": "#F85149",
+            "code-bg": "#070B10", "code-gutter": "#4A5D71",
+            "t-comment": "#768A9E", "t-string": "#7EE787", "t-number": "#D9A441",
+            "t-keyword": "#FF7B72", "t-builtin": "#FFA657", "t-fn": "#D2A8FF",
+            "t-key": "#79C0FF", "t-decorator": "#E3B341", "t-tag": "#7EE787",
+            "t-attr": "#79C0FF", "t-variable": "#FFA657", "t-flag": "#A5D6FF",
+            "t-doctype": "#768A9E",
+        },
+    },
+    "aworg-light": {
+        "label": "AWORG Light",
+        "dark": False,
+        "note": "The same scheme in daylight. Cool silver-grey, never white.",
+        "colors": {
+            "bg": "#F4F7F9", "panel": "#EDF2F6", "panel-2": "#E3EBF1",
+            "line": "#C9D8E5", "text": "#16222E", "muted": "#55697D",
+            "accent": "#075DCC", "accent-dim": "#9DC4EC", "on-accent": "#FFFFFF",
+            "owner": "#E4EDF5", "ok": "#1A7F37", "warn": "#8A5A00",
+            "danger": "#CF222E",
+            "code-bg": "#EDF2F6", "code-gutter": "#7F91A3",
+            "t-comment": "#636B75", "t-string": "#0A3069", "t-number": "#0550AE",
+            "t-keyword": "#CF222E", "t-builtin": "#7B3FD6", "t-fn": "#7B3FD6",
+            "t-key": "#0550AE", "t-decorator": "#953800", "t-tag": "#116329",
+            "t-attr": "#0550AE", "t-variable": "#953800", "t-flag": "#0550AE",
+            "t-doctype": "#636B75",
         },
     },
     "slate": {
@@ -211,7 +236,7 @@ PRESETS: dict[str, dict[str, Any]] = {
     "paper": {
         "label": "Paper",
         "dark": False,
-        "note": "Plain white with a blue accent. The default light scheme.",
+        "note": "Plain white with a blue accent, in the GitHub manner.",
         "colors": {
             "bg": "#ffffff", "panel": "#f6f8fa", "panel-2": "#eef1f4",
             "line": "#d8dee4", "text": "#1f2328", "muted": "#656d76",
@@ -246,7 +271,16 @@ PRESETS: dict[str, dict[str, Any]] = {
     },
 }
 
-DEFAULT_PRESET = "midnight"
+DEFAULT_PRESET = "aworg-light"
+
+#: Schemes that used to exist, and what an Aworg holding one now gets.
+#:
+#: Midnight was AWORG's before AWORG had a palette. Dropping it without this
+#: would leave every existing Aworg storing the name of a scheme that no
+#: longer exists -- rendered as the default, shown as nothing selected in the
+#: picker, and with no way for the owner to tell what happened. The nearest
+#: honest answer is the dark scheme that replaced it.
+RENAMED_PRESETS = {"midnight": "aworg-dark"}
 
 
 def _check_presets() -> None:
