@@ -28,6 +28,7 @@ from pydantic import BaseModel
 
 from . import __version__
 from .models import CAPABILITY_TAGS, PROVIDER_LABELS, ModelError, build_adapter
+from .install import reseed, seeded
 from .paths import Paths
 from .journal import Journal
 from . import journal as journal_module
@@ -38,6 +39,7 @@ from . import layout as layout_settings
 from . import lifecycle, panes, providers
 from .storage import DEFAULT_SYSTEM_PROMPT, Store
 from .theme import (
+    DEFAULT_PRESET,
     PRESETS,
     TOKEN_GROUPS,
     describe,
@@ -827,6 +829,11 @@ def create_app(paths: Paths, address: str = "http://127.0.0.1:8420") -> FastAPI:
         def count_files(folder: Any) -> int:
             return sum(1 for _ in folder.rglob("*")) if folder.exists() else 0
 
+        def count_folders(folder: Any) -> int:
+            if not folder.exists():
+                return 0
+            return sum(1 for item in folder.iterdir() if item.is_dir())
+
         sizes = {
             "conversation": len(conversation),
             "tasks": sum(counts.values()),
@@ -835,16 +842,20 @@ def create_app(paths: Paths, address: str = "http://127.0.0.1:8420") -> FastAPI:
             "trash": count_files(trash),
             "processes": sum(1 for p in resident.processes.all() if p.alive),
             "workers": len(store.list_workers()),
-            "capabilities": store.count_capability_state(),
-            "skills": store.count_skill_state(),
-            # The four that are not lists of things are counted as whether
+            # How many are in the folder, the same question the workspace
+            # and the trash answer. The switches these parts also clear are
+            # not worth a second number: nobody weighs a reset by how many
+            # things they had turned off.
+            "capabilities": count_folders(paths.capabilities),
+            "skills": count_folders(paths.skills),
+            "persona": count_folders(paths.personas),
+            # The ones that are not lists of things are counted as whether
             # they differ from a fresh Aworg at all: 1 means "you changed
             # this", 0 means "already as it ships".
             "project": int(store.get_project()["name"] != "Unnamed Project"),
             "layout": int(bool(store.get_layout())),
             "appearance": int(store.get_appearance()["preset"] != "midnight"
                               or bool(store.get_appearance()["overrides"])),
-            "persona": int(bool(resident_row.get("persona"))),
             "prompt": int(resident_row["system_prompt"] != DEFAULT_SYSTEM_PROMPT),
             "connections": len(store.list_connections()),
         }
@@ -952,6 +963,28 @@ def create_app(paths: Paths, address: str = "http://127.0.0.1:8420") -> FastAPI:
         # path.
         if "trash" in chosen:
             empty(paths.trash)
+
+        # The three folders of content, back to what shipped. Emptied and
+        # sown again rather than emptied: an Aworg arrives with skills,
+        # personas and a capability in it, so an empty folder is not the
+        # state being restored.
+        #
+        # The libraries are then told to look again. Skills and personas
+        # re-read themselves on the next request anyway; the registry reads
+        # once at startup, and a reset is exactly the kind of deliberate
+        # moment it is safe to make it read again.
+        for part, kind in (("skills", "skills"), ("persona", "personas"),
+                           ("capabilities", "capabilities")):
+            if part not in chosen:
+                continue
+            _, trouble = reseed(paths, kind)
+            left_behind.extend(trouble)
+        if chosen & {"skills", "persona", "capabilities"}:
+            resident.registry.discover()
+            resident.skills.shipped_names = seeded(paths, "skills")
+            resident.skills.discover()
+            resident.personas.shipped_names = seeded(paths, "personas")
+            resident.personas.discover()
 
         # Runtime state is not in the database and has to be dropped by
         # hand -- including, and this was missed, the programs the Resident

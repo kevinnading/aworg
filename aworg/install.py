@@ -158,6 +158,46 @@ def install(
     return report
 
 
+def reseed(paths: Paths, kind: str) -> tuple[list[str], list[str]]:
+    """Empty one of the home's content folders and sow it again.
+
+    What a reset of that part means, now that the content is in the home:
+    not "clear the switches" but "back to the ones that shipped". Everything
+    goes first, including anything the owner or the Resident added, because
+    a reset that carefully preserved the Resident's own skills would not be
+    a reset.
+
+    Returns what was sown and what would not delete. Failures are handed
+    back rather than raised: a folder Windows will not let go of is
+    something the owner has to be told about, not something that should
+    abandon the rest of the reset half-done.
+    """
+    folder = getattr(paths, kind)
+    trouble: list[str] = []
+    if folder.is_dir():
+        for item in folder.iterdir():
+            try:
+                shutil.rmtree(item) if item.is_dir() else item.unlink()
+            except OSError as exc:
+                trouble.append(f"{item} ({exc.strerror or exc})")
+    folder.mkdir(parents=True, exist_ok=True)
+
+    result = _seed(shipped_root(kind), folder, set(), force=False)
+    sown = sorted(set(result["added"]) | set(result["kept"]))
+
+    # The record follows, or the next install would treat everything just
+    # sown as something the owner had deleted and refuse to replace it.
+    record = read_record(paths)
+    seeded_now = dict(record.get("seeded") or {})
+    seeded_now[kind] = sown
+    record["seeded"] = seeded_now
+    record.setdefault("version", __version__)
+    record_path(paths).write_text(
+        json.dumps(record, indent=2) + "\n", encoding="utf-8"
+    )
+    return sown, trouble
+
+
 def ensure_installed(paths: Paths) -> dict[str, Any] | None:
     """Install on first start, and never again.
 

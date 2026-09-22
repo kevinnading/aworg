@@ -2685,7 +2685,7 @@ async function startReset() {
 }
 
 /* The parts whose "count" is really a yes or no. */
-const COUNTLESS = new Set(["project", "layout", "appearance", "persona", "prompt"]);
+const COUNTLESS = new Set(["project", "layout", "appearance", "prompt"]);
 
 function chosenParts() {
   return [...document.querySelectorAll("#reset-list input:checked")]
