@@ -999,6 +999,11 @@ function showSettingsSection(id) {
   }
   // A new section starts at its own top, not at wherever the last one was left.
   el("settings-scroll").scrollTop = 0;
+
+  // Reset is drawn on arrival rather than on the button, because the list is
+  // what the owner came to read. Counts are live at the moment they look,
+  // which is also why it is fetched here and not once at boot.
+  if (id === "reset") drawResetParts();
 }
 
 /* The providers, by name rather than by wire format.
@@ -2593,15 +2598,26 @@ function renderProject() {
  *
  * The counts are shown before the code, because "your conversation" is easy
  * to agree to and "47 messages" is the thing actually being weighed. */
-async function startReset() {
-  const preview = await api("/api/reset/preview");
+/* The list, and the counts as they are right now. Drawn whenever the section
+ * is opened; the confirmation code it also fetches is only revealed when the
+ * owner presses the button. */
+async function drawResetParts() {
+  let preview;
+  try {
+    preview = await api("/api/reset/preview");
+  } catch (error) {
+    el("reset-list").textContent = "Could not read what this Aworg is holding.";
+    return;
+  }
+  // Kept rather than shown: pressing the button reveals it, and pressing it
+  // again refreshes both this and the counts.
   el("reset-code").textContent = preview.code;
-  el("reset-code-input").value = "";
-  el("reset-error").textContent = "";
-  el("reset-error").classList.remove("ok");
-  el("reset-go").disabled = true;
 
   const list = el("reset-list");
+  // What they have already ticked, so a redraw does not undo their choices.
+  const previous = new Map(
+    [...list.querySelectorAll("input")].map((box) => [box.dataset.part, box.checked])
+  );
   list.innerHTML = "";
   for (const part of preview.parts) {
     // A row for everything, including the zeroes. "0 tasks" tells the owner
@@ -2611,7 +2627,7 @@ async function startReset() {
     row.className = "check reset-part";
     const box = document.createElement("input");
     box.type = "checkbox";
-    box.checked = part.default;
+    box.checked = previous.has(part.id) ? previous.get(part.id) : part.default;
     box.dataset.part = part.id;
     box.onchange = syncResetList;
     const what = document.createElement("span");
@@ -2627,6 +2643,17 @@ async function startReset() {
     list.appendChild(row);
   }
 
+  syncResetList();
+}
+
+async function startReset() {
+  // Redrawn rather than reused: the owner may have been sitting on this
+  // screen while the Resident worked, and a stale count is the one thing
+  // this list must not show.
+  await drawResetParts();
+  el("reset-code-input").value = "";
+  el("reset-error").textContent = "";
+  el("reset-error").classList.remove("ok");
   el("reset-start-row").hidden = true;
   el("reset-confirm").hidden = false;
   el("reset-code-input").focus();
