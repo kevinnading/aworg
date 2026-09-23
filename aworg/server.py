@@ -27,7 +27,9 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import __version__
-from .models import CAPABILITY_TAGS, PROVIDER_LABELS, ModelError, build_adapter
+from .models import (
+    CAPABILITY_TAGS, PROVIDER_LABELS, ModelError, build_adapter, needs_credential,
+)
 from .install import reseed, seeded
 from .paths import Paths
 from .journal import Journal
@@ -446,9 +448,9 @@ def create_app(paths: Paths, address: str = "http://127.0.0.1:8420") -> FastAPI:
         if connection is None:
             raise HTTPException(404, "No such connection")
         api_key = secrets.get(credential_ref(connection_id))
-        if not api_key:
+        if not api_key and needs_credential(connection):
             return {"ok": False, "detail": "No credential stored for this connection."}
-        adapter = build_adapter(connection, api_key)
+        adapter = build_adapter(connection, api_key or "")
         try:
             await adapter.probe()
         except ModelError as exc:

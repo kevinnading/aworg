@@ -29,7 +29,7 @@ from typing import Any
 
 from .activities import ActivityManager
 from .agent import AgentLoop, _describe_arguments
-from .models import Message, ModelError, build_adapter
+from .models import Message, ModelError, build_adapter, needs_credential
 from .secrets import credential_ref
 from .tools import Registry, ToolContext
 
@@ -168,9 +168,11 @@ async def run_worker(
         )
 
     api_key = secrets.get(credential_ref(connection["id"]))
-    if not api_key:
+    if not api_key and needs_credential(connection):
         result.error = f"{connection['name']} has no credential stored."
         return result
+    # A local model has nobody to prove anything to; see needs_credential.
+    api_key = api_key or ""
 
     activity = activities.create(
         kind="worker",

@@ -36,7 +36,7 @@ from .watch import Watch
 from .processes import ProcessTable, sweep_orphans
 from .skills import SkillLibrary
 from .agent import AgentLoop
-from .models import Message, ModelError, build_adapter
+from .models import Message, ModelError, build_adapter, needs_credential
 from .tools import Registry, ToolContext
 from .workers import run_worker
 from .secrets import SecretStore, credential_ref
@@ -201,7 +201,9 @@ class Resident:
                 "model_label": None,
                 "connection": None,
             }
-        if not self.secrets.has(credential_ref(connection["id"])):
+        if needs_credential(connection) and not self.secrets.has(
+            credential_ref(connection["id"])
+        ):
             return {
                 "status": "unconfigured",
                 "detail": f"{connection['name']} has no credential.",
@@ -1020,12 +1022,13 @@ class Resident:
             return
 
         api_key = self.secrets.get(credential_ref(connection["id"]))
-        if not api_key:
+        if not api_key and needs_credential(connection):
             yield {
                 "type": "error",
                 "message": f"{connection['name']} has no credential. Add one in Settings.",
             }
             return
+        api_key = api_key or ""
 
         history = self._to_messages(self.store.messages(conversation_id))
         adapter = build_adapter(connection, api_key)

@@ -30,6 +30,25 @@ PROVIDER_LABELS = {key: p["label"] for key, p in providers.PROVIDERS.items()}
 CAPABILITY_TAGS = ["reasoning", "coding", "fast", "cheap", "vision", "local"]
 
 
+def needs_credential(connection: dict) -> bool:
+    """Whether this connection's provider asks for a credential at all.
+
+    A model running on the owner's own machine has nobody to prove anything
+    to, which is why llama.cpp, Ollama, LM Studio and vLLM declare
+    `auth="none"`. Everything that decides whether a connection is usable
+    has to ask this rather than simply looking for a stored secret --
+    otherwise the four providers a local-first owner is most likely to pick
+    are the four that can be configured and never used.
+
+    That was the bug. Exactly one place consulted the profile, and it was
+    the model listing; the Resident, its workers and the connection test all
+    demanded a key regardless. The Resident read "unconfigured -- has no
+    credential", in front of an owner with no credential to give and no
+    field that would have helped.
+    """
+    return providers.profile(connection["provider"])["auth"] != "none"
+
+
 def build_adapter(connection: dict, api_key: str) -> ModelAdapter:
     """The adapter for a connection, configured from its provider's profile.
 
