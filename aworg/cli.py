@@ -3,10 +3,32 @@
 from __future__ import annotations
 
 import argparse
+import socket
 import sys
 
 from .install import describe, ensure_installed, install
 from .paths import Paths, resolve_home
+
+
+def port_in_use(host: str, port: int) -> bool:
+    """Whether something already holds that port.
+
+    Asked before uvicorn is started, because uvicorn's way of answering is
+    an OSError and a stack trace, and the commonest reason for it is the
+    least alarming one: an Aworg is already running.
+    """
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        if sys.platform != "win32":
+            # The option uvicorn sets, so that this asks the same question
+            # uvicorn is about to. Windows is excluded deliberately: there
+            # SO_REUSEADDR lets a second socket bind over a live one, which
+            # would make every port look free.
+            probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            probe.bind((host, port))
+        except OSError:
+            return True
+    return False
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -20,7 +42,13 @@ def main(argv: list[str] | None = None) -> int:
     )
     commands = parser.add_subparsers(dest="command")
 
-    start = commands.add_parser("start", help="Start the Aworg and open its interface")
+    start = commands.add_parser(
+        "start",
+        # It prints the address rather than opening anything. Opening a
+        # browser is per-OS work, and a promise in the help text that the
+        # program does not keep is worse than no promise.
+        help="Start the Aworg and print where its interface is",
+    )
     start.add_argument("--host", default="127.0.0.1")
     start.add_argument("--port", type=int, default=8420)
 
@@ -74,6 +102,22 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "start" or args.command is None:
         host = getattr(args, "host", "127.0.0.1")
         port = getattr(args, "port", 8420)
+
+        # Asked before anything is installed or created, so that a port
+        # collision costs nothing and leaves nothing half done.
+        if port_in_use(host, port):
+            print(f"Port {port} is already in use on {host}.", file=sys.stderr)
+            print(file=sys.stderr)
+            print(
+                f"If that is an Aworg, it is at  http://{host}:{port}",
+                file=sys.stderr,
+            )
+            print(
+                f"If it is something else:       aworg start --port {port + 1}",
+                file=sys.stderr,
+            )
+            return 1
+
         # Starting an Aworg that was never installed installs it, once.
         # Never again after that, so that a persona the owner deleted stays
         # deleted -- see install.ensure_installed.
@@ -88,7 +132,9 @@ def main(argv: list[str] | None = None) -> int:
         from .server import create_app
 
         print(f"AWORG home     {paths.home}")
-        print(f"Owner interface  http://{host}:{port}")
+        print(f"Interface      http://{host}:{port}")
+        print()
+        print("Open that address in a browser.")
         print()
         # The address is decided here, so it is told here. An application
         # the Resident starts is given this to report to, and AWORG cannot
