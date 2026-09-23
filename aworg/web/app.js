@@ -315,6 +315,16 @@ function nudgeLivingLog() {
 }
 
 async function refreshLivingLog() {
+  // The switch in this pane's head, read on the pane's own cadence. It is
+  // stored server-side, so a second browser -- or the same one reloaded --
+  // shows what is actually set rather than what this tab last clicked.
+  api("/api/watch")
+    .then((watch) => {
+      app.wakes = watch.wakes;
+      paintWakeSwitch();
+    })
+    .catch(() => { /* leave the switch showing what it last knew */ });
+
   let entries;
   try {
     ({ entries } = await api("/api/journal"));
@@ -1932,6 +1942,19 @@ function paneNode(pane, { region, last }) {
     head.appendChild(previewAction("open", "Open the application in a new tab",
                                    OPEN_ICON, openPreviewFully));
     head.appendChild(maximizeButton());
+  } else if (pane.id === "log") {
+    // Whether trouble reported here may wake the Resident.
+    //
+    // In this pane's head rather than in Settings because this is where the
+    // consequence appears: an owner wondering why their Resident started
+    // talking to itself is looking at these entries, and the switch that
+    // stops it should be above them, not three panes away behind a tab.
+    //
+    // It does not turn noticing off, only acting -- see /api/watch/wakes.
+    head.appendChild(wakeSwitch());
+    // Painted immediately from what is already known, so a rebuild of the
+    // panes does not blank the label until the next poll comes round.
+    queueMicrotask(paintWakeSwitch);
   } else if (pane.id === "workspace") {
     // The one pane that already updates on its own, and says so. The rest
     // have nothing to be live about yet.
@@ -1999,6 +2022,52 @@ const OPEN_ICON =
  * Built here rather than in markup because the pane is assembled from a
  * template, and a control that only makes sense for one pane belongs with
  * the code that knows which pane it is. */
+/* The Living Log's one control: may what lands here wake the Resident?
+ *
+ * Painted from the last /api/watch read and corrected by the reply to its
+ * own POST, so it never shows a state the server did not confirm. On
+ * failure it goes back to what it was: a switch that looks flipped and is
+ * not is worse than one that visibly refused. */
+function wakeSwitch() {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "wake";
+  button.id = "wake-switch";
+  button.onclick = async () => {
+    const next = !app.wakes;
+    button.disabled = true;
+    try {
+      const { wakes } = await api("/api/watch/wakes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ wakes: next }),
+      });
+      app.wakes = wakes;
+      // The log has just gained an entry saying what was changed.
+      nudgeLivingLog();
+    } catch (_) {
+      /* app.wakes is untouched, so the repaint below puts it back. */
+    }
+    button.disabled = false;
+    paintWakeSwitch();
+  };
+  return button;
+}
+
+function paintWakeSwitch() {
+  const button = el("wake-switch");
+  if (!button) return;
+  const on = app.wakes !== false;
+  button.classList.toggle("off", !on);
+  button.textContent = on ? "wakes me" : "quiet";
+  button.setAttribute("aria-pressed", String(on));
+  button.title = on
+    ? "An application reporting trouble here will wake the Resident to look "
+      + "at it, which costs a message. Click to stop that."
+    : "Trouble is still written down here, but nobody is woken to look at "
+      + "it. Click to let it wake the Resident again.";
+}
+
 function previewAction(name, label, icon, onClick) {
   const button = document.createElement("button");
   button.type = "button";

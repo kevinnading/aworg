@@ -204,6 +204,11 @@ class WorkerPatch(BaseModel):
     enabled: bool | None = None
 
 
+class WakeBody(BaseModel):
+    """Whether the watcher may start a turn on what it finds."""
+    wakes: bool
+
+
 class ReportBody(BaseModel):
     """What a running application says happened to it.
 
@@ -1148,7 +1153,36 @@ def create_app(paths: Paths, address: str = "http://127.0.0.1:8420") -> FastAPI:
         look" has no meaning across a restart, and an Aworg that has just
         started has not looked yet however long its log is.
         """
-        return resident.watch.snapshot()
+        snapshot = resident.watch.snapshot()
+        # The owner's switch travels with the watcher's state because they
+        # are read together and shown together: the pane has to be able to
+        # say "watching, and allowed to wake me" in one paint rather than
+        # two requests that can disagree for a moment.
+        snapshot["wakes"] = store.get_resident()["wake_on_trouble"]
+        return snapshot
+
+    @app.post("/api/watch/wakes")
+    def set_watch_wakes(body: WakeBody) -> dict[str, Any]:
+        """Let the watcher wake the Resident, or stop it.
+
+        Noticing is never switched off here, only acting on what was
+        noticed. The Living Log fills either way and the pane reads the
+        same; what changes is whether an application's trouble is allowed
+        to start a turn, and spend a model call, with nobody present.
+        """
+        store.update_resident(wake_on_trouble=1 if body.wakes else 0)
+        resident.journal.record(
+            "The watcher may wake the Resident" if body.wakes
+            else "The watcher may no longer wake the Resident",
+            kind="aworg",
+            detail=(
+                "An application reporting trouble into a quiet Aworg will "
+                "start a turn." if body.wakes else
+                "Trouble reported by an application is still written down "
+                "here. Nobody will be woken to look at it."
+            ),
+        )
+        return {"wakes": body.wakes}
 
     @app.get("/api/journal/open")
     def open_living_log(limit: int = 50) -> dict[str, Any]:

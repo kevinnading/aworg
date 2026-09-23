@@ -669,6 +669,12 @@ class Store:
         ("journal", "resolved_by", "TEXT"),
         ("journal", "resolution", "TEXT NOT NULL DEFAULT ''"),
         ("connections", "tokens_per_minute", "INTEGER"),
+        # Whether the watcher may wake the Resident when an application
+        # reports trouble into a quiet Aworg. On by default: an Aworg that
+        # notices and says nothing is the thing the Living Log was built to
+        # stop being. Off is a real choice, though -- every waking is a
+        # model call the owner did not ask for and does pay for.
+        ("resident", "wake_on_trouble", "INTEGER NOT NULL DEFAULT 1"),
     ]
 
     def _init(self) -> None:
@@ -989,6 +995,12 @@ class Store:
             # Absent on a database that predates personas, which reads as
             # no persona rather than as an error.
             "persona": (row["persona"] if "persona" in row.keys() else None),
+            # Same treatment, and the default is the same as the column's:
+            # a database from before the watcher could wake anybody is one
+            # whose owner has never said no.
+            "wake_on_trouble": bool(
+                row["wake_on_trouble"] if "wake_on_trouble" in row.keys() else 1
+            ),
         }
 
     def update_resident(self, **fields: Any) -> dict[str, Any]:
@@ -998,6 +1010,7 @@ class Store:
             "system_prompt",
             "current_conversation_id",
             "persona",
+            "wake_on_trouble",
         }
         sets, values = [], []
         for key, value in fields.items():

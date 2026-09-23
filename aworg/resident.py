@@ -761,6 +761,8 @@ class Resident:
         **And only into silence.** Four things have to be true, and each is
         a different way of saying the Resident is not already on it:
 
+        - the owner has not turned this off. Their switch is asked first,
+          because a refusal is not a condition to be waited out;
         - it is not mid-reply, or the message would be refused as Busy;
         - nothing is running -- a worker, a tool, any live Activity. A
           worker's own failures reach this log, and an Aworg that alerted on
@@ -775,6 +777,12 @@ class Resident:
         """
         was = self.last_pass
         self.last_pass = time.time()
+
+        if not self.store.get_resident()["wake_on_trouble"]:
+            # Nothing is marked on the way out. An owner who turns this back
+            # on should be told what happened while it was off, not find
+            # that the Aworg quietly forgave itself for every one of them.
+            return
 
         fresh = [
             entry for entry in entries
