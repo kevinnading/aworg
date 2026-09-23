@@ -40,17 +40,35 @@ Fixed in `pyproject.toml` by declaring them, globbed by extension rather than
 `**/*` so a stray file dropped in while working cannot silently join a
 release.
 
-**How to check it has not regressed.** Do not read the manifest -- build and
-ask the thing:
+**Always build from a cleaned tree.** setuptools' `build/lib` is *additive*:
+it is a copy of the package from the last build, and files deleted from the
+source since are still sitting in it. A wheel built over a stale one on
+2026-09-22 shipped three personas that had been deleted weeks earlier --
+`ada`, `pilot` and `resident` -- twenty-one instead of eighteen, with nothing
+in the output to say so.
 
 ```bash
-python -m pip wheel . --no-deps -w /tmp/w
-python -m venv /tmp/clean && /tmp/clean/bin/pip install /tmp/w/aworg-*.whl
+rm -rf build aworg.egg-info dist
+python -m build --wheel --outdir /tmp/w
 ```
 
-Then boot `create_app` from that environment and confirm `/api/skills`
-returns three and `/api/personas` returns eighteen. Any packaging change deserves
-this, because the failure mode is silence.
+**How to check it has not regressed.** Do not read the manifest, and do not
+run the check from inside the checkout -- `python -m aworg` puts the working
+directory on `sys.path`, so the first attempt at this silently tested the
+source tree rather than the installed wheel and reported a capability that
+was not in it. Build, install into a clean virtualenv, and ask from
+somewhere else:
+
+```bash
+rm -rf build aworg.egg-info dist
+python -m build --wheel --outdir /tmp/w
+python -m venv /tmp/clean && /tmp/clean/bin/pip install /tmp/w/aworg-*.whl
+cd /tmp && AWORG_HOME=/tmp/home /tmp/clean/bin/python -m aworg install
+```
+
+As of 2026-09-22 that prints `3 skills`-shaped lines for nothing but personas:
+**18 personas installed, `capabilities  nothing shipped`, and no skills**.
+Any packaging change deserves this, because the failure mode is silence.
 
 ## Metadata (filled in 2026-09-16)
 
