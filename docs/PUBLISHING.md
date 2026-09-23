@@ -120,17 +120,17 @@ against it.
 
 Not the same thing, on purpose.
 
-| | Skills | Personas | Weather | Chromium Browser |
+| | Personas | Skills | Weather | Chromium Browser |
 |---|---|---|---|---|
-| wheel (`pip install aworg`) | yes | yes | **no** | **no** |
-| Docker | yes | yes | **no** | **no** |
-| per-OS package | yes | yes | if the build adds it | if the build adds it, engine included |
+| wheel (`pip install aworg`) | yes | **no** | **no** | **no** |
+| Docker | yes | **no** | **no** | **no** |
+| per-OS package | yes | if the build adds them | if the build adds it | if the build adds it, engine included |
 
-No installable capability is in the package. Both of them live in
-`capabilities/` at the top of the repository, outside `aworg/`, where
+Only personas ship. Capabilities live in `capabilities/` and skills in
+`skills/`, both at the top of the repository and outside `aworg/`, where
 `packages.find` cannot reach them. They are bound for the store; until it
-exists, installing one is copying its folder into `capabilities/` in an
-Aworg's home.
+exists, installing one is copying its folder into the matching directory in
+an Aworg's home.
 
 Chromium could not have gone in a wheel regardless: it is a hundred and
 fifteen megabytes of engine short of working, carrying the engine would mean

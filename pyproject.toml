@@ -48,20 +48,23 @@ include = ["aworg*"]
 [tool.setuptools.package-data]
 # The parts of AWORG that are not Python.
 #
-# skills/ and personas/ are directories of Markdown, SVG and JSON with no
-# __init__.py, so `packages.find` does not see them and nothing else would
-# have carried them into a wheel. Declared here explicitly: a built
-# distribution was shipping 68 files, none of them a SKILL.md or a
-# PERSONA.md, which would have given anyone installing from PyPI a Resident
-# with no procedures and no character -- failing quietly, as an empty Skills
-# pane rather than an error.
+# personas/ is a directory of Markdown, SVG and JSON with no __init__.py, so
+# `packages.find` does not see it and nothing else would carry it into a
+# wheel. Declared here explicitly: a built distribution was shipping 68
+# files, none of them a PERSONA.md, which would have given anyone installing
+# from PyPI a Resident with no character -- failing quietly, as an empty
+# picker rather than an error.
+#
+# Skills are not here at all any more. Like capabilities, they live outside
+# the package (skills/ at the top of the repository) because a procedure is
+# something an owner chose and one that arrives inside the program is one
+# they cannot remove.
 #
 # Globbed by extension rather than with `**/*` so that a stray file dropped
 # into one of these folders during development does not silently become part
 # of a release.
 aworg = [
     "web/*",
-    "skills/*/*.md",
     "personas/*/*.md",
     "personas/*/*.svg",
     "personas/*/*.json",

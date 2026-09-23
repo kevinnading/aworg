@@ -24,7 +24,8 @@ inside the program is one they cannot.
   AWORG does not need, loaded and called exactly like a built-in.
 
 These are bound for the AWORG store. Until it exists, installing one is
-copying a folder.
+copying a folder. Skills work the same way and live in `skills/` beside
+this.
 
 ## Installing one
 

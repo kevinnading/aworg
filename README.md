@@ -59,6 +59,12 @@ capability, and installing one is copying its folder into `capabilities/` in
 an Aworg's home. Deleting that folder removes it again, engine included for
 the browser, which is the point of a capability being a folder.
 
+Skills work the same way and are not shipped either. [skills/](skills/)
+holds `barebones`, which explains this environment to the Resident — where
+its tools come from and why some are missing, how to plan a job into tasks
+small enough to finish, how to hand work to workers, and how to look at what
+it built.
+
 What it does not have yet is the autonomous repair loop — the part that takes
 what the watch found at three in the morning and does something about it —
 and History and Reversibility. See

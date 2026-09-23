@@ -26,14 +26,17 @@ not seeded. They stay inside the package because an Aworg missing them is not
 a plainer Aworg, it is a broken one, and a folder an owner can delete should
 never be load-bearing.
 
-Nothing else is in the package either. AWORG ships no installable
-capabilities: the two it has live in `capabilities/` at the top of the
+Nothing else is in the package either. AWORG ships no capabilities and no
+skills: they live in `capabilities/` and `skills/` at the top of the
 repository, destined for the store, and are installed by copying a folder
-until that exists. The seeding below still applies to them, because a per-OS
-package that wants to arrive with Chromium included copies the folder into
-its own `aworg/capabilities/` at build time and the installer sows it from
-there like anything else. In a wheel there is nothing to sow, and the
-installer says "nothing shipped" rather than implying otherwise.
+until that exists. Personas still ship, because an Aworg with no character
+is a worse first impression than one with eighteen to choose from.
+
+The seeding below still applies to all three, because a per-OS package that
+wants to arrive with Chromium and a skill or two included copies the folders
+into its own `aworg/` at build time and the installer sows them from there
+like anything else. In a wheel there is nothing to sow, and the installer
+says "nothing shipped" rather than implying otherwise.
 """
 
 from __future__ import annotations
