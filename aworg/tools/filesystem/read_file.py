@@ -62,7 +62,14 @@ async def run(
         # file says, which is the failure this tooling exists to avoid.
         raw = target.read_text(encoding="utf-8")
     except UnicodeDecodeError:
+        # Named rather than described. A file whose first bytes say PNG is
+        # not "possibly binary", it is a picture, and there is a tool for
+        # looking at those.
+        picture = _looks_like_an_image(target)
         raise ToolError(
+            f"{target} is a {picture} image, not text. Use read_image to "
+            "look at it."
+            if picture else
             f"{target} is not UTF-8 text. It may be a binary file, or it may "
             "have been written in another encoding."
         ) from None
@@ -106,3 +113,25 @@ async def run(
         payload=raw,
         summary=f"{len(window)} of {total} lines",
     )
+
+
+#: The formats read_image can show, by the bytes they start with.
+IMAGE_MAGIC = (
+    (b"\x89PNG\r\n\x1a\n", "PNG"),
+    (b"\xff\xd8\xff", "JPEG"),
+    (b"GIF8", "GIF"),
+)
+
+
+def _looks_like_an_image(target) -> str | None:
+    """What kind of image this is, if it is one. None otherwise."""
+    try:
+        head = target.open("rb").read(16)
+    except OSError:
+        return None
+    for magic, name in IMAGE_MAGIC:
+        if head.startswith(magic):
+            return name
+    if head[:4] == b"RIFF" and head[8:12] == b"WEBP":
+        return "WebP"
+    return None
