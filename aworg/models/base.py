@@ -21,9 +21,16 @@ from .. import ratelimit
 class Message:
     """One turn in a conversation, in AWORG's own vocabulary.
 
-    Internally the roles are "owner", "resident" and "tool". Adapters
-    translate those into whatever a given provider calls them. The
+    Internally the roles are "owner", "resident", "tool" and "watch".
+    Adapters translate those into whatever a given provider calls them. The
     vocabulary of the product does not bend to the vocabulary of an API.
+
+    Every adapter's rule is the same and stated the same way: "resident" is
+    the assistant, and **everything else is the Resident being told
+    something**, so it travels as user. A new role therefore needs no
+    adapter change, which is the point -- two adapters once tested for
+    "owner" instead, and under that rule "watch" would have reached the
+    model as words the Resident itself had said.
 
     `blocks` carries MCP content blocks for the messages that are more than
     prose -- a reply that asked for tools, and the results that answered it.

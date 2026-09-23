@@ -206,6 +206,26 @@ main { flex: 1; min-height: 0; display: flex; }
   font-size: 14px;
 }
 
+/* The watcher bringing something in from the Living Log.
+ *
+ * Deliberately not styled as the owner. It is left-aligned, unbubbled and
+ * quieter than either voice in the room, because it is neither of them --
+ * an owner scrolling back a week later has to be able to see at a glance
+ * that they did not ask for this and the Resident did not invent it. The
+ * label says so in words; this says so before the words are read. */
+.msg.watch .body {
+  color: var(--muted);
+  border-left: 2px solid var(--accent);
+  padding-left: 12px;
+  font-size: 14px;
+}
+.msg.watch .attrib {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 7px;
+  padding-left: 14px;
+}
+
 .cursor::after {
   content: "▍";
   color: var(--accent);

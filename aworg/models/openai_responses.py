@@ -113,7 +113,11 @@ class OpenAIResponsesAdapter(ModelAdapter):
             if not message.blocks:
                 items.append(
                     {
-                        "role": "user" if message.role == "owner" else "assistant",
+                        # Not the Resident means the Resident is being told,
+                        # so it goes as user. See the same note in
+                        # openai_compatible.py: the inverse test made any
+                        # role added later arrive as the Resident's own words.
+                        "role": "assistant" if message.role == "resident" else "user",
                         "content": message.content,
                     }
                 )

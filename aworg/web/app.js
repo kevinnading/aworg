@@ -263,6 +263,38 @@ const LIVING_LOG_EVERY = 20000;
 async function startLivingLog() {
   await refreshLivingLog();
   setInterval(refreshLivingLog, LIVING_LOG_EVERY);
+  setInterval(adoptUnaskedTurn, LIVING_LOG_EVERY);
+}
+
+/* A reply the owner did not ask for.
+ *
+ * The watcher can start a turn when an application reports trouble into a
+ * quiet Aworg -- see Resident._trouble_noticed. Every other turn begins in
+ * this browser, so every other turn is followed from the moment it starts;
+ * this one begins on the server with nobody listening, and without this the
+ * owner would sit in front of a page that looked idle while the Resident
+ * worked, and find out by reloading.
+ *
+ * On the Living Log's cadence rather than a faster one of its own, because
+ * it is the same event arriving by another route and twenty seconds late to
+ * something nobody asked for is not late.
+ *
+ * The conversation is re-read before following, not after: the message the
+ * watcher wrote is already on disk, and attaching to the stream without it
+ * would show a reply to a question the owner could not see. */
+async function adoptUnaskedTurn() {
+  if (app.streaming) return;
+  try {
+    if (!(await api("/api/chat/active")).active) return;
+    app.conversation = await api("/api/conversation");
+  } catch (_) {
+    return;
+  }
+  // Checked again: both awaits above gave the owner time to start their own
+  // reply, and two followers on one turn would render it twice.
+  if (app.streaming) return;
+  renderChat();
+  await watchTurn(() => fetch("/api/chat/stream"), null);
 }
 
 /* Ask again shortly, however many times you are told to.
@@ -795,6 +827,17 @@ function messageNode(role, content, label, blocks) {
     const attrib = document.createElement("div");
     attrib.className = "attrib";
     attrib.textContent = label;
+    wrapper.appendChild(attrib);
+  }
+
+  // Said in words as well as in styling, and the words are the part that
+  // survives: an owner reading a conversation back has to be able to tell
+  // a message nobody typed from one they did, and the styling is gone the
+  // moment this is copied, quoted, or read anywhere but here.
+  if (role === "watch") {
+    const attrib = document.createElement("div");
+    attrib.className = "attrib";
+    attrib.textContent = "AWORG noticed this — nobody typed it";
     wrapper.appendChild(attrib);
   }
   return wrapper;

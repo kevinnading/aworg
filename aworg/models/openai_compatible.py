@@ -190,7 +190,13 @@ class OpenAICompatibleAdapter(ModelAdapter):
             if not message.blocks:
                 wire.append(
                     {
-                        "role": "user" if message.role == "owner" else "assistant",
+                        # Everything that is not the Resident is something
+                        # the Resident is told, so it travels as a user
+                        # message. Written the other way round -- user only
+                        # for "owner" -- any role added later would arrive
+                        # as words the Resident supposedly said, which is
+                        # the worst possible way for a new role to fail.
+                        "role": "assistant" if message.role == "resident" else "user",
                         "content": message.content,
                     }
                 )
