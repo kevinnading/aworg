@@ -55,6 +55,30 @@ from .theme import (
 WEB_DIR = Path(__file__).parent / "web"
 
 
+#: What every streamed response has to say, so that what is sent a line at a
+#: time arrives a line at a time.
+#:
+#: None of this matters on 127.0.0.1, which is why it was missing: a stream
+#: read straight off the socket by a browser on the same machine has nothing
+#: in between to hold it. Put an Aworg on a real address with anything in
+#: front of it and the whole reply lands in one lump at the end -- a turn
+#: that looks frozen for a minute and then blinks complete, which reads as
+#: AWORG being broken rather than as a proxy doing its job.
+#:
+#: - `Cache-Control: no-cache` stops anything treating a stream as a
+#:   document to be stored and served whole.
+#: - `X-Accel-Buffering: no` is nginx's off switch, which it buffers without.
+#:   Not a standard, but it is the one that is actually read: nginx proxies
+#:   buffer by default and this is how a stream says not to.
+#: - `Connection: keep-alive` for the older intermediaries that will close a
+#:   response they think has finished.
+STREAM_HEADERS = {
+    "Cache-Control": "no-cache",
+    "X-Accel-Buffering": "no",
+    "Connection": "keep-alive",
+}
+
+
 #: The door, and everything it needs, in one file.
 #:
 #: Deliberately not part of the interface's own assets. Everything in web/
@@ -655,7 +679,10 @@ def create_app(paths: Paths, address: str = "http://127.0.0.1:8420") -> FastAPI:
             async for event in resident.follow(turn):
                 yield json.dumps(event) + "\n"
 
-        return StreamingResponse(events(), media_type="application/x-ndjson")
+        return StreamingResponse(
+            events(), media_type="application/x-ndjson",
+            headers=STREAM_HEADERS,
+        )
 
     @app.post("/api/chat")
     async def chat(body: ChatBody) -> StreamingResponse:
@@ -1511,7 +1538,10 @@ def create_app(paths: Paths, address: str = "http://127.0.0.1:8420") -> FastAPI:
             finally:
                 resident.activities.unsubscribe(queue)
 
-        return StreamingResponse(events(), media_type="application/x-ndjson")
+        return StreamingResponse(
+            events(), media_type="application/x-ndjson",
+            headers=STREAM_HEADERS,
+        )
 
     @app.get("/api/activities/{activity_id}/payload")
     def activity_payload(activity_id: str) -> dict[str, Any]:
