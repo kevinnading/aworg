@@ -17,6 +17,59 @@ from typing import Any, AsyncIterator
 from .. import ratelimit
 
 
+#: Connections whose server has refused a picture.
+#:
+#: Shared by the adapters and keyed by connection id, because an adapter is
+#: built fresh for every request so anything learned on an instance is
+#: forgotten at once. Runtime only: a server that gains sight between
+#: restarts -- llama.cpp handed an mmproj, say -- deserves to be believed
+#: again rather than written off for good.
+#:
+#: What it is for: a text-only model sent a picture answers with an error,
+#: and the picture stays in the conversation, so every following turn sends
+#: it again and dies the same way. One `read_image` call bricked a
+#: conversation permanently. The tool still runs and its text still arrives;
+#: only the pixels are dropped, and the model is told they were.
+BLIND: set[str] = set()
+
+
+def refused_a_picture(status: int, body: str) -> bool:
+    """Whether this failure is the server saying it cannot see.
+
+    Matched on wording rather than status, because the status is not agreed
+    on: llama.cpp answers 500, others 400 or 415. Deliberately narrow -- it
+    wants two independent signals, a mention of images and a refusal -- so
+    that an unrelated failure is never mistaken for this and quietly retried
+    with the owner's evidence stripped out of it.
+    """
+    if status < 400:
+        return False
+    lowered = body.lower()
+    if "image" not in lowered and "vision" not in lowered:
+        return False
+    return any(
+        phrase in lowered
+        for phrase in (
+            "not supported", "unsupported", "does not support",
+            "mmproj", "cannot process", "no vision",
+        )
+    )
+
+
+def picture_omitted(count: int) -> str:
+    """What replaces a picture that could not be sent.
+
+    Said rather than silently removed. A Resident that asked to look at a
+    file and was handed nothing would conclude the file was empty; one told
+    the picture could not be shown knows the difference between "there is
+    nothing there" and "I cannot see it", and can say so to its owner.
+    """
+    return (
+        f"({count} picture{'s' if count != 1 else ''} not shown: the model "
+        "behind this connection cannot see images.)"
+    )
+
+
 @dataclass
 class Message:
     """One turn in a conversation, in AWORG's own vocabulary.
@@ -131,13 +184,17 @@ class ModelAdapter:
         #: depends on the model and the job, so it is the owner's choice and
         #: belongs to the connection rather than being decided here.
         self.reasoning = reasoning
+        #: Which stored connection this adapter is speaking for. Kept as
+        #: well as folded into the budget key below, because anything an
+        #: adapter learns about a provider has to outlive the adapter --
+        #: one is built per request -- and the connection is the thing it
+        #: was actually learned about. See BLIND.
+        self.connection_id = connection_id or f"{self.provider}:{model}"
         #: This connection's tokens-per-minute allowance, as a budget shared
         #: with everything else using the same connection -- the Resident and
         #: its workers spend from one pot, because the provider counts them
         #: together. None where nothing is stated, which is a local model.
-        self.budget = ratelimit.budget_for(
-            connection_id or f"{self.provider}:{model}", tokens_per_minute
-        )
+        self.budget = ratelimit.budget_for(self.connection_id, tokens_per_minute)
         #: How many tokens a single request may carry, or None if nobody has
         #: said. Local servers announce it; hosted ones mostly do not, and a
         #: request past it is refused outright rather than trimmed -- so this

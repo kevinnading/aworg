@@ -17,7 +17,10 @@ from typing import Any, AsyncIterator
 
 import httpx
 
-from .base import Fragment, Message, ModelAdapter, ModelError, ToolCall
+from .base import (
+    BLIND, Fragment, Message, ModelAdapter, ModelError, ToolCall,
+    picture_omitted, refused_a_picture,
+)
 
 
 #: A thinking model can be silent for a long time before its first word, so a
@@ -334,6 +337,12 @@ class OpenAICompatibleAdapter(ModelAdapter):
     ) -> AsyncIterator[Fragment]:
         wire = self._wire(messages, system)
 
+        # Asked before the first attempt, not only after a failure. Once a
+        # connection has refused a picture there is no reason to send it one
+        # again and spend a whole round trip finding out twice.
+        if self.connection_id in BLIND:
+            wire = _without_pictures(wire)
+
         payload: dict[str, Any] = {"model": self.model, "messages": wire, "stream": True}
         if tools:
             # MCP's inputSchema becomes this API's function.parameters. Same
@@ -404,6 +413,32 @@ class OpenAICompatibleAdapter(ModelAdapter):
                             continue
                         if response.status_code >= 400:
                             body = (await response.aread()).decode("utf-8", "replace")
+                            carries_pictures = any(
+                                isinstance(message.get("content"), list)
+                                and any(part.get("type") == "image_url"
+                                        for part in message["content"])
+                                for message in payload["messages"]
+                            )
+                            if (
+                                carries_pictures
+                                and refused_a_picture(response.status_code, body)
+                                and attempt < RATE_LIMIT_TRIES - 1
+                            ):
+                                # Written down against the connection so the
+                                # rest of this conversation, and every later
+                                # one, skips the pictures instead of dying on
+                                # them.
+                                if self.connection_id:
+                                    BLIND.add(self.connection_id)
+                                payload["messages"] = _without_pictures(
+                                    payload["messages"]
+                                )
+                                yield Fragment(
+                                    "waiting",
+                                    "This model cannot see pictures. Sending "
+                                    "the rest without them.",
+                                )
+                                continue
                             raise ModelError(_describe(response.status_code, body))
                         async for line in response.aiter_lines():
                             if not line.startswith("data:"):
@@ -488,6 +523,28 @@ DEFAULT_BACKOFF = 20.0
 #: Three is enough to ride out a minute-long window twice over, and few
 #: enough that a genuinely exhausted quota still ends rather than hanging.
 RATE_LIMIT_TRIES = 3
+
+def _without_pictures(wire: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The same conversation with the pixels replaced by a sentence.
+
+    See models/base.py for BLIND and why this exists. The shape differs per
+    adapter -- this API's picture part is `image_url` -- so the stripping
+    lives with the wire format and the memory of it is shared.
+    """
+    out: list[dict[str, Any]] = []
+    for message in wire:
+        content = message.get("content")
+        if not isinstance(content, list):
+            out.append(message)
+            continue
+        kept = [part for part in content if part.get("type") != "image_url"]
+        dropped = len(content) - len(kept)
+        if not dropped:
+            out.append(message)
+            continue
+        kept.append({"type": "text", "text": picture_omitted(dropped)})
+        out.append({**message, "content": kept})
+    return out
 
 
 def _retry_after(response: Any, body: str) -> float:

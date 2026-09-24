@@ -40,7 +40,10 @@ from typing import Any, AsyncIterator
 
 import httpx
 
-from .base import Fragment, Message, ModelAdapter, ModelError, ToolCall
+from .base import (
+    BLIND, Fragment, Message, ModelAdapter, ModelError, ToolCall,
+    picture_omitted, refused_a_picture,
+)
 
 
 #: The same reasoning as the completions adapter: a model that thinks for ten
@@ -250,9 +253,16 @@ class OpenAIResponsesAdapter(ModelAdapter):
         system: str,
         tools: list[dict[str, Any]] | None = None,
     ) -> AsyncIterator[Fragment]:
+        items = self._input(messages)
+        # Asked before the first attempt rather than only after a failure.
+        # Once a connection has refused a picture there is no reason to send
+        # it another and spend a round trip learning the same thing twice.
+        if self.connection_id in BLIND:
+            items = _without_pictures(items)
+
         payload: dict[str, Any] = {
             "model": self.model,
-            "input": self._input(messages),
+            "input": items,
             "stream": True,
             # AWORG keeps the conversation. Nothing is left on OpenAI's
             # servers between turns, which is the same bargain every other
@@ -349,6 +359,22 @@ class OpenAIResponsesAdapter(ModelAdapter):
                 again = self._reasoning()
                 if again:
                     payload["reasoning"] = again
+                async for fragment in self.stream(messages, system, tools):
+                    yield fragment
+                return
+            if refused_a_picture(response.status_code, body) and any(
+                isinstance(item.get("content"), list)
+                and any(part.get("type") == "input_image"
+                        for part in item["content"])
+                for item in payload["input"]
+            ):
+                # Written down against the connection, so the rest of this
+                # conversation and every later one skips the pictures rather
+                # than dying on them. Retried the same way the verification
+                # refusal above is: give the thing up for this connection and
+                # ask again.
+                if self.connection_id:
+                    BLIND.add(self.connection_id)
                 async for fragment in self.stream(messages, system, tools):
                     yield fragment
                 return
@@ -548,6 +574,29 @@ def _images(content: Any) -> list[dict[str, Any]]:
         if isinstance(part, dict) and part.get("type") == "image"
         and (part.get("source") or {}).get("data")
     ]
+
+
+def _without_pictures(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The same input with the pixels replaced by a sentence.
+
+    See models/base.py for BLIND and why this exists. This API's picture
+    part is `input_image`, so the stripping lives with the wire format while
+    the memory of which connection is blind is shared.
+    """
+    out: list[dict[str, Any]] = []
+    for item in items:
+        content = item.get("content")
+        if not isinstance(content, list):
+            out.append(item)
+            continue
+        kept = [part for part in content if part.get("type") != "input_image"]
+        dropped = len(content) - len(kept)
+        if not dropped:
+            out.append(item)
+            continue
+        kept.append({"type": "input_text", "text": picture_omitted(dropped)})
+        out.append({**item, "content": kept})
+    return out
 
 
 def _data_url(image: dict[str, Any]) -> str:
