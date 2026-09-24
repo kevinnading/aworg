@@ -6,8 +6,22 @@ import argparse
 import socket
 import sys
 
+from . import auth
 from .install import describe, ensure_installed, install
 from .paths import Paths, resolve_home
+from .secrets import SecretStore
+
+
+def new_password(paths: Paths) -> str:
+    """Make one, write down its hash, and hand back the only copy.
+
+    The only copy, and that is the point of hashing it: what goes in the
+    store cannot be turned back into this string, so this is the one moment
+    it exists. See auth.py.
+    """
+    fresh = auth.generate()
+    auth.store(SecretStore(paths.secrets_db), fresh)
+    return fresh
 
 
 def port_in_use(host: str, port: int) -> bool:
@@ -83,12 +97,26 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     commands.add_parser("home", help="Print this Aworg's home directory")
+    commands.add_parser(
+        "password",
+        help="Set a new password for the owner interface, and print it",
+    )
 
     args = parser.parse_args(argv)
     paths = Paths(resolve_home(args.home))
 
     if args.command == "home":
         print(paths.home)
+        return 0
+
+    if args.command == "password":
+        paths.ensure()
+        fresh = new_password(paths)
+        print("A new password for this Aworg's interface:")
+        print()
+        print(f"    {fresh}")
+        print()
+        print("Anyone signed in has been signed out.")
         return 0
 
     if args.command in ("install", "init"):
@@ -131,10 +159,35 @@ def main(argv: list[str] | None = None) -> int:
 
         from .server import create_app
 
+        # Made on first start rather than at install, so that an Aworg
+        # installed months ago and started today still gets one -- and so
+        # that the moment it is printed is the moment somebody is looking
+        # at a terminal waiting for an address.
+        fresh = None
+        if not auth.is_set(SecretStore(paths.secrets_db)):
+            fresh = new_password(paths)
+
         print(f"AWORG home     {paths.home}")
         print(f"Interface      http://{host}:{port}")
+        if fresh:
+            print(f"Password       {fresh}")
         print()
+        if fresh:
+            print("That password is shown once and is not stored in a form")
+            print("anything can read back. If it is lost:  aworg password")
+            print()
         print("Open that address in a browser.")
+        # Said plainly, because the difference is the whole security model:
+        # on loopback the only things that can reach this are already
+        # running as the owner, and on any other address that is no longer
+        # true. Not a warning -- binding wider is a legitimate thing to do
+        # and the password is what makes it so -- but it should be a
+        # decision somebody made rather than one they discover.
+        if host not in ("127.0.0.1", "localhost", "::1"):
+            print()
+            print(f"Reachable from the network on {host}. The password is all")
+            print("that stands in front of a Resident with shell access, so")
+            print("keep this on a network you trust.")
         print()
         # The address is decided here, so it is told here. An application
         # the Resident starts is given this to report to, and AWORG cannot

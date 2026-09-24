@@ -81,6 +81,7 @@ async function boot() {
   // finished worker would sit there until the next unrelated event.
   setInterval(paintWorkers, 2000);
   wireReset();
+  wireAccess();
 
   await refresh();
   wireEvents();
@@ -2896,6 +2897,49 @@ async function doReset() {
     button.textContent = "Reset this Aworg";
     button.disabled = false;
   }
+}
+
+/* The password panel, and signing out.
+ *
+ * Both end the session on purpose, so both reload rather than trying to
+ * carry on: the next request would be a 401 and the page would be a
+ * collection of panes quietly failing to refresh. A reload lands on the
+ * login page, which is the honest picture of what just happened. */
+function wireAccess() {
+  const said = el("pw-said");
+
+  el("pw-save").onclick = async () => {
+    const current = el("pw-current").value;
+    const password = el("pw-new").value;
+    said.textContent = "";
+    said.classList.remove("error");
+    if (password.length < 8) {
+      said.textContent = "At least 8 characters.";
+      said.classList.add("error");
+      return;
+    }
+    el("pw-save").disabled = true;
+    try {
+      await api("/api/password", {
+        method: "POST",
+        body: JSON.stringify({ current, password }),
+      });
+      // Every session went, including this one, so there is nothing to
+      // stay on this page for.
+      location.reload();
+    } catch (error) {
+      said.textContent = error.message;
+      said.classList.add("error");
+      el("pw-save").disabled = false;
+    }
+  };
+
+  el("sign-out").onclick = async () => {
+    try {
+      await api("/api/session", { method: "DELETE" });
+    } catch (_) { /* going to the login page either way */ }
+    location.reload();
+  };
 }
 
 function wireReset() {

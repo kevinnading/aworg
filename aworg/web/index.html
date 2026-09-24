@@ -294,6 +294,51 @@
       </div>
       </section>
 
+      <section class="settings-section" data-section="access" data-label="Access">
+      <div class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>Password</h2>
+            <p class="hint">One password and no username — there is one owner
+              here. It was generated and printed in the terminal the first
+              time this Aworg started, and it is kept as a hash, so nothing
+              can read it back. Changing it signs out every browser that is
+              signed in, <strong>including this one</strong>.</p>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="pw-current">Current password</label>
+          <input type="password" id="pw-current" autocomplete="current-password"
+                 spellcheck="false">
+        </div>
+        <div class="field">
+          <label for="pw-new">New password</label>
+          <input type="password" id="pw-new" autocomplete="new-password"
+                 spellcheck="false" placeholder="At least 8 characters">
+        </div>
+        <div class="row">
+          <button type="button" id="pw-save">Change password</button>
+          <span class="hint" id="pw-said"></span>
+        </div>
+        <p class="hint">Lost it? Run <code>aworg password</code> on the
+          machine this runs on. It sets a new one and prints it.</p>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>This browser</h2>
+            <p class="hint">Signs this browser out. The Aworg keeps
+              running, and anything the Resident is doing carries on.</p>
+          </div>
+        </div>
+        <div class="row">
+          <button type="button" class="ghost" id="sign-out">Sign out</button>
+        </div>
+      </div>
+      </section>
+
       <section class="settings-section" data-section="reset" data-label="Reset">
       <div class="panel danger">
         <div class="panel-head">

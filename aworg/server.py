@@ -27,6 +27,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import __version__
+from . import auth
 from .models import (
     CAPABILITY_TAGS, PROVIDER_LABELS, ModelError, build_adapter, needs_credential,
 )
@@ -52,6 +53,89 @@ from .theme import (
 
 
 WEB_DIR = Path(__file__).parent / "web"
+
+
+#: The door, and everything it needs, in one file.
+#:
+#: Deliberately not part of the interface's own assets. Everything in web/
+#: sits behind the gate, and a login page that has to fetch a stylesheet
+#: from behind the lock it is asking you to open is a login page that
+#: renders unstyled at exactly the moment an owner is deciding whether they
+#: trust this thing. Its colours are the interface's dark scheme, copied
+#: rather than imported for the same reason.
+LOGIN_PAGE = """<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AWORG</title>
+<style>
+  :root { color-scheme: dark; }
+  body {
+    margin: 0; min-height: 100vh; display: grid; place-items: center;
+    background: #0b1118; color: #dce5ed;
+    font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, sans-serif;
+    padding: 24px;
+  }
+  form { width: 100%; max-width: 320px; }
+  h1 {
+    font-size: 20px; letter-spacing: 0.22em; font-weight: 600;
+    margin: 0 0 6px; text-transform: uppercase;
+  }
+  p.sub { color: #7f91a3; margin: 0 0 22px; font-size: 14px; }
+  input {
+    width: 100%; box-sizing: border-box; padding: 11px 13px;
+    background: #111a24; color: #dce5ed;
+    border: 1px solid #243342; border-radius: 9px;
+    font: inherit; font-family: ui-monospace, monospace; letter-spacing: 0.04em;
+  }
+  input:focus { outline: none; border-color: #159bff; }
+  button {
+    width: 100%; margin-top: 12px; padding: 11px;
+    background: #087cf0; color: #fff; border: 0; border-radius: 9px;
+    font: inherit; font-weight: 600; cursor: pointer;
+  }
+  button:hover { background: #159bff; }
+  button:disabled { opacity: 0.6; cursor: default; }
+  .why { color: #7f91a3; font-size: 13px; margin-top: 18px; }
+  .bad { color: #ff8686; font-size: 14px; margin-top: 12px; min-height: 20px; }
+</style>
+</head><body>
+<form id="f" autocomplete="on">
+  <h1>AWORG</h1>
+  <p class="sub">This Aworg is locked.</p>
+  <input id="p" type="password" name="password" placeholder="Password"
+         autocomplete="current-password" autofocus spellcheck="false">
+  <button id="go" type="submit">Sign in</button>
+  <div class="bad" id="bad" role="alert"></div>
+  <p class="why">The password was printed in the terminal the first time this
+  Aworg started. If it is lost, run <code>aworg password</code> on the machine
+  it runs on to set a new one.</p>
+</form>
+<script>
+  const form = document.getElementById("f");
+  const bad = document.getElementById("bad");
+  const go = document.getElementById("go");
+  form.onsubmit = async (event) => {
+    event.preventDefault();
+    bad.textContent = "";
+    go.disabled = true;
+    try {
+      const response = await fetch("/api/session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: document.getElementById("p").value }),
+      });
+      if (response.ok) { location.reload(); return; }
+      const body = await response.json().catch(() => ({}));
+      bad.textContent = body.detail || "That did not work.";
+    } catch (_) {
+      bad.textContent = "Could not reach this Aworg.";
+    }
+    go.disabled = false;
+  };
+</script>
+</body></html>
+"""
 
 #: What a persona's image assets are served as. A short table rather than
 #: mimetypes.guess_type, because the set of things a persona may carry is
@@ -211,6 +295,17 @@ class WakeBody(BaseModel):
     wakes: bool
 
 
+class PasswordBody(BaseModel):
+    password: str
+
+
+class ChangePasswordBody(BaseModel):
+    #: Proof that whoever is asking is the owner and not a browser somebody
+    #: left signed in. A session alone is not enough to change the lock.
+    current: str
+    password: str
+
+
 class ReportBody(BaseModel):
     """What a running application says happened to it.
 
@@ -260,6 +355,9 @@ def create_app(paths: Paths, address: str = "http://127.0.0.1:8420") -> FastAPI:
     store = Store(paths.state_db)
     secrets = SecretStore(paths.secrets_db)
     resident = Resident(store, secrets, paths)
+    #: Who is signed in. Held here rather than in the database, so a restart
+    #: signs everybody out; see auth.Sessions.
+    sessions = auth.Sessions()
     # Where an application AWORG starts should send what happens to it. Told
     # rather than discovered: a server has no way of knowing what address
     # anyone reached it on, and guessing would hand out a URL that works on
@@ -1771,6 +1869,118 @@ def create_app(paths: Paths, address: str = "http://127.0.0.1:8420") -> FastAPI:
             # showing the page from before an edit.
             "revision": f"{workspace_changed_at():.0f}:{resident.preview_revision}",
         }
+
+    # -- the door -------------------------------------------------------
+
+    #: What may be reached without signing in, and nothing else.
+    #:
+    #: `/api/log` is on it because an application the Resident built has to
+    #: keep reporting its own trouble whether or not a person is signed in
+    #: anywhere. It was given a token of its own and kept out of
+    #: `/api/journal` long before there was a password here, precisely so
+    #: the two could be authenticated differently; this is that paying off.
+    OPEN = {"/api/session", "/api/log", "/login", "/login.css"}
+
+    @app.middleware("http")
+    async def require_the_password(request: Request, call_next):
+        """One gate in front of everything, rather than a decorator per route.
+
+        A list of protected routes is a list somebody forgets to add to, and
+        the thing they forget is the one that matters. This is the other way
+        round: everything is shut, and what is open is named above and short
+        enough to read in a glance.
+
+        The interface is what this is really for. Behind it sits a Resident
+        with filesystem and shell capabilities, so a reachable port with no
+        password is a shell on the machine -- which was survivable while
+        AWORG only ever bound 127.0.0.1 and stopped being survivable the
+        moment anyone ran it on a home server.
+        """
+        path = request.url.path
+        if (
+            path in OPEN
+            or request.method == "OPTIONS"
+            or not auth.is_set(secrets)     # nothing to ask for yet
+        ):
+            return await call_next(request)
+
+        if sessions.valid(request.cookies.get(auth.COOKIE)):
+            return await call_next(request)
+
+        # An API call gets a status it can act on; a person gets the page.
+        # Answering a fetch with HTML is how an interface ends up rendering
+        # a login form inside a pane.
+        if path.startswith("/api/"):
+            return Response(
+                '{"detail":"Not signed in."}',
+                status_code=401,
+                media_type="application/json",
+            )
+        return Response(
+            LOGIN_PAGE, media_type="text/html",
+            headers={"Cache-Control": "no-store"},
+        )
+
+    @app.post("/api/session")
+    def sign_in(body: PasswordBody, request: Request) -> Response:
+        """Trade the password for a session.
+
+        The pause after repeated wrong answers is about the password an
+        owner might choose in Settings rather than the one AWORG generates:
+        a generated one cannot be guessed, and "dog" can.
+        """
+        who = request.client.host if request.client else "somewhere"
+        waiting = sessions.locked_for(who)
+        if waiting:
+            raise HTTPException(
+                429, f"Too many attempts. Try again in {waiting:.0f} seconds."
+            )
+        if not auth.verify(secrets, body.password or ""):
+            sessions.missed(who)
+            raise HTTPException(401, "That is not the password.")
+
+        sessions.hit(who)
+        token = sessions.open()
+        response = Response('{"ok":true}', media_type="application/json")
+        response.set_cookie(
+            auth.COOKIE, token,
+            httponly=True,          # not reachable from page scripts
+            samesite="lax",
+            max_age=auth.SESSION_IDLE,
+            # Not `secure`: an Aworg is reached over plain http on a LAN far
+            # more often than over TLS, and a cookie the browser refuses to
+            # send is a login that silently never works.
+        )
+        return response
+
+    @app.delete("/api/session")
+    def sign_out(request: Request) -> dict[str, bool]:
+        sessions.close(request.cookies.get(auth.COOKIE))
+        return {"signed_out": True}
+
+    @app.post("/api/password")
+    def change_password(body: ChangePasswordBody, request: Request) -> dict[str, Any]:
+        """Set a new password, and sign every session out.
+
+        Every session, including this one. Someone changing a password has
+        either forgotten who else is signed in or is changing it *because*
+        of who else is signed in, and the second reason is the one that must
+        not be got wrong.
+        """
+        if not auth.verify(secrets, body.current or ""):
+            raise HTTPException(401, "The current password is not right.")
+        fresh = (body.password or "").strip()
+        if len(fresh) < 8:
+            raise HTTPException(400, "A password needs at least 8 characters.")
+        auth.store(secrets, fresh)
+        sessions.close_all()
+        resident.journal.record(
+            "The owner interface password was changed",
+            kind="aworg",
+            detail="Every signed-in browser was signed out, including the "
+                   "one that changed it.",
+        )
+        return {"changed": True}
 
     # Mounted last so the API routes above take precedence.
     @app.get("/", include_in_schema=False)
