@@ -50,20 +50,39 @@ from .base import (
 #: minutes is working, not hung, so only the connection is timed.
 STREAM_TIMEOUT = httpx.Timeout(connect=10.0, read=None, write=30.0, pool=10.0)
 
-#: Model families that accept a `reasoning` block. Sending one to a model
-#: that does not is a 400, so it cannot simply always be sent.
+#: Connections whose model refused a reasoning block.
 #:
-#: A name check, and an unhappy one -- but the API offers no way to ask a
-#: model what it supports, and the alternatives are worse. Always sending it
-#: breaks every non-reasoning model; never sending it throws away the control
-#: this API exists to expose. A name that is not listed here gets no
-#: reasoning block, which is the safe direction: the model reasons however it
-#: defaults to, and nothing is refused.
-REASONING_FAMILIES = ("o1", "o3", "o4", "gpt-5")
+#: Keyed by connection id and module-level, the same shape as models.BLIND
+#: and for the same reason: an adapter is built per request, so what one
+#: learns has to outlive it.
+#:
+#: **This replaced a list of families that do reason**, which was the wrong
+#: way round. That list said o1, o3, o4 and gpt-5, so when gpt-6 arrived it
+#: was silently treated as a model that does not think: no reasoning block,
+#: no summaries asked for, and therefore nothing at all on the wire while it
+#: thought. A model that pauses thirty seconds before its first word is
+#: indistinguishable, from the outside, from a model that has stopped
+#: streaming. It cost an evening to find, and it would have cost another
+#: evening at gpt-7.
+#:
+#: A list of what reasons has to be extended for every model anyone ever
+#: releases. A list of what does not is a list of exceptions, and the
+#: exceptions are the rare case -- so now everything is asked, and the few
+#: that refuse say so once and are remembered. One wasted round trip per
+#: connection per run buys never mistaking a thinking model for a broken one
+#: again.
+NO_REASONING: set[str] = set()
 
-#: Names inside those families that do not reason after all. `gpt-5-chat` is
-#: the plain chat model of the gpt-5 generation and refuses a reasoning block
-#: exactly as gpt-4o would, so the family check alone would 400 on it.
+#: Names known not to reason, so they are never asked in the first place.
+#:
+#: The whole of the hard-coded knowledge now, and the only kind worth
+#: hard-coding: not "these think", which is every model sooner or later, but
+#: "this one is the plain chat variant of a family that otherwise does".
+#: `gpt-5-chat` refuses a reasoning block exactly as gpt-4o would.
+#:
+#: Anything not named here is asked, and a refusal is remembered rather than
+#: predicted. This list exists to save one round trip on a case we already
+#: know about, not to be the gate -- NO_REASONING is the gate.
 NOT_REASONING = ("-chat",)
 
 #: What the owner's reasoning setting means here.
@@ -200,11 +219,18 @@ class OpenAIResponsesAdapter(ModelAdapter):
         ]
 
     def _reasoning(self) -> dict[str, Any] | None:
-        """The reasoning block, when this model will accept one."""
+        """The reasoning block, when this model will accept one.
+
+        Optimistic now, and remembering. An unrecognised name is offered a
+        reasoning block rather than denied one, because the two ways of
+        being wrong are not equally bad: denying a reasoning model makes it
+        look broken and says nothing, while offering one to a plain model is
+        a 400 that names itself and is never repeated. See NO_REASONING.
+        """
         name = (self.model or "").lower()
         if any(mark in name for mark in NOT_REASONING):
             return None
-        if not any(name.startswith(f) or f in name for f in REASONING_FAMILIES):
+        if self.connection_id in NO_REASONING:
             return None
         effort = EFFORT.get(self.reasoning)
         block: dict[str, Any] = {"effort": effort} if effort else {}
@@ -362,6 +388,16 @@ class OpenAIResponsesAdapter(ModelAdapter):
                 async for fragment in self.stream(messages, system, tools):
                     yield fragment
                 return
+            if "reasoning" in payload and _refuses_reasoning(body):
+                # This model does not take a reasoning block. Written down
+                # against the connection so it is asked once and never
+                # again, then the same request goes without it.
+                if self.connection_id:
+                    NO_REASONING.add(self.connection_id)
+                payload.pop("reasoning", None)
+                async for fragment in self.stream(messages, system, tools):
+                    yield fragment
+                return
             if refused_a_picture(response.status_code, body) and any(
                 isinstance(item.get("content"), list)
                 and any(part.get("type") == "input_image"
@@ -488,6 +524,30 @@ def _wants_verification(body: str) -> bool:
     lowered = body.lower()
     return "summary" in lowered and any(
         mark in lowered for mark in VERIFICATION_MARKS
+    )
+
+
+def _refuses_reasoning(body: str) -> bool:
+    """Whether this refusal is "that model takes no reasoning block".
+
+    Narrow on purpose, and checked only when a reasoning block was actually
+    sent. It has to be distinguishable from `_wants_verification`, which is
+    also about reasoning and wants the opposite response -- drop the summary
+    and keep the block, rather than drop the block entirely. So a body that
+    names the summary is left to that one.
+    """
+    lowered = body.lower()
+    if "reasoning" not in lowered:
+        return False
+    if "summary" in lowered:
+        return False               # the verification case; not this one
+    return any(
+        mark in lowered
+        for mark in (
+            "unsupported", "not supported", "does not support",
+            "unknown parameter", "unrecognized", "not permitted",
+            "invalid parameter",
+        )
     )
 
 
