@@ -56,6 +56,80 @@ from .paths import Paths
 #: same name in the home that they are copied into.
 SEEDS = ("skills", "personas", "capabilities")
 
+#: A note left in each of the three folders, for whoever opens one.
+#:
+#: Two of them are empty on a fresh Aworg, because AWORG ships no skills and
+#: no capabilities. An empty directory says nothing about whether it is
+#: broken, unused, or waiting for something, and the person most likely to
+#: find it is someone poking around their own machine wondering what AWORG
+#: put there. So each says what goes in it and how to put one there.
+#:
+#: Ignored by the loaders without needing to be: both look only at
+#: directories. Written at install and then left alone, like everything else
+#: here -- `--force` is what puts an edited one back.
+#:
+#: These are for the owner's copy. The READMEs at the top of the repository
+#: are a different document for a different reader: a catalogue of what is
+#: available to install. This is the note in the drawer, not the catalogue.
+FOLDER_NOTES = {
+    "skills": """# Skills
+
+This folder is yours. A skill is a folder in here with a `SKILL.md`: YAML
+frontmatter naming it and saying when to use it, then the procedure itself.
+An optional `references/` beside it holds whatever the procedure points at.
+
+**AWORG ships no skills**, so this folder is empty until you put something
+in it. That is not a fault. What ships is the runtime; what this Aworg knows
+how to do is yours to choose.
+
+To install one, copy its folder in here. Skills are re-read on every
+request, so it is available immediately -- no restart needed.
+
+Switch them on and off in Settings.
+""",
+    "capabilities": """# Capabilities
+
+This folder is yours. A capability is a folder in here with an `__init__.py`
+declaring it and the Tools it offers.
+
+**AWORG ships no capabilities**, so this folder is empty until you put
+something in it. The built-in ones -- Filesystem, Shell, HTTP, and the
+internal ones the Resident reaches AWORG's own subsystems through -- live
+inside the package instead, because an Aworg missing those is not a plainer
+Aworg, it is a broken one.
+
+To install one, copy its folder in here and then **restart**. Capabilities
+are discovered once at startup, which is where they differ from skills.
+
+Anything installed here runs in this process, as AWORG, with the same
+permissions AWORG has. There is no sandbox. That is deliberate rather than
+unfinished, and it is the reason to install only what you would be willing
+to run yourself.
+
+A built-in's name cannot be taken by a folder here, and a folder here cannot
+declare itself internal or required.
+""",
+    "personas": """# Personas
+
+This folder is yours. A persona is a folder in here with a `PERSONA.md` and
+whatever images it wears.
+
+Unlike skills and capabilities, **these do ship** -- the installer copied
+them in here as ordinary folders, so a persona AWORG wrote and one you wrote
+are the same kind of thing, in the same place, loaded by the same code.
+
+So they are yours to change. Edit one and your edit survives re-installing.
+Delete one and it stays deleted. `aworg install --force` puts the shipped
+ones back as they arrived, and discards your changes to them.
+
+A persona says who the Resident is and how its chat looks. It does not say
+what the Resident is responsible for -- that is the standing instructions,
+kept apart on purpose so that changing who is doing the job does not quietly
+change the job.
+""",
+}
+
+
 #: What was sown, and when. Its absence is how `start` knows an Aworg has
 #: never been installed; its contents are how a second install tells a folder
 #: the owner deleted from one that has not shipped yet.
@@ -167,6 +241,7 @@ def install(
             report["created"].append(str(directory))
     paths.ensure()
     report["workspace"] = str(paths.workspace)
+    report["notes"] = _leave_notes(paths, force)
 
     # Created by asking for them. Both stores write their schema on first
     # connection, so there is no separate "create the database" step to keep
@@ -277,6 +352,35 @@ def ensure_installed(paths: Paths) -> dict[str, Any] | None:
     if is_installed(paths):
         return None
     return install(paths)
+
+
+def _leave_notes(paths: Paths, force: bool) -> list[str]:
+    """Put a README in each of the three folders. Returns the ones written.
+
+    Written only where there is none, so an owner who rewrote one keeps
+    their version -- the same bargain as every other thing this installs.
+    `--force` is how they get ours back.
+
+    Not recorded in `installed.json`. What is in there is the list of things
+    an owner may delete and have stay deleted, and a note explaining an
+    empty folder is furniture rather than content: deleting it should mean
+    "I did not want the note", and the next install putting it back is the
+    right answer to that rather than a bug.
+    """
+    written = []
+    for kind, text in FOLDER_NOTES.items():
+        note = getattr(paths, kind) / "README.md"
+        if note.exists() and not force:
+            continue
+        try:
+            note.write_text(text, encoding="utf-8")
+        except OSError:
+            # A note is a courtesy. An Aworg that refused to install
+            # because it could not write one would be trading something
+            # that matters for something that does not.
+            continue
+        written.append(kind)
+    return written
 
 
 def _directories(paths: Paths) -> list[Path]:
