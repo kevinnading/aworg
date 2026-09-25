@@ -34,6 +34,7 @@ counts as a violation.
 from __future__ import annotations
 
 import asyncio
+import re
 import time
 from collections import deque
 from typing import Any
@@ -82,6 +83,9 @@ class Budget:
         #: headroom, because a guess that is too high is a guess that gets
         #: the request refused.
         self.stated = False
+        #: When the provider says the allowance comes back, as a monotonic
+        #: moment. None until a response has said. See observe.
+        self.refills_at: float | None = None
         #: One waiter at a time. Without it, ten concurrent requests each
         #: compute the same delay, all sleep it, and all wake together to
         #: blow the limit in the same instant.
@@ -105,7 +109,15 @@ class Budget:
         self._spent.append((time.monotonic(), max(0, int(tokens))))
 
     def wait_for(self, tokens: int) -> float:
-        """Seconds until this request would fit. Zero if it fits now."""
+        """Seconds until this request would fit. Zero if it fits now.
+
+        **Every limit here is now one somebody actually asserted** -- the
+        provider on a response header, or the owner in Settings. The profile
+        defaults are no longer used as a fallback; see build_adapter. So
+        there is nothing left to be timid about, and the headroom that
+        existed to soften a guess only applies where the figure is still an
+        estimate rather than the provider's own.
+        """
         if self.limit is None:
             return 0.0
         allowance = self.limit if self.stated else int(self.limit * HEADROOM)
@@ -135,11 +147,21 @@ class Budget:
         # four seconds and one of sixty.
         needed = used + tokens - allowance
         freed = 0
+        computed = WINDOW
         for stamp, amount in self._spent:
             freed += amount
             if freed >= needed:
-                return max(0.0, WINDOW - (now - stamp))
-        return WINDOW
+                computed = max(0.0, WINDOW - (now - stamp))
+                break
+
+        # The provider's own answer beats the one worked out here, and it is
+        # usually far shorter. What is computed above assumes the spending
+        # happened when it was recorded; after `observe` that is one lump
+        # stamped now, so it always says a whole window. The reset header
+        # says when the allowance actually returns.
+        if self.refills_at is not None:
+            return max(0.0, min(computed, self.refills_at - now))
+        return computed
 
     # -- what the provider says -----------------------------------------
 
@@ -173,6 +195,21 @@ class Budget:
             self._spent.clear()
             self._spent.append((time.monotonic(), spent))
 
+        # **When the allowance comes back, in the provider's own words.**
+        #
+        # Without this the tally above is one lump stamped now, so nothing
+        # can age out of the sliding window before a full minute has passed
+        # and any wait computed from it is sixty seconds. The provider
+        # meanwhile says the real answer on the same response -- and on the
+        # 429 it says it in words: "Please try again in 4.381s". Waiting a
+        # minute when the answer was four seconds is fifty-six seconds of an
+        # owner watching nothing.
+        #
+        # Kept as a moment rather than a duration, because it is read later
+        # than it arrives.
+        reset = _header_seconds(headers, "x-ratelimit-reset-tokens")
+        self.refills_at = time.monotonic() + reset if reset is not None else None
+
     # -- using ----------------------------------------------------------
 
     async def reserve(self, tokens: int, on_wait: Any = None) -> None:
@@ -192,6 +229,38 @@ class Budget:
                     on_wait(min(delay, MAX_WAIT))
                 await asyncio.sleep(min(delay, MAX_WAIT))
             self.spend(tokens)
+
+
+#: How OpenAI writes a duration in its rate-limit headers: "6m0s",
+#: "4.381s", "128ms", sometimes several parts together. Not a plain number
+#: of seconds, which is why it needs its own reader rather than _header_int.
+_DURATION = re.compile(r"([0-9]*\.?[0-9]+)\s*(ms|s|m|h)", re.I)
+
+_IN_SECONDS = {"ms": 0.001, "s": 1.0, "m": 60.0, "h": 3600.0}
+
+
+def _header_seconds(headers: Any, name: str) -> float | None:
+    """A duration header, in seconds. None if absent or unreadable.
+
+    Sums every part, so "6m0s" is 360 and "1m30s" is 90. A header that
+    cannot be read is treated as one that was not sent -- a limiter that
+    guessed at a malformed duration would be inventing the very number this
+    exists to stop inventing.
+    """
+    try:
+        raw = (headers.get(name) or "").strip()
+    except Exception:                                      # noqa: BLE001
+        return None
+    if not raw:
+        return None
+    parts = _DURATION.findall(raw)
+    if not parts:
+        # A bare number is seconds, which is what most providers send.
+        try:
+            return max(0.0, float(raw))
+        except ValueError:
+            return None
+    return max(0.0, sum(float(n) * _IN_SECONDS[u.lower()] for n, u in parts))
 
 
 def _header_int(headers: Any, name: str) -> int | None:

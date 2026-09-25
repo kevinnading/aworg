@@ -75,11 +75,17 @@ def build_adapter(connection: dict, api_key: str) -> ModelAdapter:
         # The owner's figure if they have set one, otherwise the provider's
         # entry tier. A new key is a tier-1 key, and finding that out by
         # being cut off halfway through a job is a poor introduction.
-        tokens_per_minute=(
-            connection.get("tokens_per_minute")
-            if connection.get("tokens_per_minute")
-            else profile.get("tpm") or None
-        ),
+        # The owner's figure, and only the owner's.
+        #
+        # The provider profile also carries a `tpm`, and it used to be the
+        # fallback. It is a guess about somebody else's account tier --
+        # 30,000 for OpenAI, against an account that may hold 500,000 -- and
+        # a guess that low does not protect anybody, it just makes a Resident
+        # wait for permission it already had. Nothing is held back now for a
+        # limit nobody stated: the provider states the real figure on every
+        # response and it is adopted from the first one, and a 429 before
+        # then is waited out for exactly as long as the provider asks.
+        tokens_per_minute=connection.get("tokens_per_minute") or None,
     )
 
 
