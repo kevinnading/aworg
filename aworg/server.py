@@ -39,6 +39,7 @@ from .resident import Busy, Resident
 from .secrets import SecretStore, credential_ref
 from . import layout as layout_settings
 from . import panes, providers
+from .stopping import next_or_stop
 from .storage import DEFAULT_SYSTEM_PROMPT, Store
 from .theme import (
     DEFAULT_PRESET,
@@ -52,6 +53,8 @@ from .theme import (
 
 
 WEB_DIR = Path(__file__).parent / "web"
+
+
 
 
 #: What every streamed response has to say, so that what is sent a line at a
@@ -1523,7 +1526,14 @@ def create_app(paths: Paths, address: str = "http://127.0.0.1:8420") -> FastAPI:
                     {"event": "snapshot", "live": resident.activities.live()}
                 ) + "\n"
                 while True:
-                    yield json.dumps(await queue.get()) + "\n"
+                    event = await next_or_stop(queue)
+                    if event is None:
+                        # The Aworg is stopping. Ending here means this
+                        # response completes rather than being cancelled,
+                        # which is the difference between a clean stop and
+                        # forty lines of traceback over one.
+                        break
+                    yield json.dumps(event) + "\n"
             finally:
                 resident.activities.unsubscribe(queue)
 

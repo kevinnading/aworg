@@ -9,6 +9,7 @@ import socket
 import sys
 
 from . import auth
+from . import stopping
 from .install import describe, ensure_installed, install
 from .paths import Paths, resolve_home
 from .secrets import SecretStore
@@ -44,6 +45,13 @@ def announcing(uvicorn: Any) -> Any:
 
     class Server(uvicorn.Server):
         def handle_exit(self, sig: int, frame: Any) -> None:
+            # First, and before uvicorn does anything about the signal. The
+            # endless responses watch this and end themselves, so there is
+            # nothing left for the graceful timeout to cancel -- which is
+            # what turned a clean stop into a page of traceback. The
+            # lifespan's shutdown would be far too late: uvicorn cancels
+            # what is still running before it ever gets there.
+            stopping.asked_to_stop()
             if self.should_exit:
                 # The second one. uvicorn is about to give up on the
                 # graceful path, so say what that costs rather than letting

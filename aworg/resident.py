@@ -40,6 +40,7 @@ from .models import Message, ModelError, build_adapter, needs_credential
 from .tools import Registry, ToolContext
 from .workers import run_worker
 from .secrets import SecretStore, credential_ref
+from .stopping import next_or_stop
 from .storage import Store
 
 
@@ -974,7 +975,11 @@ class Resident:
             if finished:
                 return
             while True:
-                event = await queue.get()
+                # None ends this either way: the turn finished, or the
+                # Aworg is stopping. Both mean there is nothing more to
+                # send, and a response that ends does not have to be
+                # cancelled -- see server.STOPPING.
+                event = await next_or_stop(queue)
                 if event is None:
                     break
                 yield event
