@@ -446,6 +446,7 @@ def create_app(paths: Paths, address: str = "http://127.0.0.1:8420") -> FastAPI:
             # is not worth losing the shutdown over: a database that has gone
             # away on the way out is a bad last line, not a reason to leave
             # servers running.
+            running = 0
             try:
                 running = sum(1 for p in resident.processes.all() if p.alive)
                 resident.journal.record(
@@ -459,6 +460,16 @@ def create_app(paths: Paths, address: str = "http://127.0.0.1:8420") -> FastAPI:
             except Exception:                              # noqa: BLE001
                 pass
 
+            # Said out loud as well as written down. The owner is watching a
+            # terminal right now; the Living Log is for later. And this is
+            # the line that makes "it stopped" mean something specific --
+            # stopping the Resident's programs is the part of shutdown worth
+            # waiting for, so it should be the part that reports.
+            if running:
+                print(
+                    f"Stopping {running} program(s) the Resident started...",
+                    flush=True,
+                )
             with contextlib.suppress(Exception):
                 await resident.processes.stop_all()
 

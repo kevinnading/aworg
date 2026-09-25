@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import argparse
 import socket
 import sys
@@ -22,6 +24,37 @@ def new_password(paths: Paths) -> str:
     fresh = auth.generate()
     auth.store(SecretStore(paths.secrets_db), fresh)
     return fresh
+
+
+def announcing(uvicorn: Any) -> Any:
+    """uvicorn's Server, with something to say when it is asked to stop.
+
+    Built here rather than at the top of the file because uvicorn is
+    imported late on purpose -- `aworg home` should not pay to load a web
+    server -- and a subclass cannot be written before its base exists.
+
+    Ctrl-C used to be silent. uvicorn's log level is at warning so its
+    interface stays out of the owner's way; the shutdown then takes a moment
+    for connections to close and programs to stop, and nothing appeared in
+    between. A server that says nothing while stopping is a server that
+    looks hung, and the reasonable answer to a hung server is to press
+    Ctrl-C again -- which is the one thing that makes it worse, because
+    uvicorn reads the second as force quit and abandons the rest.
+    """
+
+    class Server(uvicorn.Server):
+        def handle_exit(self, sig: int, frame: Any) -> None:
+            if self.should_exit:
+                # The second one. uvicorn is about to give up on the
+                # graceful path, so say what that costs rather than letting
+                # it look like the same thing happening faster.
+                print("\nForcing. Programs the Resident started may keep "
+                      "running.", flush=True)
+            else:
+                print("\nShutting down...", flush=True)
+            super().handle_exit(sig, frame)
+
+    return Server
 
 
 def port_in_use(host: str, port: int) -> bool:
@@ -218,7 +251,7 @@ def main(argv: list[str] | None = None) -> int:
             # stopped properly.
             timeout_graceful_shutdown=3,
         )
-        server = uvicorn.Server(config)
+        server = announcing(uvicorn)(config)
         try:
             server.run()
         except KeyboardInterrupt:
@@ -242,8 +275,9 @@ def main(argv: list[str] | None = None) -> int:
             # not claim otherwise -- the Resident's programs may still be
             # running, and saying so is the difference between a message and
             # a reassurance.
-            print("AWORG was forced to stop. Programs it started may still "
-                  "be running.")
+            # The cost was already named when the second Ctrl-C arrived, so
+            # this is only the full stop.
+            print("AWORG was forced to stop.")
         else:
             # The lifespan has run: the followers are cancelled, the log is
             # written, and the Resident's programs are stopped.
