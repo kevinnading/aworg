@@ -1850,8 +1850,23 @@ def create_app(paths: Paths, address: str = "http://127.0.0.1:8420") -> FastAPI:
     #: the two could be authenticated differently; this is that paying off.
     OPEN = {"/api/session", "/api/log", "/login", "/login.css"}
 
-    @app.middleware("http")
-    async def require_the_password(request: Request, call_next):
+    def _cookie(scope: dict[str, Any], name: str) -> str | None:
+        """One cookie, read off the raw ASGI headers.
+
+        Starlette's Request would do this, but building one per request only
+        to read a single cookie is the sort of convenience that put a whole
+        middleware in front of every streamed byte in the first place.
+        """
+        for key, value in scope.get("headers") or ():
+            if key != b"cookie":
+                continue
+            for part in value.decode("latin-1").split(";"):
+                label, _, held = part.strip().partition("=")
+                if label == name:
+                    return held
+        return None
+
+    class RequireThePassword:
         """One gate in front of everything, rather than a decorator per route.
 
         A list of protected routes is a list somebody forgets to add to, and
@@ -1864,31 +1879,62 @@ def create_app(paths: Paths, address: str = "http://127.0.0.1:8420") -> FastAPI:
         password is a shell on the machine -- which was survivable while
         AWORG only ever bound 127.0.0.1 and stopped being survivable the
         moment anyone ran it on a home server.
+
+        **Plain ASGI rather than `@app.middleware("http")`**, and the
+        difference is not style. That decorator builds a BaseHTTPMiddleware,
+        which pumps every response body through an anyio memory stream so it
+        can hand the handler a finished Response object. For an ordinary
+        reply that is invisible. For AWORG it is not: two endpoints stream
+        for as long as they are open, so every chunk of every turn and every
+        Activity event was being copied through an extra task group and
+        queue on its way out -- and when the Activity feed was cancelled at
+        shutdown, that machinery turned an ordinary cancellation into
+        "ERROR: Exception in ASGI application" and forty lines of traceback
+        over a clean stop.
+
+        This form touches the request, decides, and then gets out of the
+        way. A streamed response goes straight from the endpoint to the
+        socket, and a cancelled one simply ends.
         """
-        path = request.url.path
-        if (
-            path in OPEN
-            or request.method == "OPTIONS"
-            or not auth.is_set(secrets)     # nothing to ask for yet
-        ):
-            return await call_next(request)
 
-        if sessions.valid(request.cookies.get(auth.COOKIE)):
-            return await call_next(request)
+        def __init__(self, app: Any) -> None:
+            self.app = app
 
-        # An API call gets a status it can act on; a person gets the page.
-        # Answering a fetch with HTML is how an interface ends up rendering
-        # a login form inside a pane.
-        if path.startswith("/api/"):
-            return Response(
-                '{"detail":"Not signed in."}',
-                status_code=401,
-                media_type="application/json",
-            )
-        return Response(
-            LOGIN_PAGE, media_type="text/html",
-            headers={"Cache-Control": "no-store"},
-        )
+        async def __call__(self, scope, receive, send) -> None:
+            # Lifespan and websocket traffic are not requests and have no
+            # password to check; passing them through untouched is also what
+            # keeps startup and shutdown out of this code path entirely.
+            if scope["type"] != "http":
+                await self.app(scope, receive, send)
+                return
+
+            path = scope.get("path", "")
+            if (
+                path in OPEN
+                or scope.get("method") == "OPTIONS"
+                or not auth.is_set(secrets)     # nothing to ask for yet
+                or sessions.valid(_cookie(scope, auth.COOKIE))
+            ):
+                await self.app(scope, receive, send)
+                return
+
+            # An API call gets a status it can act on; a person gets the
+            # page. Answering a fetch with HTML is how an interface ends up
+            # rendering a login form inside a pane.
+            if path.startswith("/api/"):
+                refusal = Response(
+                    '{"detail":"Not signed in."}',
+                    status_code=401,
+                    media_type="application/json",
+                )
+            else:
+                refusal = Response(
+                    LOGIN_PAGE, media_type="text/html",
+                    headers={"Cache-Control": "no-store"},
+                )
+            await refusal(scope, receive, send)
+
+    app.add_middleware(RequireThePassword)
 
     @app.post("/api/session")
     def sign_in(body: PasswordBody, request: Request) -> Response:
