@@ -16,7 +16,6 @@ import re
 import secrets as secrets_module
 import shutil
 import time
-import urllib.request
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -39,7 +38,7 @@ from . import personas as personas_module
 from .resident import Busy, Resident
 from .secrets import SecretStore, credential_ref
 from . import layout as layout_settings
-from . import lifecycle, panes, providers
+from . import panes, providers
 from .storage import DEFAULT_SYSTEM_PROMPT, Store
 from .theme import (
     DEFAULT_PRESET,
@@ -818,46 +817,6 @@ def create_app(paths: Paths, address: str = "http://127.0.0.1:8420") -> FastAPI:
         )
 
     # -- the status column ------------------------------------------------
-
-    def workspace_has_files() -> bool:
-        try:
-            return any(paths.workspace.iterdir())
-        except OSError:
-            return False
-
-    @app.get("/api/lifecycle")
-    def app_lifecycle() -> dict[str, Any]:
-        """Where the Resident's application is in its life.
-
-        Assessed from what is observably true rather than from anything the
-        Resident reports, because an owner who could audit the Resident's
-        claims would not need AWORG in the first place.
-        """
-        serving = serving_now()
-        return lifecycle.assess(
-            workspace_has_files(), serving, answered_now(serving), watching_now()
-        )
-
-    def watching_now() -> dict[str, Any] | None:
-        """Whether the Living Log is connected and actually being read.
-
-        Both halves, and neither is enough alone. An endpoint nobody has
-        posted to is a promise rather than a channel, and a watcher that has
-        been started but has never completed a pass has inspected nothing.
-        This stage tells an owner their application can say it is in trouble
-        and that something is listening, so it should not say so until both
-        are observably true.
-        """
-        reporters = store.journal_reporters()
-        looked = resident.watch.snapshot()
-        if not reporters or not looked["passes"]:
-            return None
-        return {
-            "application": reporters[0] if len(reporters) == 1
-                           else f"{len(reporters)} applications",
-            "passes": looked["passes"],
-            "outstanding": looked["outstanding"],
-        }
 
     @app.get("/api/panes")
     def status_panes() -> list[dict[str, Any]]:
@@ -1792,17 +1751,6 @@ def create_app(paths: Paths, address: str = "http://127.0.0.1:8420") -> FastAPI:
             }
         return None
 
-    #: The last fetch AWORG made of the served application, and what the
-    #: workspace looked like when it made it. Held rather than repeated,
-    #: because the Lifecycle stepper is polled and an outbound request per
-    #: poll would be AWORG hammering the Resident's own application.
-    last_check: dict[str, Any] = {}
-
-    #: How long a fetch of the application is allowed to take. Short: this
-    #: runs on a path the interface polls, and a hung application must not
-    #: become a hung owner interface.
-    CHECK_TIMEOUT = 2.0
-
     def workspace_changed_at() -> float:
         """When the Living Workspace was last touched.
 
@@ -1820,45 +1768,6 @@ def create_app(paths: Paths, address: str = "http://127.0.0.1:8420") -> FastAPI:
             except OSError:
                 continue
         return newest
-
-    def answered_now(serving: dict[str, Any] | None) -> dict[str, Any] | None:
-        """AWORG's own fetch of the application, made after the last change.
-
-        **The point is who is doing the looking.** The Resident saying it
-        checked its work is testimony from the party being judged; this is
-        AWORG opening the application itself and seeing what comes back. That
-        is the same argument the whole Lifecycle stepper is built on, carried
-        one stage further than it previously went.
-
-        Re-fetched only when the workspace has changed since the last look,
-        so an idle Aworg makes no requests at all and a busy one makes one
-        per change rather than one per poll.
-        """
-        if not serving:
-            return None
-        port = serving.get("port")
-        changed = workspace_changed_at()
-        held = last_check.get(port)
-        if held and held["changed"] >= changed:
-            return held["result"]
-
-        result: dict[str, Any] | None = None
-        try:
-            with urllib.request.urlopen(
-                f"http://127.0.0.1:{port}/", timeout=CHECK_TIMEOUT
-            ) as answer:
-                # Any 2xx. A directory listing is a served application as far
-                # as this stage is concerned -- whether it is the *right*
-                # application is the checker's job and not a stepper's.
-                result = {"status": answer.status, "at": time.time()}
-        except Exception:                                  # noqa: BLE001
-            # Refused, timed out, 500 -- all the same answer here: the thing
-            # that is running did not answer for the application as it now
-            # stands. The stage drops back and the owner sees it.
-            result = None
-
-        last_check[port] = {"changed": changed, "result": result}
-        return result
 
     @app.get("/api/preview")
     def preview() -> dict[str, Any]:

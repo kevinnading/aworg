@@ -365,30 +365,33 @@ An Aworg that restarted may have an application that fell over while it was
 away, and the gap it would be blind across is exactly the gap it exists to
 cover.
 
-### The Lifecycle only moves on evidence AWORG gathered
+### The Lifecycle was removed, and why is worth keeping
 
-Every stage has a test, and every test is something AWORG observed rather
-than something the Resident reported. That was already true of "running" — a
-process AWORG holds, alive, with a port — and it now extends two stages
-further.
+There was a stepper under the preview — Nothing yet, Being built, Running,
+Verified, Watched, Published — and every stage was gated on something AWORG
+had observed rather than on anything the Resident said. That part was right
+and is worth carrying into whatever replaces it.
 
-"Verified" is AWORG's own fetch of the served application, and it counts only
-if it happened *after* the most recent change to the workspace. A running
-process proves something bound a port, not that the thing just changed still
-works; and a check made before the change was a check of a different
-application. The Resident saying it verified its work is testimony from the
-party being judged.
+What was wrong was the stages themselves. They described one job: build an
+application from nothing, on this machine, and start it here. Point an Aworg
+at an existing site it maintains but did not create, and every test fails
+forever — "running" wanted a process AWORG had spawned, and the web server
+was somebody else's. The stepper was not incorrect, it was inapplicable, and
+it sat there reading "Being built" over work that had been live for years.
 
-"Watched" needs both halves of its own claim: an application that has
-actually posted to the Living Log, and a watcher that has actually completed
-a pass. An endpoint nobody has spoken down is a promise rather than a
-channel.
+AWORG is more general than the one workflow that stepper knew, so it came
+out rather than being patched into vagueness. What replaces it is open.
+The shape most likely to survive is a lifecycle defined per project — by the
+Resident, at the start of a job — where each stage still names the evidence
+that would prove it and AWORG still does the proving. That keeps the
+property worth keeping: stages that move **backwards**. Break the
+application and the next check fails and the stage drops, with nobody having
+to notice and say so. A checklist that only ever advances is a record of
+what once happened rather than a description of what is true.
 
-The consequence is that stages move backwards, and they should. Break the
-application and the next fetch fails; the stage drops and the owner sees it
-without anyone having to notice and say so. A stepper that only advanced
-would be a record of what once happened rather than a description of what is
-true.
+The thing to hold on to is that a stage the Resident can simply assert is
+worth nothing, because the owner who needs the stepper is exactly the owner
+who cannot audit the claim.
 
 ### The Living Log judges; nothing else does
 
@@ -577,10 +580,10 @@ happens, expensive to reconstruct afterwards.
 ## Verification Is A Property Of The System
 
 Anything AWORG shows the owner about progress is derived from what it
-observed, never from what a model reported. The application's lifecycle
-stage advances on evidence — files present, a process answering, a check
-that actually ran — and stages beyond what the current milestone can
-evidence are shown as out of reach rather than merely unfinished.
+observed, never from what a model reported. The preview shows a page because
+something is actually serving one; the Living Log's entries come from the
+Activity stream rather than from a Resident's summary of its own work; a
+worker's result carries what AWORG watched it do beside what it claimed.
 
 The reason is the product's own premise. An owner who could audit the
 Resident's claims would not need AWORG. A well-prompted Resident that

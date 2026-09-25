@@ -25,7 +25,6 @@ const app = {
   //: something actually changed -- these panes carry scroll positions and
   //: switches the owner may be reaching for.
   paneSignatures: {},
-  lifecycle: null,
   // The last answer from /api/context, plus what has been added since: the
   // draft in the composer and the reply as it streams in. The ring is exact
   // right after a fetch and drifts to an estimate in between, and says so.
@@ -368,25 +367,22 @@ async function refreshLivingLog() {
 }
 
 async function refresh() {
-  const [state, connections, conversation, appearance, lifecycle] = await Promise.all([
+  const [state, connections, conversation, appearance] = await Promise.all([
     api("/api/state"),
     api("/api/connections"),
     api("/api/conversation"),
     api("/api/appearance"),
-    api("/api/lifecycle"),
   ]);
   app.state = state;
   app.connections = connections;
   app.conversation = conversation;
   app.appearance = appearance;
-  app.lifecycle = lifecycle;
   renderStatus();
   renderChat();
   renderSettings();
   renderAppearance();
   renderResetView();
   refreshContext();
-  renderLifecycle();
   renderProject();
 }
 
@@ -1535,8 +1531,6 @@ const REGIONS = [
   // do on it, and it is read once rather than worked in. Capabilities and
   // Skills sit below it, where the owner reaches for them deliberately.
   { id: "faculties", element: "faculties", axis: "column", panes: ["environment", "capabilities", "skills"] },
-  // Lifecycle is not a pane any more. It lives inside the preview, under the
-  // picture, because all six of its stages describe the thing in the picture.
   { id: "side", element: "side", axis: "column", panes: ["preview", "workspace"] },
   { id: "activity", element: "activity", axis: "row", panes: ["tasks", "workers"] },
   // What happened, then what is happening. Reading order follows the way
@@ -2667,10 +2661,9 @@ async function setCapability(id, enabled) {
  *
  * Deliberately not buildPanes(). That rebuilds every pane from its template,
  * which blanks the ones whose contents are painted elsewhere -- the
- * lifecycle stepper, the workspace listing, the Activities list. It was only
- * ever called once at boot, before any of those had been filled in, so
- * calling it again mid-session emptied three panes as a side effect of
- * toggling a capability. */
+ * workspace listing, the Activities list. It was only ever called once at
+ * boot, before either had been filled in, so calling it again mid-session
+ * emptied panes as a side effect of toggling a capability. */
 function repaintPane(id) {
   const pane = app.panes.find((candidate) => candidate.id === id);
   const body = document.querySelector(`#pane-${id} .pane-body`);
@@ -2707,43 +2700,6 @@ function paneResizer(pane, region) {
   handle.setAttribute("aria-label", `${vertical ? "Width" : "Height"} of ${pane.label}`);
   handle.setAttribute("aria-controls", `pane-${pane.id}`);
   return handle;
-}
-
-/* ---------- lifecycle ---------- */
-
-function renderLifecycle() {
-  const list = el("stages");
-  if (!list || !app.lifecycle) return;
-  list.innerHTML = "";
-
-  for (const stage of app.lifecycle.stages) {
-    const item = document.createElement("li");
-    item.className = `stage ${stage.state}`;
-    item.title = `Reached when: ${stage.evidence}`;
-
-    const mark = document.createElement("span");
-    mark.className = "stage-mark";
-
-    const label = document.createElement("span");
-    label.className = "stage-label";
-    label.textContent = stage.label;
-
-    item.append(mark, label);
-    if (stage.state === "current") item.setAttribute("aria-current", "step");
-    list.appendChild(item);
-  }
-
-  // The sentence that used to sit under the stepper has nowhere to go in a
-  // single row, so it moves onto the row itself. Nothing is lost that was
-  // being read -- the detail and the evidence are both still one hover away,
-  // and the stage an owner is actually at is named in full beneath its mark.
-  const current = app.lifecycle.stages.find((s) => s.state === "current");
-  const strip = el("lifecycle");
-  if (strip) {
-    strip.title = current
-      ? `${current.detail}\n\nReached when: ${app.lifecycle.reason}`
-      : app.lifecycle.reason;
-  }
 }
 
 /* What the Resident is building, by name, in the pane that holds it.
@@ -3600,21 +3556,6 @@ async function loadWorkspace(path) {
   app.workspaceSignature = signature;
   app.workspace = data;
   renderWorkspace();
-
-  // The workspace changing is the only evidence that can currently move the
-  // application's stage, so this is the moment to ask again -- and the only
-  // moment worth asking. A lifecycle that updates on reload would show the
-  // owner a stale stage for exactly as long as they were watching.
-  refreshLifecycle();
-}
-
-async function refreshLifecycle() {
-  try {
-    app.lifecycle = await api("/api/lifecycle");
-  } catch (_) {
-    return;  // the server will be back; the stage on screen is still the last true one
-  }
-  renderLifecycle();
 }
 
 function renderWorkspace() {
