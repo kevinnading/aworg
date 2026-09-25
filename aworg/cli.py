@@ -193,24 +193,43 @@ def main(argv: list[str] | None = None) -> int:
         # the Resident starts is given this to report to, and AWORG cannot
         # work it out from the inside -- a server does not know what anyone
         # called it.
+        # Built here rather than left to uvicorn.run, which is exactly this
+        # and throws the Server away. Keeping it is what lets the last line
+        # below tell a clean stop from a forced one.
+        config = uvicorn.Config(
+            create_app(paths, address=f"http://{host}:{port}"),
+            host=host, port=port, log_level="warning",
+        )
+        server = uvicorn.Server(config)
         try:
-            uvicorn.run(
-                create_app(paths, address=f"http://{host}:{port}"),
-                host=host, port=port, log_level="warning",
-            )
+            server.run()
         except KeyboardInterrupt:
-            # uvicorn installs its own handler and normally shuts down
-            # cleanly on its own, so this is for the gaps around it: the
-            # moment before those handlers exist, and the platforms where
-            # the interrupt lands somewhere uvicorn is not waiting for it.
-            # Ctrl-C is how everybody stops a server, and ending a session
-            # with a stack trace suggests something went wrong when the
-            # owner simply asked it to stop.
+            # **Not** how the shutdown happens. uvicorn installs its own
+            # handler for SIGINT, sets should_exit, and unwinds gracefully
+            # on its own -- by the time anything arrives here, that has
+            # already finished.
+            #
+            # This is here because of what uvicorn does *afterwards*: having
+            # shut down because of a signal, it restores the original
+            # handler and re-raises the signal, so the process exits the way
+            # a program interrupted by Ctrl-C conventionally does. With the
+            # default handler back in place that is a KeyboardInterrupt, and
+            # an owner who pressed Ctrl-C got a stack trace at the end of a
+            # shutdown that had in fact gone perfectly.
             pass
-        # After the server is down, so this is the last line either way and
-        # means what it says: the lifespan has run, the Resident's programs
-        # have been stopped, and the log has been written.
-        print("AWORG stopped.")
+
+        if server.force_exit:
+            # A second Ctrl-C, which uvicorn treats as "stop arguing and
+            # quit". The graceful path was abandoned part way, so this must
+            # not claim otherwise -- the Resident's programs may still be
+            # running, and saying so is the difference between a message and
+            # a reassurance.
+            print("AWORG was forced to stop. Programs it started may still "
+                  "be running.")
+        else:
+            # The lifespan has run: the followers are cancelled, the log is
+            # written, and the Resident's programs are stopped.
+            print("AWORG stopped.")
         return 0
 
     parser.print_help()
