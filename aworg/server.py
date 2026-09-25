@@ -424,24 +424,43 @@ def create_app(paths: Paths, address: str = "http://127.0.0.1:8420") -> FastAPI:
             kind="aworg",
             detail=host_started_detail(),
         )
-        yield
-        follower.cancel()
-        watcher.cancel()
-        for task in (follower, watcher):
-            with contextlib.suppress(asyncio.CancelledError):
-                await task
-        # Recorded before the processes go, so the count is what was actually
-        # running rather than zero.
-        running = sum(1 for p in resident.processes.all() if p.alive)
-        resident.journal.record(
-            "AWORG stopped",
-            kind="aworg",
-            detail=(
-                f"{running} running program(s) were stopped with it."
-                if running else ""
-            ),
-        )
-        await resident.processes.stop_all()
+        try:
+            yield
+        finally:
+            # In a finally, and each step guarded separately, because of what
+            # the last one does. Stopping the Resident's programs is the
+            # honest half of the bargain described above -- AWORG will not
+            # adopt a process it did not start, so it must not abandon one it
+            # did -- and an exception anywhere earlier in this block used to
+            # skip it silently. The result was exactly the orphan this
+            # docstring opens by describing, produced by the code written to
+            # prevent it.
+            for task in (follower, watcher):
+                task.cancel()
+            for task in (follower, watcher):
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    await task
+
+            # Recorded before the processes go, so the count is what was
+            # actually running rather than zero. Guarded, because a log entry
+            # is not worth losing the shutdown over: a database that has gone
+            # away on the way out is a bad last line, not a reason to leave
+            # servers running.
+            try:
+                running = sum(1 for p in resident.processes.all() if p.alive)
+                resident.journal.record(
+                    "AWORG stopped",
+                    kind="aworg",
+                    detail=(
+                        f"{running} running program(s) were stopped with it."
+                        if running else ""
+                    ),
+                )
+            except Exception:                              # noqa: BLE001
+                pass
+
+            with contextlib.suppress(Exception):
+                await resident.processes.stop_all()
 
     def host_started_detail() -> str:
         """One line about what this Aworg woke up as.

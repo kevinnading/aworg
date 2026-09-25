@@ -193,10 +193,24 @@ def main(argv: list[str] | None = None) -> int:
         # the Resident starts is given this to report to, and AWORG cannot
         # work it out from the inside -- a server does not know what anyone
         # called it.
-        uvicorn.run(
-            create_app(paths, address=f"http://{host}:{port}"),
-            host=host, port=port, log_level="warning",
-        )
+        try:
+            uvicorn.run(
+                create_app(paths, address=f"http://{host}:{port}"),
+                host=host, port=port, log_level="warning",
+            )
+        except KeyboardInterrupt:
+            # uvicorn installs its own handler and normally shuts down
+            # cleanly on its own, so this is for the gaps around it: the
+            # moment before those handlers exist, and the platforms where
+            # the interrupt lands somewhere uvicorn is not waiting for it.
+            # Ctrl-C is how everybody stops a server, and ending a session
+            # with a stack trace suggests something went wrong when the
+            # owner simply asked it to stop.
+            pass
+        # After the server is down, so this is the last line either way and
+        # means what it says: the lifespan has run, the Resident's programs
+        # have been stopped, and the log has been written.
+        print("AWORG stopped.")
         return 0
 
     parser.print_help()
