@@ -199,6 +199,24 @@ def main(argv: list[str] | None = None) -> int:
         config = uvicorn.Config(
             create_app(paths, address=f"http://{host}:{port}"),
             host=host, port=port, log_level="warning",
+            # Why one Ctrl-C was not enough.
+            #
+            # uvicorn's default here is None, meaning wait for every open
+            # connection forever. Two of AWORG's endpoints never close on
+            # their own -- the Activity feed is `while True: await
+            # queue.get()`, and the turn stream lives as long as the turn --
+            # so an owner with the interface open in a browser had a server
+            # that began shutting down and then waited on a connection that
+            # was never going to end. The only way out was a second Ctrl-C,
+            # which is uvicorn's force quit and skips the rest of shutdown.
+            #
+            # Three seconds: long enough for a real request to finish, short
+            # enough that stopping an Aworg feels like stopping anything
+            # else. Past it, uvicorn cancels what is left, the generators'
+            # finally blocks run, and the lifespan shutdown proceeds
+            # normally -- so the programs the Resident started are still
+            # stopped properly.
+            timeout_graceful_shutdown=3,
         )
         server = uvicorn.Server(config)
         try:
