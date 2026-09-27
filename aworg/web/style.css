@@ -1293,6 +1293,17 @@ body.has-maximised-pane .resizer { pointer-events: none; }
     border-top: none;
     border-bottom: 1px solid var(--line);
   }
+  /* The gap between panes belongs to the desktop, where it is the seam a
+     resizer lives in. Stacked, it is a 9px hole in the middle of a list --
+     it put one under Project and nowhere else, because Project happens to
+     be the pane a region starts after.
+
+     Spelled out at this length because `.region-column > .pane + .pane` is
+     three classes and the rule above is two, so plain `margin: 0` loses to
+     it however far down the file it sits. */
+  .home .region-column > .pane + .pane,
+  .home .region-row > .pane + .pane { margin: 0; }
+
   .home .pane .pane-body,
   .home .chat .messages,
   .home .chat .composer { display: none; }
@@ -1327,7 +1338,13 @@ body.has-maximised-pane .resizer { pointer-events: none; }
     justify-content: space-between;
     gap: 10px;
     width: 100%;
-    min-height: 40px;
+    /* Nine of these stand before the conversation, so every pixel is spent
+       nine times. This is half what a row wants to be and well under any
+       guideline for a fingertip -- it gets away with it only because the
+       target is the full width of the screen with no gaps between rows, so
+       the sole way to miss is vertically and there is nothing to fall
+       through to. */
+    min-height: 16px;
     padding: 0 14px;
     border: none;
     background: var(--panel);
@@ -1360,12 +1377,38 @@ body.has-maximised-pane .resizer { pointer-events: none; }
   }
   .pane-badge[hidden] { display: none; }
 
-  /* The header wraps at this width and shoves Home and Settings off the
-     edge. The status sentence is what can go: the same fact is in the
-     Environment pane a tap away, and the dot already says whether anything
-     is connected. */
+  /* The status sentence goes: the same fact is in the Environment pane a
+     tap away, and the dot already says whether anything is connected. */
   .status #status-text { display: none; }
-  .topbar { gap: 8px; }
+  .topbar { gap: 8px; padding: 0 12px; }
+
+  /* A pane's name is written by the Resident -- `name_project` sets it --
+     so there is no length this can be designed around, only a rule that
+     holds for any of them. Without this, a long enough name pushes that
+     pane's own controls off the side.
+
+     Not a fix for something seen happening: the default name is short and
+     nothing has been renamed yet. It is here because the length belongs to
+     somebody else. */
+  /* The two pills a header can carry -- the workspace's LIVE and the log's
+     WAKES ME -- are built for a row with room to spare and made those two
+     rows three pixels taller than the other seven. Three pixels twice is
+     not much; a list where two rows are visibly a different size is, and
+     it is the only thing left making this look uneven. */
+  .home .pane-head .live,
+  .home .pane-head .wake {
+    padding: 0 8px;
+    line-height: 17px;
+    font-size: 10px;
+  }
+
+  .home .pane-head, .chat-head { min-width: 0; }
+  .home .pane-head h2, .chat-head h2 {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 }
 
 /* ---- appearance ---- */
