@@ -1226,6 +1226,147 @@ body.has-maximised-pane .resizer { pointer-events: none; }
   .grid { grid-template-columns: 1fr; }
 }
 
+/* The rail does not exist anywhere but a phone. Stated here, once, rather
+   than left to the media query below to turn on -- so that the default for
+   every width this interface was designed at is "not present", and the
+   phone is the exception that has to ask. */
+.rail { display: none; }
+
+/* ---- the phone ----
+
+   Everything below is inside one query and reaches nothing above it. The
+   rail does not exist on a desktop: it is display:none by default and only
+   turned on here, so the arrangement this interface was designed around is
+   untouched by all of it.
+
+   The problem being solved is order, not size. Stacked in a single column
+   the panes are a wall in front of the conversation -- an empty preview, a
+   file listing, "No plan yet" and "No workers running", and only then the
+   thing the owner opened the page to do. Beside the chat those cost
+   nothing; above it they cost everything.
+
+   So the panes stop being places and become a list. The conversation is
+   what you land on. The rail sits above it with every pane named, and one
+   opens at a time over the chat. */
+
+@media (max-width: 640px) {
+  /* A list, not a strip.
+
+     Every pane visible at once without scrolling, which is the whole
+     bargain: the rail is how an owner sees the state of the system at a
+     glance, and a badge on a row that has scrolled off the side counts
+     nothing to nobody. Nine rows is the price, and it is worth it. */
+  .rail {
+    display: flex;
+    flex-direction: column;
+    flex: none;
+    background: var(--bg);
+    border-bottom: 1px solid var(--line);
+  }
+
+  .rail-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    /* 32 is under the usual fingertip minimum, and deliberately: these are
+       a stacked list where the target is the full width of the screen, so
+       the only way to miss is vertically, and 32 with no gaps between rows
+       leaves nothing to fall through. Nine at 44 would eat the
+       conversation, which is the thing they exist to get out of the way
+       of. */
+    min-height: 32px;
+    padding: 0 14px;
+    border: none;
+    border-top: 1px solid var(--line);
+    background: none;
+    color: var(--muted);
+    font: inherit;
+    font-size: 13px;
+    text-align: left;
+    cursor: pointer;
+  }
+  .rail-item:first-child { border-top: none; }
+
+  .rail-label { flex: 1 1 auto; }
+
+  .rail-item.open {
+    background: var(--panel-2);
+    color: var(--text);
+    font-weight: 600;
+    /* Which one is open, readable without reading -- the eye finds an edge
+       faster than it finds a weight. */
+    box-shadow: inset 2px 0 0 var(--accent);
+  }
+
+  .rail-badge {
+    min-width: 17px;
+    padding: 0 5px;
+    border-radius: 9px;
+    background: var(--danger);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 17px;
+    text-align: center;
+  }
+
+  /* One at a time. Two half-panes on a phone is the same wall in
+     miniature, so everything that is not open is simply not here -- and
+     "not here" rather than "collapsed" because a collapsed pane still
+     takes a header, and nine of those is the rail again, twice. */
+  .home .pane { display: none; }
+  .home .pane[data-open] {
+    display: flex;
+    /* Under the rail and over everything else, filling what is left. Fixed
+       rather than in flow: the panes live in four different regions and
+       dragging one into place in the column would mean moving it in the
+       DOM, which is the one thing that would put the desktop at risk. */
+    position: fixed;
+    left: 0;
+    right: 0;
+    top: var(--rail-bottom, 96px);
+    bottom: 0;
+    z-index: 20;
+    margin: 0;
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+    border-bottom: none;
+  }
+  .home .pane[data-open] .pane-body { overflow-y: auto; }
+
+  /* The regions are only containers for panes that are now placed by hand,
+     so they have nothing left to arrange. Kept in the page rather than
+     removed, because they are where the panes live and where they go back
+     to the moment the screen is wide again. */
+  .home .region { display: contents; }
+  .resizer { display: none; }
+
+  /* What the owner lands on, filling what the rail leaves.
+
+     The breakpoint above lets the document grow past the viewport, because
+     stacked in one flow the regions fought each other for height and the
+     Living Log won -- five thousand pixels of it, with the conversation
+     flexed to nothing. That fight cannot happen here: the panes are out of
+     flow entirely, open or closed, so the only thing left asking for height
+     is the conversation. Taking the viewport back is what lets it fill the
+     screen instead of collapsing to the height of its own messages. */
+  html, body { height: 100%; }
+  body { min-height: 0; }
+  .view.active, .home { min-height: 0; }
+  .workbench { flex-direction: column; flex: 1 1 auto; min-height: 0; }
+  .main { flex: 1 1 auto; min-height: 0; }
+  .chat { min-height: 0; flex: 1 1 auto; }
+
+  /* The header wraps at this width and shoves Home and Settings off the
+     edge. The status sentence is the part that can afford to go: the same
+     fact is in the Environment pane, a tap away, and the dot beside the
+     name already says whether anything is connected. */
+  .status #status-text { display: none; }
+  .topbar { gap: 8px; }
+}
+
 /* ---- appearance ---- */
 
 /* Choosing a scheme is looking, not reading. The presets are shown as the

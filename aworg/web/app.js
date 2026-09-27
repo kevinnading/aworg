@@ -93,6 +93,7 @@ async function boot() {
   startActivities();
   startLivingLog();
   startPanes();
+  startRail();
   watchPreviewSize();
 }
 
@@ -140,6 +141,7 @@ async function refreshPanes() {
     const at = app.panes.findIndex((pane) => pane.id === id);
     if (at >= 0) app.panes[at] = fresh;
     repaintPane(id);
+    paintRail();
   }
 }
 
@@ -364,6 +366,8 @@ async function refreshLivingLog() {
   if (document.querySelector(".log-resolver")) return;
 
   repaintPane("log");
+  // New entries are the commonest reason a rail badge should change.
+  paintRail();
 }
 
 async function refresh() {
@@ -1567,6 +1571,191 @@ function buildPanes() {
   // The listing is cloned fresh from its template here, so the drop handlers
   // have to be put back on the copy that is actually in the page.
   wireWorkspaceDrop();
+  // The rail names the same panes, so it is rebuilt with them.
+  buildRail();
+}
+
+/* ---------- the phone ---------- */
+
+/* A rail of collapsed headers, and one pane open at a time over the chat.
+ *
+ * Stacked in a single column, nine panes are a wall in front of the only
+ * thing the owner came for: the conversation sits fifth in document order,
+ * behind an empty preview, a file listing, "No plan yet" and "No workers
+ * running". On a desktop those sit *beside* the chat and cost nothing. On a
+ * phone they cost everything.
+ *
+ * So on a phone the panes stop being places and become a list you reach
+ * into. The conversation is what you land on; the rail is above it, every
+ * pane named and always visible; tapping one opens it over the chat and
+ * tapping it again puts it back. One at a time, because two half-panes on a
+ * phone is the same wall in miniature.
+ *
+ * **The panes themselves never move.** This adds a rail and sets an
+ * attribute; the pane nodes stay exactly where buildPanes put them, so
+ * every handler, every paint function and every bit of pane state carries
+ * on working untouched. Everything that makes it look different lives in
+ * one media query, which is what keeps the desktop arrangement safe from
+ * all of it. */
+
+//: Narrower than this and the rail takes over. Above it, the rail is
+//: display:none and nothing here has any effect.
+const PHONE = window.matchMedia("(max-width: 640px)");
+
+//: What the owner has already looked at, per pane, so a badge can count
+//: what arrived since. In localStorage because it is a fact about this
+//: person on this phone -- not about the Aworg, which is why it has no
+//: business in the database.
+const SEEN_KEY = "aworg-seen";
+
+//: Panes whose items only ever arrive, newest first, so "how many are new"
+//: is a countable thing rather than a guess.
+//:
+//: Deliberately short. Tasks, Workers and Capabilities change state rather
+//: than growing -- a worker finishing is the same row, differently -- so a
+//: count there would be inventing a number. An unbadged header saying
+//: nothing is better than a badge saying something untrue.
+const COUNTABLE = new Set(["log", "activities"]);
+
+function seenMarks() {
+  try {
+    return JSON.parse(localStorage.getItem(SEEN_KEY) || "{}");
+  } catch (_) {
+    return {};   // unreadable is the same as never looked
+  }
+}
+
+function markSeen(id) {
+  const pane = app.panes.find((candidate) => candidate.id === id);
+  if (!COUNTABLE.has(id)) return;
+  try {
+    const marks = seenMarks();
+    marks[id] = (pane && pane.items && pane.items.length) || 0;
+    localStorage.setItem(SEEN_KEY, JSON.stringify(marks));
+  } catch (_) { /* a private window keeps no marks, and still works */ }
+}
+
+function unseenCount(id) {
+  if (!COUNTABLE.has(id)) return 0;
+  const pane = app.panes.find((candidate) => candidate.id === id);
+  const now = (pane && pane.items && pane.items.length) || 0;
+  const then = seenMarks()[id];
+  // Never opened is not "everything is new" -- that would greet a new owner
+  // with a red number on a log they have no reason to read yet.
+  if (then === undefined) return 0;
+  return Math.max(0, now - then);
+}
+
+function buildRail() {
+  const rail = el("rail");
+  if (!rail) return;
+  const known = new Map();
+  for (const [id, pane] of Object.entries(FIXED_PANES)) known.set(id, { id, ...pane });
+  for (const pane of app.panes) known.set(pane.id, pane);
+
+  // The rail's order is the reading order of the desktop arrangement, so
+  // an owner who knows one knows the other.
+  const order = REGIONS.flatMap((region) => region.panes);
+  rail.replaceChildren(...order
+    .map((id) => known.get(id))
+    .filter(Boolean)
+    .map((pane) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "rail-item";
+      button.dataset.rail = pane.id;
+      button.setAttribute("aria-expanded", "false");
+      button.setAttribute("aria-controls", `pane-${pane.id}`);
+
+      const label = document.createElement("span");
+      label.className = "rail-label";
+      label.textContent = pane.label || pane.id;
+
+      const badge = document.createElement("span");
+      badge.className = "rail-badge";
+      badge.hidden = true;
+
+      button.append(label, badge);
+      button.onclick = () => togglePane(pane.id);
+      return button;
+    }));
+  paintRail();
+}
+
+/* Open one, close the rest. Closing is tapping the open one again.
+ *
+ * The attribute goes on the document rather than on each pane, so the CSS
+ * can say "the open one, and nothing else" in one rule and there is exactly
+ * one place the current state lives. */
+function togglePane(id) {
+  const open = document.documentElement.dataset.openPane;
+  if (open === id) {
+    delete document.documentElement.dataset.openPane;
+  } else {
+    document.documentElement.dataset.openPane = id;
+    markSeen(id);
+    // The pane may have been filled while it was hidden, or never filled at
+    // all if its poll landed before the rail existed.
+    repaintPane(id);
+    paintRail();
+  }
+  paintRail();
+  // Opening replaces what was on screen, so it starts at its own top rather
+  // than wherever the conversation had been scrolled to.
+  if (document.documentElement.dataset.openPane === id) {
+    const body = document.querySelector(`#pane-${id} .pane-body`);
+    if (body) body.scrollTop = 0;
+  }
+}
+
+/* Where the rail ends, so an open pane can start exactly there.
+ *
+ * Measured rather than written down. The header and the rail both wrap
+ * according to how long the project's name is and how many panes exist,
+ * and a number typed into the stylesheet would be right on one Aworg and
+ * wrong on the next. */
+function measureRail() {
+  const rail = el("rail");
+  if (!rail || !PHONE.matches) return;
+  const bottom = Math.round(rail.getBoundingClientRect().bottom);
+  document.documentElement.style.setProperty("--rail-bottom", `${bottom}px`);
+}
+
+function paintRail() {
+  measureRail();
+  const open = document.documentElement.dataset.openPane;
+  for (const button of document.querySelectorAll(".rail-item")) {
+    const id = button.dataset.rail;
+    const isOpen = id === open;
+    button.classList.toggle("open", isOpen);
+    button.setAttribute("aria-expanded", String(isOpen));
+
+    const badge = button.querySelector(".rail-badge");
+    const count = isOpen ? 0 : unseenCount(id);
+    badge.hidden = !count;
+    badge.textContent = count > 99 ? "99+" : String(count);
+  }
+  // The open pane is marked too, because CSS cannot select an ancestor from
+  // the attribute alone without repeating the id in every rule.
+  for (const pane of document.querySelectorAll(".pane")) {
+    pane.toggleAttribute("data-open", pane.dataset.pane === open);
+  }
+}
+
+/* The rail is rebuilt when the panes are, and repainted whenever anything
+ * that could change a count lands. Cheap either way: nine buttons. */
+function startRail() {
+  buildRail();
+  // Crossing the breakpoint is a layout change, not a reload. Without this,
+  // rotating a phone into landscape leaves the rail showing with the
+  // desktop arrangement behind it.
+  const crossed = () => {
+    if (!PHONE.matches) delete document.documentElement.dataset.openPane;
+    paintRail();
+  };
+  window.addEventListener("resize", measureRail);
+  if (PHONE.addEventListener) PHONE.addEventListener("change", crossed);
+  else PHONE.addListener(crossed);            // older WebKit
 }
 
 /* ---------- Activities ---------- */
