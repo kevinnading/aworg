@@ -36,12 +36,6 @@
          foot of this document. -->
     <div class="home">
 
-      <!-- The phone's way in. Every pane as a collapsed header, always
-           visible, one open at a time over the conversation. Built by
-           app.js and display:none on anything wider than a phone, so the
-           desktop arrangement below is untouched by it. -->
-      <nav class="rail" id="rail" aria-label="Panes"></nav>
-
       <div class="workbench">
 
         <!-- The application and what the Resident has made of it. -->
@@ -64,6 +58,15 @@
                aria-controls="activity"></div>
 
           <section class="chat">
+            <!-- On a phone the conversation is one of the stacked panes and
+                 needs a header like the rest of them to be opened by. It
+                 does not exist at any other width: the chat is the surface
+                 there, not a thing you open. -->
+            <button type="button" class="chat-head" id="chat-head"
+                    aria-expanded="true" aria-controls="messages">
+              <h2>Conversation</h2>
+              <span class="pane-badge" hidden></span>
+            </button>
             <div class="messages" id="messages"></div>
             <form class="composer" id="composer">
               <div class="composer-box">
