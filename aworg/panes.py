@@ -61,7 +61,7 @@ PANES: list[dict[str, Any]] = [
         "empty": ("No plan yet.",
                   "Your Resident writes tasks down when a job takes more "
                   "than a couple of steps, so it can pick the work back up "
-                  "later. What it is doing right now appears in Activities."),
+                  "later. What it is doing right now is in the conversation."),
         "blocked": None,
     },
     {
@@ -73,22 +73,25 @@ PANES: list[dict[str, Any]] = [
                   "Work that is worth remembering is written here and stays "
                   "-- a program that stopped on its own, something that "
                   "failed, a plan finished, a Capability you switched off. "
-                  "What is happening right now is in Activities instead."),
+                  "Everything the Resident did is in the conversation; this "
+                  "is the part worth coming back for."),
         "blocked": None,
     },
-    {
-        # Sits beside the Living Log, and the pairing is the point: one says
-        # what is happening, the other says what happened and mattered.
-        # Neither answers the other's question, and a single pane trying to
-        # do both would be a feed the owner cannot read either way.
-        "id": "activities",
-        "label": "Activities",
-        "hint": "What the Resident is doing at this moment.",
-        "available": True,
-        "empty": ("Nothing running.",
-                  "Tool calls and other work appear here while they happen."),
-        "blocked": None,
-    },
+    # There was an Activities pane here, beside the Living Log, showing every
+    # tool call while it ran. It is gone, and what it tracked is not: the
+    # ActivityManager still runs and still feeds Workers.
+    #
+    # The pane went because it was a third copy of something already kept
+    # twice, and the worst of the three. The conversation holds every tool
+    # call permanently, as MCP blocks in the messages table, with its
+    # arguments and its result; the Living Log holds the ones that mattered.
+    # Activities held all of them, in memory, until the next restart -- so
+    # the pane an owner would reach for to ask "what happened" was the one
+    # guaranteed to have forgotten.
+    #
+    # What it was genuinely good at survives where it belongs: a worker's
+    # current tool call, indented under the worker in the Workers pane, which
+    # is the one place that question has no other answer.
     {
         "id": "environment",
         "label": "Environment",

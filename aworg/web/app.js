@@ -1537,10 +1537,9 @@ const REGIONS = [
   { id: "faculties", element: "faculties", axis: "column", panes: ["environment", "capabilities", "skills"] },
   { id: "side", element: "side", axis: "column", panes: ["preview", "workspace"] },
   { id: "activity", element: "activity", axis: "row", panes: ["tasks", "workers"] },
-  // What happened, then what is happening. Reading order follows the way
-  // work actually moves: an Activity that turns out to matter becomes a
-  // Living Log entry, and both halves are visible while it does.
-  { id: "console", element: "console", axis: "row", panes: ["log", "activities"] },
+  // The Living Log alone. Activities used to sit beside it and does not any
+  // more -- see panes.py -- so this takes the width the two shared.
+  { id: "console", element: "console", axis: "row", panes: ["log"] },
 ];
 
 function buildPanes() {
@@ -1566,7 +1565,6 @@ function buildPanes() {
   // The pane is rebuilt whenever the arrangement changes, which throws away
   // whatever was drawn in it. Repainting from state kept outside the DOM is
   // what stops a capability toggle wiping the running Activities list.
-  paintActivities();
   paintWorkers();
   // The listing is cloned fresh from its template here, so the drop handlers
   // have to be put back on the copy that is actually in the page.
@@ -1780,7 +1778,7 @@ async function startActivities() {
     for (const item of current.recent.slice(-ACTIVITY_KEEP_FINISHED)) {
       if (!activityState.known.has(item.id)) activityState.known.set(item.id, item);
     }
-    paintActivities();
+    paintWorkers();
   } catch (_) { /* the stream below is the one that matters */ }
 
   followActivities();
@@ -1809,7 +1807,6 @@ async function followActivities() {
           // straight at the pane it should be in.
           if (isActivityFinished(event.activity)) nudgeLivingLog();
         }
-        paintActivities();
         paintWorkers();
       }
     } catch (_) { /* fall through to the wait below */ }
@@ -1851,32 +1848,6 @@ function trimFinishedActivities() {
 const ACTIVITY_TERMINAL = ["completed", "failed", "cancelled", "timed_out"];
 const isActivityFinished = (item) => ACTIVITY_TERMINAL.includes(item.state);
 
-function paintActivities() {
-  const host = el("activities");
-  if (!host) return;
-
-  const items = [...activityState.known.values()];
-  if (!items.length) {
-    host.replaceChildren(
-      emptyPane({
-        empty_heading: "Nothing running.",
-        empty_detail: "Tool calls and other work appear here while they happen.",
-      })
-    );
-    return;
-  }
-
-  const list = document.createElement("div");
-  list.className = "activity-list";
-  // Newest at the top: the thing that just started is the thing being
-  // watched, and it should not be below a scroll.
-  for (const item of items.reverse()) {
-    list.appendChild(activityRow(item));
-    if (activityState.expanded.has(item.id)) list.appendChild(activityPayload(item));
-  }
-  host.replaceChildren(list);
-}
-
 /* The whole of what a tool returned, for an owner who wants to check.
  *
  * This is the other half of the split the conversation makes. What the model
@@ -1895,11 +1866,11 @@ function activityPayload(item) {
 async function toggleActivityPayload(item) {
   if (activityState.expanded.has(item.id)) {
     activityState.expanded.delete(item.id);
-    paintActivities();
+    paintWorkers();
     return;
   }
   activityState.expanded.add(item.id);
-  paintActivities();
+  paintWorkers();
 
   if (activityState.payloads.has(item.id)) return;
   try {
@@ -1913,7 +1884,7 @@ async function toggleActivityPayload(item) {
     // better than an empty box that looks like the tool returned nothing.
     activityState.payloads.set(item.id, `Could not load: ${error.message}`);
   }
-  paintActivities();
+  paintWorkers();
 }
 
 /* Who is working right now.
@@ -1924,8 +1895,15 @@ async function toggleActivityPayload(item) {
  *
  * Only unfinished workers. A worker that has finished is not working for you
  * any more, and leaving it here would rebuild the permanent list this pane
- * was changed to stop being. What it did remains in Activities, which is the
- * pane that answers what happened. */
+ * was changed to stop being. What it did remains in the conversation, which
+ * is permanent and is where the question "what happened" is answered.
+ *
+ * **And what each one is doing, indented under it.** That is the half of
+ * the Activities pane worth keeping: "three workers are running" is not
+ * information, and "the checker is nine seconds into read_file" is. The
+ * nesting was already there and unused -- a worker's tool calls carry its
+ * id as `parent_id` -- so this only draws a relationship the manager has
+ * always tracked. */
 //: How long a finished worker stays visible. Twelve seconds is long enough
 //: that an owner glancing over sees it happened, and short enough that the
 //: pane still answers "who is working now" rather than "who has ever worked".
@@ -1988,6 +1966,24 @@ function paintWorkers() {
 
     row.append(dot, name, detail);
     list.appendChild(row);
+
+    // What it is doing right now, underneath it.
+    //
+    // Unfinished children only, and the newest of them: a worker runs its
+    // tools one at a time, so there is exactly one answer, and showing the
+    // finished ones as well would turn a pane about now into the scrolling
+    // list this one exists instead of.
+    const doing = [...activityState.known.values()]
+      .filter((a) => a.parent_id === worker.id && !isActivityFinished(a))
+      .pop();
+    if (doing) {
+      const child = activityRow(doing);
+      child.classList.add("child");
+      list.appendChild(child);
+      if (activityState.expanded.has(doing.id)) {
+        list.appendChild(activityPayload(doing));
+      }
+    }
   }
   host.replaceChildren(list);
 }

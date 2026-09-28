@@ -35,13 +35,13 @@ from typing import Any
 #:     | Workspace   |                          | Skills    |
 #:     |             |     Conversation         |           |
 #:     +-------------+--------------------------+-----------+
-#:     |     Living Log      |     Activities               |
+#:     |                 Living Log                         |
 #:     +----------------------------------------------------+
 #:
-#: The console is split rather than being the Living Log alone. What is
-#: happening and what has happened are different questions, and the pair
-#: reads as a pair: an Activity that mattered becomes a log entry, and the
-#: owner can watch that happen from left to right.
+#: The console was a split, with Activities beside the Living Log: what is
+#: happening, and what happened and mattered. Activities is gone -- see
+#: panes.py for why -- so the console is the log alone and has the width the
+#: pair used to share.
 #:
 #: The workspace and the conversation hold the middle, because that is where
 #: the work happens. What the Resident can do is held at the right edge: it
@@ -95,11 +95,12 @@ PANES: dict[str, dict[str, Any]] = {
     "tasks-width": {"default": 45, "min": 20, "max": 75, "unit": "%"},
     # -- the console along the bottom
     "log-height": {"default": 172, "min": 90, "max": 800},
-    #: The split within the console. A proportion rather than pixels, for the
-    #: same reason the columns are: on a wide screen both halves should be
-    #: wider, not just the one that happens to flex. Slightly under half,
-    #: because Activities carries a line per running tool and the Living Log
-    #: carries wrapped sentences.
+    #: What the console's split used to be, when Activities sat beside the
+    #: Living Log. Kept rather than deleted: it is a stored owner setting,
+    #: and `sanitize` drops anything not listed here, so removing the entry
+    #: would silently discard a number from the databases of everyone who
+    #: ever dragged that seam. It is simply no longer read -- the console has
+    #: one pane now, which takes all of it.
     "log-width": {"default": 46, "min": 20, "max": 80, "unit": "%"},
 }
 
