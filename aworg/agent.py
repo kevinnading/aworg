@@ -138,7 +138,9 @@ class AgentLoop:
         for round_number in range(self.max_rounds):
             said: list[str] = []
             calls: list[ToolCall] = []
-            thought = False
+            # The reasoning itself now, not only whether there was
+            # any. Stored with the reply; never sent back.
+            thinking: list[str] = []
 
             try:
                 async for fragment in self.adapter.stream(
@@ -146,7 +148,8 @@ class AgentLoop:
                 ):
                     if should_stop():
                         yield {"type": "stopped", "partial": bool("".join(said).strip())}
-                        self._keep(record, working, "".join(said), [])
+                        self._keep(record, working, "".join(said), [],
+                                   "".join(thinking))
                         return
 
                     if fragment.kind == "waiting":
@@ -156,7 +159,7 @@ class AgentLoop:
                         # forty seconds and one that has hung look identical.
                         yield {"type": "waiting", "text": fragment.text}
                     elif fragment.kind == "thinking":
-                        thought = True
+                        thinking.append(fragment.text)
                         yield {"type": "thinking", "text": fragment.text}
                     elif fragment.kind == "tool_use" and fragment.tool_call:
                         calls.append(fragment.tool_call)
@@ -168,7 +171,8 @@ class AgentLoop:
                 # got halfway and then lost the connection is still something
                 # the owner watched arrive.
                 if "".join(said).strip() or calls:
-                    self._keep(record, working, "".join(said), calls)
+                    self._keep(record, working, "".join(said), calls,
+                               "".join(thinking))
                 yield {"type": "error", "message": str(exc)}
                 return
 
@@ -176,8 +180,9 @@ class AgentLoop:
 
             if not calls:
                 if text.strip():
-                    self._keep(record, working, text, [])
-                elif thought:
+                    self._keep(record, working, text, [],
+                               "".join(thinking))
+                elif thinking:
                     yield {
                         "type": "error",
                         "message": (
@@ -194,7 +199,7 @@ class AgentLoop:
             # before any of them run. If AWORG stops here the conversation
             # still says what was asked for, and the model reading it back
             # sees a request it made rather than prose about one.
-            self._keep(record, working, text, calls)
+            self._keep(record, working, text, calls, "".join(thinking))
 
             history_of_calls.extend(_signature(c) for c in calls)
             repeating = _stuck_on(history_of_calls)
@@ -397,8 +402,14 @@ class AgentLoop:
         working: list[Message],
         text: str,
         calls: list[ToolCall],
+        thinking: str = "",
     ) -> None:
-        """Record one reply, and add it to what the model sees next round."""
+        """Record one reply, and add it to what the model sees next round.
+
+        `thinking` is stored and never returned to the model. It goes in a
+        column of its own rather than into `blocks` for exactly that reason:
+        blocks are what gets sent back, and reasoning deliberately is not.
+        """
         if not text.strip() and not calls:
             return
 
@@ -421,7 +432,8 @@ class AgentLoop:
         # estimate measures; the blocks are what actually gets sent back.
         # See Store.add_message for why both are kept.
         rendered = text if text.strip() else _render_calls(calls)
-        record("resident", rendered, blocks=blocks, model_label=self.label)
+        record("resident", rendered, blocks=blocks, model_label=self.label,
+               thinking=thinking)
         working.append(Message(role="resident", content=rendered, blocks=blocks))
 
     def _keep_results(

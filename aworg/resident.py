@@ -1069,9 +1069,10 @@ class Resident:
             content: str,
             blocks: list[dict[str, Any]] | None = None,
             model_label: str | None = None,
+            thinking: str | None = None,
         ) -> int:
             return self.store.add_message(
-                conversation_id, role, content, model_label, blocks
+                conversation_id, role, content, model_label, blocks, thinking
             )
 
         async def spawn(name: str, task: str):

@@ -724,10 +724,11 @@ button.tiny { padding: 5px 11px; font-size: 13px; }
    only one of the pair that grows when the window does. */
 .activity > .pane:first-child { flex: 0 1 auto; flex-basis: var(--tasks-width); min-width: 0; }
 
-/* Split between the Living Log and Activities: what happened, and what is
-   happening. A row rather than a column so both are readable at once --
-   stacked, the owner would be scrolling one to see the other, and the whole
-   value of the pair is seeing them together. */
+/* The Living Log's strip along the bottom. It was a split, with Activities
+   beside it, until Activities turned out to be a third copy of what the
+   conversation already keeps -- so the log has the whole width now. Still a
+   flex row, because it costs nothing and is what a second pane down here
+   would need. */
 .console {
   flex: none;
   height: var(--log-height);
@@ -736,8 +737,10 @@ button.tiny { padding: 5px 11px; font-size: 13px; }
   background: var(--bg);
   padding: var(--pane-gap);
 }
-/* The Living Log takes a share, so Activities is not the only half that
-   grows with the window. Same reasoning as Tasks in the activity row. */
+/* Harmless now that the log is alone down here -- `flex-basis` of a share
+   with nothing to share against resolves to the whole strip. Kept because
+   it is what a second pane in the console would need, and removing it would
+   be a change to make in reverse later. */
 .console > .pane:first-child { flex: 0 1 auto; flex-basis: var(--log-width); min-width: 0; }
 
 /* The conversation takes the darker ground it sits on rather than being
@@ -2581,6 +2584,47 @@ button.danger:disabled { opacity: 0.4; cursor: not-allowed; }
   object-position: top left;
   background: var(--panel-2);
 }
+
+/* Tool calls while they run.
+ *
+ * Inside the machinery block on purpose: this is the same fact a reload
+ * draws from stored blocks, and an owner should not have to learn two
+ * shapes for it. What differs is only that this one is still happening --
+ * hence a state on each row, and a dot that says so without being read. */
+.tool-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 1px 0;
+}
+.tool-row::before {
+  content: "";
+  flex: none;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--muted);
+  transform: translateY(-1px);
+}
+.tool-row.running::before { background: var(--accent); }
+.tool-row.failed::before { background: var(--danger); }
+
+.tool-name { color: var(--text); font-family: ui-monospace, monospace; }
+.tool-detail {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tool-state { flex: none; opacity: 0.8; }
+.tool-row.running .tool-state { color: var(--accent); }
+.tool-row.failed .tool-state { color: var(--danger); }
+
+/* Running work is worth watching, so it is not clipped away while it
+   happens. The cap below is for a finished block being scrolled back
+   through. */
+.live-tools[open] > .machinery-body { max-height: none; }
 
 .machinery-body {
   margin: 6px 0 0 20px;

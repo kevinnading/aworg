@@ -97,6 +97,16 @@ CREATE TABLE IF NOT EXISTS messages (
     -- for the ordinary case, which is most messages and stays a plain
     -- string. See add_message for why both columns exist.
     blocks          TEXT,
+    -- What the model thought before it answered, when it says so. Kept and
+    -- shown; never sent back. Reasoning is deliberately not replayed to a
+    -- model -- see the note on `_input` in models/openai_responses.py -- so
+    -- this is the one column here that the wire never sees, which is
+    -- exactly why it is a column rather than another kind of block.
+    --
+    -- Before this it was streamed to the browser and then gone: an owner
+    -- who reloaded lost the reasoning behind everything the Resident had
+    -- just done, and could never ask why afterwards.
+    thinking        TEXT,
     model_label     TEXT,
     created_at      TEXT NOT NULL DEFAULT (datetime('now')),
     FOREIGN KEY (conversation_id) REFERENCES conversations(id)
@@ -675,6 +685,10 @@ class Store:
         # stop being. Off is a real choice, though -- every waking is a
         # model call the owner did not ask for and does pay for.
         ("resident", "wake_on_trouble", "INTEGER NOT NULL DEFAULT 1"),
+        # A reply written before this column existed has no reasoning stored
+        # and never will -- it was streamed and lost. NULL says so honestly;
+        # an empty string would claim the model thought nothing.
+        ("messages", "thinking", "TEXT"),
     ]
 
     def _init(self) -> None:
@@ -1176,6 +1190,7 @@ class Store:
         content: str,
         model_label: str | None = None,
         blocks: list[dict[str, Any]] | None = None,
+        thinking: str | None = None,
     ) -> int:
         """Record one message, and return the row id it was given.
 
@@ -1195,12 +1210,16 @@ class Store:
         the second has to be able to point at the first.
         """
         payload = json.dumps(blocks) if blocks else None
+        # Empty is stored as nothing. "The model thought and said none of it"
+        # and "there is no reasoning here" are the same fact, and NULL is the
+        # one that does not put an empty box in the conversation.
+        thought = (thinking or "").strip() or None
         with self._connect() as conn:
             cursor = conn.execute(
                 "INSERT INTO messages "
-                "(conversation_id, role, content, blocks, model_label) "
-                "VALUES (?, ?, ?, ?, ?)",
-                (conversation_id, role, content, payload, model_label),
+                "(conversation_id, role, content, blocks, thinking, model_label) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (conversation_id, role, content, payload, thought, model_label),
             )
             return int(cursor.lastrowid)
 
@@ -1210,7 +1229,8 @@ class Store:
                 # The id comes back because summarising has to record how
                 # far it has read; nothing else uses it, and it is harmless
                 # to the callers that ignore it.
-                "SELECT id, role, content, blocks, model_label, created_at "
+                "SELECT id, role, content, blocks, thinking, model_label, "
+                "created_at "
                 "FROM messages WHERE conversation_id = ? ORDER BY id",
                 (conversation_id,),
             ).fetchall()

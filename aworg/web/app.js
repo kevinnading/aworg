@@ -609,7 +609,7 @@ function renderChat() {
         "<strong>Your Resident is present.</strong>" +
         "It lives on this machine and will remember this conversation. " +
         "It can read and write files, run commands, and fetch things — " +
-        "watch the Activities pane to see what it does.";
+        "and every tool it uses appears here as it happens.";
     } else {
       empty.innerHTML =
         "<strong>No model is connected.</strong>" +
@@ -623,7 +623,8 @@ function renderChat() {
     // Every node remembers which stored row it came from, so the truncation
     // seam can be placed at the actual boundary rather than counted to.
     const node = messageNode(
-      message.role, message.content, message.model_label, message.blocks
+      message.role, message.content, message.model_label, message.blocks,
+      message.thinking
     );
     if (message.id !== undefined) node.dataset.mid = message.id;
     box.appendChild(node);
@@ -666,7 +667,7 @@ const MACHINERY_ICON =
  * Deliberately not a chat bubble. What the Resident *did* is not what it
  * *said*, and rendering the two the same way is what buried the reply under
  * its own plumbing. */
-function machineryNode(role, content, blocks) {
+function machineryNode(role, content, blocks, thinking) {
   const wrapper = document.createElement("details");
   wrapper.className = `msg machinery ${role}`;
 
@@ -686,6 +687,24 @@ function machineryNode(role, content, blocks) {
   body.textContent = content || "";
   if (!(content || "").trim()) body.hidden = true;
   wrapper.appendChild(body);
+
+  // Why it reached for these tools, inside the fold with them.
+  //
+  // A leg that only called tools has no prose, so it is drawn as machinery
+  // and takes this path -- and its reasoning is the reasoning most worth
+  // having, because it is the answer to "why did it do that" rather than to
+  // "why did it say that". Without this it was stored and never shown.
+  if ((thinking || "").trim()) {
+    const thoughts = document.createElement("details");
+    thoughts.className = "thinking";
+    const head = document.createElement("summary");
+    head.textContent = "Thought about this";
+    const stream = document.createElement("div");
+    stream.className = "thinking-stream";
+    stream.textContent = thinking;
+    thoughts.append(head, stream);
+    wrapper.appendChild(thoughts);
+  }
 
   // Pictures a tool returned. Drawn from the same base64 the model was
   // shown, so what the owner opens is exactly what the Resident saw -- not
@@ -754,6 +773,81 @@ function machineryLabel(role, content, blocks) {
   );
 }
 
+/* Tool calls as they happen, in the conversation.
+ *
+ * The agent has always emitted `tool_start` and `tool_end`; nothing listened
+ * to them. So a Resident reading six files showed an empty bubble and a
+ * cursor, and the calls only appeared on a reload, drawn from the blocks the
+ * conversation had stored all along. Live and reloaded were exact
+ * complements: each showed what the other lost.
+ *
+ * That was survivable while the Activities pane drew the same events beside
+ * the chat. It went, and this is the debt it left.
+ *
+ * Built to look like the folded machinery a reload produces, because they
+ * are the same thing seen at different moments, and an owner should not have
+ * to learn two shapes for one fact. */
+function liveToolsNode() {
+  const wrapper = document.createElement("details");
+  wrapper.className = "msg machinery live-tools";
+  wrapper.open = true;
+  const summary = document.createElement("summary");
+  summary.textContent = "Working…";
+  const list = document.createElement("div");
+  list.className = "machinery-body";
+  wrapper.append(summary, list);
+  return wrapper;
+}
+
+function addToolRow(tools, event) {
+  const row = document.createElement("div");
+  row.className = "tool-row running";
+
+  const name = document.createElement("span");
+  name.className = "tool-name";
+  name.textContent = event.name;
+
+  // What it was called with, which is the difference between "it read a
+  // file" and "it read the file I was asking about".
+  const detail = document.createElement("span");
+  detail.className = "tool-detail";
+  detail.textContent = describeArguments(event.arguments);
+
+  const state = document.createElement("span");
+  state.className = "tool-state";
+  state.textContent = "running";
+
+  row.append(name, detail, state);
+  tools.querySelector(".machinery-body").appendChild(row);
+  return row;
+}
+
+function finishToolRow(row, event) {
+  if (!row) return;
+  row.classList.remove("running");
+  row.classList.add(event.is_error ? "failed" : "done");
+  const state = row.querySelector(".tool-state");
+  // The summary when there is one, because "ok" says less than "3 matches"
+  // and the tool already wrote the better sentence.
+  state.textContent = event.summary || (event.is_error ? "failed" : "done");
+}
+
+/* Arguments as one short line. The same job agent.py does server-side for
+ * what it hands the Activity, done again here because the live event carries
+ * the arguments themselves rather than that rendering. */
+function describeArguments(args) {
+  if (!args || typeof args !== "object") return "";
+  return Object.entries(args)
+    .map(([key, value]) => {
+      let shown = typeof value === "string" ? value : JSON.stringify(value);
+      if (shown === undefined) shown = "";
+      if (shown.length > 60) shown = shown.slice(0, 57) + "…";
+      return `${key}=${shown}`;
+    })
+    .join("  ")
+    .slice(0, 160);
+}
+
 /* A line above the reply saying why nothing is arriving.
  *
  * Replaced rather than appended: "waiting 40s" followed by "waiting 20s" is
@@ -776,7 +870,7 @@ function clearReplyNote(node) {
   if (note) note.remove();
 }
 
-function messageNode(role, content, label, blocks) {
+function messageNode(role, content, label, blocks, thinking) {
   // Machinery, not speech.
   //
   // A reply that asked for tools and said nothing was stored with the tool
@@ -785,13 +879,15 @@ function messageNode(role, content, label, blocks) {
   // came out in full underneath -- a skill body, a worker's whole report,
   // 25,000 tokens of a fetched page.
   //
-  // The empty state of this very pane says to watch Activities to see what
-  // the Resident does. This is what makes that true. The record is still
-  // here and still openable, because Activities is runtime state and a
-  // conversation scrolled back through a week later is all there is; it is
-  // simply folded, so the reading order is what was said.
+  // The empty state of this very pane says every tool the Resident uses
+  // appears here. This is what makes that true after the fact, and
+  // liveToolsNode is what makes it true while it happens. The record is
+  // still here and still openable, because a conversation scrolled back
+  // through a week later is all there is -- the Activities that used to
+  // hold a second copy were runtime state, and are gone. It is simply
+  // folded, so the reading order is what was said.
   if (role === "tool" || (role === "resident" && isOnlyCalls(content, blocks))) {
-    return machineryNode(role, content, blocks);
+    return machineryNode(role, content, blocks, thinking);
   }
 
   const wrapper = document.createElement("div");
@@ -817,6 +913,27 @@ function messageNode(role, content, label, blocks) {
     // a persona with no avatar would indent every reply by the width of a
     // face that is not there.
     wrapper.classList.add("faced");
+  }
+
+  // What it thought before it answered, folded shut.
+  //
+  // The live box showed this and then lost it: reasoning was streamed to the
+  // browser and never written down, so reloading cost an owner the whole
+  // explanation of what their Resident had just done. It is stored now, and
+  // this is the same box a week later.
+  //
+  // Shut, because reading a conversation back is reading what was said, and
+  // the reasoning is there for the one time in twenty somebody asks why.
+  if (role === "resident" && (thinking || "").trim()) {
+    const thoughts = document.createElement("details");
+    thoughts.className = "thinking";
+    const head = document.createElement("summary");
+    head.textContent = "Thought about this";
+    const stream = document.createElement("div");
+    stream.className = "thinking-stream";
+    stream.textContent = thinking;
+    thoughts.append(head, stream);
+    wrapper.appendChild(thoughts);
   }
 
   const body = document.createElement("div");
@@ -891,8 +1008,8 @@ async function resumeReply() {
 async function watchTurn(open, text) {
   const box = el("messages");
 
-  const replyNode = messageNode("resident", "", null);
-  const body = replyNode.querySelector(".body");
+  let replyNode = messageNode("resident", "", null);
+  let body = replyNode.querySelector(".body");
   body.classList.add("cursor");
   box.appendChild(replyNode);
   box.scrollTop = box.scrollHeight;
@@ -901,6 +1018,12 @@ async function watchTurn(open, text) {
   let collected = "";
   let thinking = "";
   let failed = false;
+  //: The live tool block for the current leg, and the row each running call
+  //: is drawing into. A leg is reply text, then the tools it asked for, then
+  //: the next leg's text -- so a block belongs to one leg and the arrival of
+  //: fresh text after tools is what closes it.
+  let tools = null;
+  const toolRows = new Map();
 
   // While the model thinks, the thinking is the thing to show -- open, live,
   // with the seconds ticking -- because a blinking cursor over an empty
@@ -978,8 +1101,41 @@ async function watchTurn(open, text) {
           stream.textContent = thinking;
           stream.scrollTop = stream.scrollHeight;
           keepAtBottom(box, following);
+        } else if (event.type === "tool_start") {
+          if (!tools) {
+            tools = liveToolsNode();
+            box.appendChild(tools);
+          }
+          toolRows.set(event.activity, addToolRow(tools, event));
+          keepAtBottom(box, following);
+        } else if (event.type === "tool_end") {
+          finishToolRow(toolRows.get(event.activity), event);
+          const left = tools
+            ? tools.querySelectorAll(".tool-row.running").length
+            : 0;
+          if (tools && !left) {
+            const done = tools.querySelectorAll(".tool-row").length;
+            tools.querySelector("summary").textContent =
+              `${done} tool call${done === 1 ? "" : "s"}`;
+            // Folded once they are finished. Running work is worth watching;
+            // finished work is worth having, and the reply is what the owner
+            // is waiting for.
+            tools.open = false;
+          }
+          keepAtBottom(box, following);
         } else if (event.type === "delta") {
         clearReplyNote(replyNode);
+          // Text after tools is the next leg, so it needs its own bubble
+          // rather than being appended to what was said before them.
+          if (tools) {
+            tools = null;
+            toolRows.clear();
+            replyNode = messageNode("resident", "", null);
+            body = replyNode.querySelector(".body");
+            body.classList.add("cursor");
+            collected = "";
+            box.appendChild(replyNode);
+          }
           if (!replyNode.isConnected) box.appendChild(replyNode);
           collected += event.text;
           app.contextStreamed = estimateTokens(collected);
