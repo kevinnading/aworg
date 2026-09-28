@@ -107,6 +107,10 @@ CREATE TABLE IF NOT EXISTS messages (
     -- who reloaded lost the reasoning behind everything the Resident had
     -- just done, and could never ask why afterwards.
     thinking        TEXT,
+    -- How long that reasoning took, in seconds. The interface shows it
+    -- live and would otherwise have to say something vaguer afterwards
+    -- about the same block of text.
+    thinking_for    REAL,
     model_label     TEXT,
     created_at      TEXT NOT NULL DEFAULT (datetime('now')),
     FOREIGN KEY (conversation_id) REFERENCES conversations(id)
@@ -689,6 +693,7 @@ class Store:
         # and never will -- it was streamed and lost. NULL says so honestly;
         # an empty string would claim the model thought nothing.
         ("messages", "thinking", "TEXT"),
+        ("messages", "thinking_for", "REAL"),
     ]
 
     def _init(self) -> None:
@@ -1191,6 +1196,7 @@ class Store:
         model_label: str | None = None,
         blocks: list[dict[str, Any]] | None = None,
         thinking: str | None = None,
+        thinking_for: float | None = None,
     ) -> int:
         """Record one message, and return the row id it was given.
 
@@ -1217,9 +1223,11 @@ class Store:
         with self._connect() as conn:
             cursor = conn.execute(
                 "INSERT INTO messages "
-                "(conversation_id, role, content, blocks, thinking, model_label) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                (conversation_id, role, content, payload, thought, model_label),
+                "(conversation_id, role, content, blocks, thinking, thinking_for, "
+                "model_label) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (conversation_id, role, content, payload, thought,
+                 thinking_for if thought else None, model_label),
             )
             return int(cursor.lastrowid)
 
@@ -1229,8 +1237,8 @@ class Store:
                 # The id comes back because summarising has to record how
                 # far it has read; nothing else uses it, and it is harmless
                 # to the callers that ignore it.
-                "SELECT id, role, content, blocks, thinking, model_label, "
-                "created_at "
+                "SELECT id, role, content, blocks, thinking, thinking_for, "
+                "model_label, created_at "
                 "FROM messages WHERE conversation_id = ? ORDER BY id",
                 (conversation_id,),
             ).fetchall()

@@ -20,6 +20,8 @@ what those mean.
 
 from __future__ import annotations
 
+import time
+
 from dataclasses import replace
 from typing import Any, AsyncIterator, Callable, Iterable
 
@@ -141,6 +143,12 @@ class AgentLoop:
             # The reasoning itself now, not only whether there was
             # any. Stored with the reply; never sent back.
             thinking: list[str] = []
+            # When the reasoning began, and how long it lasted. The
+            # interface has always shown 'Thought for 12s' live and
+            # then lost the number; storing it is what lets the same
+            # box read the same way a week later.
+            thinking_at: float | None = None
+            thinking_for: float | None = None
 
             try:
                 async for fragment in self.adapter.stream(
@@ -149,7 +157,7 @@ class AgentLoop:
                     if should_stop():
                         yield {"type": "stopped", "partial": bool("".join(said).strip())}
                         self._keep(record, working, "".join(said), [],
-                                   "".join(thinking))
+                                   "".join(thinking), thinking_for)
                         return
 
                     if fragment.kind == "waiting":
@@ -159,11 +167,15 @@ class AgentLoop:
                         # forty seconds and one that has hung look identical.
                         yield {"type": "waiting", "text": fragment.text}
                     elif fragment.kind == "thinking":
+                        if thinking_at is None:
+                            thinking_at = time.monotonic()
                         thinking.append(fragment.text)
                         yield {"type": "thinking", "text": fragment.text}
                     elif fragment.kind == "tool_use" and fragment.tool_call:
                         calls.append(fragment.tool_call)
                     else:
+                        if thinking_at is not None and thinking_for is None:
+                            thinking_for = time.monotonic() - thinking_at
                         said.append(fragment.text)
                         yield {"type": "delta", "text": fragment.text}
             except ModelError as exc:
@@ -172,16 +184,19 @@ class AgentLoop:
                 # the owner watched arrive.
                 if "".join(said).strip() or calls:
                     self._keep(record, working, "".join(said), calls,
-                               "".join(thinking))
+                               "".join(thinking), thinking_for)
                 yield {"type": "error", "message": str(exc)}
                 return
+
+            if thinking_at is not None and thinking_for is None:
+                thinking_for = time.monotonic() - thinking_at
 
             text = "".join(said)
 
             if not calls:
                 if text.strip():
                     self._keep(record, working, text, [],
-                               "".join(thinking))
+                               "".join(thinking), thinking_for)
                 elif thinking:
                     yield {
                         "type": "error",
@@ -199,7 +214,8 @@ class AgentLoop:
             # before any of them run. If AWORG stops here the conversation
             # still says what was asked for, and the model reading it back
             # sees a request it made rather than prose about one.
-            self._keep(record, working, text, calls, "".join(thinking))
+            self._keep(record, working, text, calls, "".join(thinking),
+                       thinking_for)
 
             history_of_calls.extend(_signature(c) for c in calls)
             repeating = _stuck_on(history_of_calls)
@@ -403,6 +419,7 @@ class AgentLoop:
         text: str,
         calls: list[ToolCall],
         thinking: str = "",
+        thinking_for: float | None = None,
     ) -> None:
         """Record one reply, and add it to what the model sees next round.
 
@@ -433,7 +450,7 @@ class AgentLoop:
         # See Store.add_message for why both are kept.
         rendered = text if text.strip() else _render_calls(calls)
         record("resident", rendered, blocks=blocks, model_label=self.label,
-               thinking=thinking)
+               thinking=thinking, thinking_for=thinking_for)
         working.append(Message(role="resident", content=rendered, blocks=blocks))
 
     def _keep_results(

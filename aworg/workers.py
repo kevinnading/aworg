@@ -216,7 +216,8 @@ async def run_worker(
     said: list[str] = []
 
     def record(role: str, content: str, blocks: Any = None,
-               model_label: Any = None, thinking: Any = None) -> int:
+               model_label: Any = None, thinking: Any = None,
+               thinking_for: Any = None) -> int:
         # Thrown away with the worker. Nothing a worker says enters the
         # owner's conversation except through the result the Resident reads
         # -- its reasoning least of all, which is why `thinking` is taken and

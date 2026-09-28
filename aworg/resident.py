@@ -1070,9 +1070,11 @@ class Resident:
             blocks: list[dict[str, Any]] | None = None,
             model_label: str | None = None,
             thinking: str | None = None,
+            thinking_for: float | None = None,
         ) -> int:
             return self.store.add_message(
-                conversation_id, role, content, model_label, blocks, thinking
+                conversation_id, role, content, model_label, blocks, thinking,
+                thinking_for,
             )
 
         async def spawn(name: str, task: str):

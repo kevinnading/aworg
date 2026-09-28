@@ -624,7 +624,7 @@ function renderChat() {
     // seam can be placed at the actual boundary rather than counted to.
     const node = messageNode(
       message.role, message.content, message.model_label, message.blocks,
-      message.thinking
+      message.thinking, message.thinking_for
     );
     if (message.id !== undefined) node.dataset.mid = message.id;
     box.appendChild(node);
@@ -667,7 +667,7 @@ const MACHINERY_ICON =
  * Deliberately not a chat bubble. What the Resident *did* is not what it
  * *said*, and rendering the two the same way is what buried the reply under
  * its own plumbing. */
-function machineryNode(role, content, blocks, thinking) {
+function machineryNode(role, content, blocks, thinking, seconds) {
   const wrapper = document.createElement("details");
   wrapper.className = `msg machinery ${role}`;
 
@@ -698,7 +698,11 @@ function machineryNode(role, content, blocks, thinking) {
     const thoughts = document.createElement("details");
     thoughts.className = "thinking";
     const head = document.createElement("summary");
-    head.textContent = "Thought about this";
+    // The same sentence the live box ended on, so a reload does not rename
+    // something the owner already watched settle. Without a duration -- a
+    // reply stored before the column existed -- it says the vaguer thing
+    // rather than inventing a number.
+    head.textContent = seconds ? `Thought for ${Math.max(1, Math.round(seconds))}s` : "Thought about this";
     const stream = document.createElement("div");
     stream.className = "thinking-stream";
     stream.textContent = thinking;
@@ -870,7 +874,7 @@ function clearReplyNote(node) {
   if (note) note.remove();
 }
 
-function messageNode(role, content, label, blocks, thinking) {
+function messageNode(role, content, label, blocks, thinking, seconds) {
   // Machinery, not speech.
   //
   // A reply that asked for tools and said nothing was stored with the tool
@@ -887,7 +891,7 @@ function messageNode(role, content, label, blocks, thinking) {
   // hold a second copy were runtime state, and are gone. It is simply
   // folded, so the reading order is what was said.
   if (role === "tool" || (role === "resident" && isOnlyCalls(content, blocks))) {
-    return machineryNode(role, content, blocks, thinking);
+    return machineryNode(role, content, blocks, thinking, seconds);
   }
 
   const wrapper = document.createElement("div");
@@ -928,7 +932,11 @@ function messageNode(role, content, label, blocks, thinking) {
     const thoughts = document.createElement("details");
     thoughts.className = "thinking";
     const head = document.createElement("summary");
-    head.textContent = "Thought about this";
+    // The same sentence the live box ended on, so a reload does not rename
+    // something the owner already watched settle. Without a duration -- a
+    // reply stored before the column existed -- it says the vaguer thing
+    // rather than inventing a number.
+    head.textContent = seconds ? `Thought for ${Math.max(1, Math.round(seconds))}s` : "Thought about this";
     const stream = document.createElement("div");
     stream.className = "thinking-stream";
     stream.textContent = thinking;
