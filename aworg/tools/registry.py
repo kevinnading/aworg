@@ -18,6 +18,7 @@ import ast
 import importlib
 import importlib.util
 import inspect
+import shutil
 import sys
 import types
 from pathlib import Path
@@ -120,6 +121,9 @@ class Registry:
         #: one that was never installed, and the owner who just copied it in
         #: deserves the difference.
         self.rejected: dict[str, str] = {}
+        #: What each installed capability's files looked like at the last
+        #: discovery, so `refresh` can tell which ones changed on disk.
+        self._fingerprints: dict[str, tuple] = {}
         self.discover()
 
     # -- discovery ------------------------------------------------------
@@ -157,6 +161,77 @@ class Registry:
                         "folder of .py files, each declaring NAME, DESCRIPTION "
                         "and run()"
                     )
+        self._fingerprints = self._fingerprint_installed()
+
+    # -- reloading ------------------------------------------------------
+
+    def _fingerprint_installed(self) -> dict[str, tuple]:
+        """Every installed capability folder, and the name, size and time of
+        each Python file in it.
+
+        Cheap enough to take before every turn: a stat per file, and an
+        installed capability is a handful of files. Only .py files count,
+        because they are the only thing a reload changes -- a capability
+        that writes a cache or a log into its own folder must not reload
+        itself by doing so.
+        """
+        found: dict[str, tuple] = {}
+        root = self.installed_root
+        if root is None or not root.is_dir():
+            return found
+        for folder in root.iterdir():
+            if not folder.is_dir() or folder.name.startswith(("_", ".")):
+                continue
+            files: list[tuple] = []
+            try:
+                _python_files(folder, folder, files)
+            except OSError:
+                # Mid-copy, most likely. Read as changed; the next look will
+                # see it finished.
+                files.append(("?", 0, 0))
+            found[folder.name] = tuple(sorted(files))
+        return found
+
+    async def refresh(self) -> list[str]:
+        """Pick up capabilities installed, updated or removed since the last
+        look, without a restart. Returns the ids that changed.
+
+        Asked before every turn, so `aworg get` -- or the owner copying a
+        folder in -- takes effect on the next message. Only the capabilities
+        whose files changed are reloaded: installing Weather must not close
+        the page the Browser has open.
+
+        A changed capability's loaded modules are dropped so the next call
+        imports the new code, all of it. Keeping some would mix versions: a
+        tool already called would run the old file and a tool not yet called
+        would run the new one. Before they go, any of them that defines
+        `unload()` is given the chance to clean up -- the Browser closes its
+        engine there, which would otherwise be orphaned with nobody holding
+        its handle.
+
+        A call already running keeps the module it started with; Python does
+        not take a module away from code that is using it.
+        """
+        current = self._fingerprint_installed()
+        if current == self._fingerprints:
+            return []
+        changed = sorted(
+            identifier for identifier in set(current) | set(self._fingerprints)
+            if current.get(identifier) != self._fingerprints.get(identifier)
+        )
+        for identifier in changed:
+            await _unload_installed(identifier)
+            # Python trusts a cached .pyc whose source has the same size and
+            # the same modified second -- which a quick edit or an update
+            # that changes one character can both produce. Measured: the
+            # reload ran the old code. So the cache goes too.
+            folder = self.installed_root / identifier if self.installed_root else None
+            if folder is not None and folder.is_dir():
+                for cache in list(folder.rglob("__pycache__")):
+                    shutil.rmtree(cache, ignore_errors=True)
+        importlib.invalidate_caches()
+        self.discover()
+        return changed
 
     def _read_capability(self, folder: Path, builtin: bool = True) -> Capability | None:
         meta = _module_constants(folder / "__init__.py")
@@ -362,6 +437,40 @@ class Registry:
             # accepting it costs nothing and keeps simple tools simple.
             result = ToolResult(text=str(result))
         return result
+
+
+def _python_files(folder: Path, top: Path, into: list[tuple]) -> None:
+    """The .py files in a capability, for its fingerprint: the top level,
+    and any subfolder that is a Python package. Not every subfolder -- the
+    Browser keeps a whole Chromium in its own, and walking thousands of
+    engine files every few seconds to find no Python in them is waste."""
+    for entry in folder.iterdir():
+        if entry.is_file() and entry.suffix == ".py":
+            stat = entry.stat()
+            into.append((entry.relative_to(top).as_posix(), stat.st_size, stat.st_mtime_ns))
+        elif (entry.is_dir() and entry.name != "__pycache__"
+              and (entry / "__init__.py").is_file()):
+            _python_files(entry, top, into)
+
+
+async def _unload_installed(identifier: str) -> None:
+    """Drop every loaded module of one installed capability, after letting
+    each that defines `unload()` clean up. A failing unload costs that
+    cleanup, never the reload."""
+    package = f"{INSTALLED_PACKAGE}.{identifier}"
+    names = [name for name in list(sys.modules)
+             if name == package or name.startswith(package + ".")]
+    for name in names:
+        hook = getattr(sys.modules.get(name), "unload", None)
+        if callable(hook):
+            try:
+                result = hook()
+                if inspect.isawaitable(result):
+                    await result
+            except Exception:                                 # noqa: BLE001
+                pass
+    for name in names:
+        sys.modules.pop(name, None)
 
 
 def _load_installed(spec: ToolSpec) -> Any:

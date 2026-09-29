@@ -852,12 +852,19 @@ def create_app(paths: Paths, address: str = "http://127.0.0.1:8420") -> FastAPI:
     # -- the status column ------------------------------------------------
 
     @app.get("/api/panes")
-    def status_panes() -> list[dict[str, Any]]:
+    async def status_panes() -> list[dict[str, Any]]:
         """Every pane in the status column, and what it currently holds.
 
         One request rather than seven. These are read together, and they
         stay together until one of them grows enough to want its own.
+
+        Capabilities are refreshed here too, so one installed with `aworg
+        get` appears in the pane without waiting for a message -- but only
+        between turns. Mid-turn the Resident may be using the very
+        capability that changed, and the next message picks it up anyway.
         """
+        if resident.turn is None or resident.turn.done:
+            await resident.registry.refresh()
         return panes.describe(
             resident.host,
             resident.registry,
@@ -1104,7 +1111,10 @@ def create_app(paths: Paths, address: str = "http://127.0.0.1:8420") -> FastAPI:
             _, trouble = reseed(paths, kind)
             left_behind.extend(trouble)
         if chosen & {"skills", "persona", "capabilities"}:
-            resident.registry.discover()
+            # refresh rather than discover, so capabilities that went away
+            # have their loaded modules dropped (and their browser closed)
+            # rather than lingering in the process.
+            await resident.registry.refresh()
             resident.skills.shipped_names = seeded(paths, "skills")
             resident.skills.discover()
             resident.personas.shipped_names = seeded(paths, "personas")

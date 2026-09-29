@@ -1014,6 +1014,18 @@ class Resident:
         # description is not months old.
         await self.refresh_host()
 
+        # And about to offer it tools, so pick up any capability installed,
+        # updated or removed since the last message -- `aworg get` takes
+        # effect here, not at the next restart.
+        changed = await self.registry.refresh()
+        if changed:
+            self.journal.record(
+                f"Capabilities reloaded: {', '.join(changed)}",
+                kind="capability",
+                detail="Their files changed on disk since the last message, "
+                       "so the new versions were loaded without a restart.",
+            )
+
         # It was said, so it happened. Recorded before attempting a reply --
         # if the model is unreachable, the message should not vanish.
         self.store.add_message(conversation_id, speaker, text)

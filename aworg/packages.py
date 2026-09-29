@@ -14,6 +14,7 @@ worse can be put back.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import io
 import json
@@ -136,6 +137,40 @@ def to_trash(paths: Paths, folder: Path, why: str) -> Path:
     return bin_folder
 
 
+#: Written into every installed package: what the store shipped. On the next
+#: update it is how a file the package brought is told apart from one the
+#: package made after it arrived -- the Browser's downloaded engine, most of
+#: all, which lives in its own folder and is a hundred megabytes nobody
+#: wants to fetch twice.
+MANIFEST = ".aworg-package.json"
+
+
+def _made_here(old: Path, shipped_now: set[str]) -> list[str]:
+    """Top-level entries in the installed copy that the new version does not
+    ship and that were not shipped by the old one either: things the package
+    created. Carried over into the new version rather than binned with the
+    old code."""
+    try:
+        record = json.loads((old / MANIFEST).read_text(encoding="utf-8"))
+        shipped_before = {path.split("/", 1)[0] for path in record.get("files", [])}
+    except (OSError, ValueError):
+        # Put there by hand, before the store: nothing says what came with
+        # it. Code is never carried over -- a tool file the new version
+        # dropped must not come back -- and everything else is.
+        shipped_before = None
+    keep = []
+    for entry in old.iterdir():
+        if entry.name in shipped_now or entry.name in (MANIFEST, "__pycache__"):
+            continue
+        if shipped_before is not None:
+            if entry.name in shipped_before:
+                continue
+        elif entry.suffix == ".py" or entry.name == "__init__.py":
+            continue
+        keep.append(entry.name)
+    return keep
+
+
 def install(paths: Paths, record: dict, version: str, data: bytes) -> Installed:
     name, kind = record["name"], record["type"]
     root = target_root(paths, kind)
@@ -145,14 +180,44 @@ def install(paths: Paths, record: dict, version: str, data: bytes) -> Installed:
     # Unpacked beside the target first, so a failure half way leaves the
     # installed copy exactly as it was.
     staging = root / f".{name}.incoming-{secrets.token_hex(3)}"
+    moved: list[str] = []
     try:
         staging.mkdir()
         unpack(name, data, staging)
+        shipped = sorted(p.relative_to(staging).as_posix() for p in staging.rglob("*") if p.is_file())
         replaced = None
+        if final.exists():
+            for entry in _made_here(final, {p.split("/", 1)[0] for p in shipped}):
+                try:
+                    # A rename, never shutil.move: on Windows a folder with one
+                    # locked file in it makes move fall back to copy-then-delete,
+                    # which deletes everything but the locked file and then
+                    # fails. A rename is all or nothing, and staging sits beside
+                    # the target, so it is always the same disk.
+                    (final / entry).rename(staging / entry)
+                except OSError as exc:
+                    raise GetError(
+                        f"Couldn't move {entry} across to the new version: {exc.strerror or exc}. "
+                        "Something is using it -- for the Browser, that is its engine, so "
+                        "close the browser (close_browser) or stop the Aworg, and try again. "
+                        "Nothing was changed."
+                    ) from None
+                moved.append(entry)
+        (staging / MANIFEST).write_text(json.dumps({
+            "name": name, "type": kind, "version": version,
+            "sha256": record.get("sha256") if version == record.get("latest") else None,
+            "installed_at": time.time(), "files": shipped,
+        }, indent=2), encoding="utf-8")
         if final.exists():
             replaced = to_trash(paths, final, f"replaced by {name} {version} from the store")
         staging.rename(final)
+        moved.clear()
     finally:
+        # Anything carried over goes home before the staging folder is
+        # cleared away, so a failure never costs what the package had made.
+        for back in moved:
+            with contextlib.suppress(OSError):
+                (staging / back).rename(final / back)
         if staging.exists():
             shutil.rmtree(staging, ignore_errors=True)
     return Installed(name, version, kind, final, replaced)
@@ -163,7 +228,8 @@ def describe(result: Installed) -> str:
     if result.replaced:
         lines.append(f"The copy that was there is in the trash at {result.replaced}")
     if result.type == "tool":
-        lines.append("Restart this Aworg to load it. Tools are read once, at startup.")
+        lines.append("A running Aworg loads it before its next message; with the "
+                     "interface open it appears within a few seconds.")
     else:
         lines.append("It's available now. No restart needed.")
     return "\n".join(lines)

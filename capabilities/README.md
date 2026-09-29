@@ -33,10 +33,12 @@ Copy the folder:
 
     cp -r capabilities/chromium ~/.aworg/capabilities/
 
-Then restart the Aworg. Capabilities are discovered once at startup -- unlike
-skills and personas, which are re-read on every request -- so a new one
-appears on the next start rather than immediately. That is deliberate: code
-arriving in a running process should happen at a moment somebody chose.
+A running Aworg picks it up without a restart: before every message, and
+every few seconds while the interface is open, it checks the capabilities
+folder and reloads any capability whose Python files changed. Only the
+changed ones reload, and their old modules are dropped first so versions
+never mix. A module that defines `unload()` is called before it goes --
+Chromium closes its engine there. `aworg get NAME` installs from the store.
 
 A reset with the Capabilities part ticked empties that folder, and nothing
 here is put back automatically, because none of it shipped. Copy in what you

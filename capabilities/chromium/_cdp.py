@@ -749,3 +749,15 @@ def _kill_on_exit() -> None:
 
 
 atexit.register(_kill_on_exit)
+
+
+async def unload() -> None:
+    """Called by AWORG before it drops this capability's modules to load a
+    new version. The engine is closed here because nothing after the reload
+    could reach it: the new modules start with a fresh, empty Browser, and
+    this one would go on running with nobody holding its handle. Safe to
+    call more than once, and every tool module that imported it may be
+    asked to."""
+    if _browser.running or _browser.profile is not None:
+        await _browser.stop()
+    atexit.unregister(_kill_on_exit)
