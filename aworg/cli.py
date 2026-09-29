@@ -137,6 +137,17 @@ def main(argv: list[str] | None = None) -> int:
                  "way it shipped, discarding changes made to them here.",
         )
 
+    get = commands.add_parser(
+        "get", help="Install a skill, tool or persona from the AWORG store",
+    )
+    get.add_argument("name")
+    get.add_argument("--version", help="A specific version, rather than the latest")
+    get.add_argument("--store", help="Another store (default: $AWORG_STORE, or https://aworg.com)")
+    get.add_argument(
+        "--yes", action="store_true",
+        help="Install a tool without asking first",
+    )
+
     commands.add_parser("home", help="Print this Aworg's home directory")
     commands.add_parser(
         "password",
@@ -158,6 +169,50 @@ def main(argv: list[str] | None = None) -> int:
         print(f"    {fresh}")
         print()
         print("Anyone signed in has been signed out.")
+        return 0
+
+    if args.command == "get":
+        from . import packages
+
+        store = packages.store_url(args.store)
+        try:
+            record = packages.lookup(args.name, store)
+            if args.version and args.version not in {v["version"] for v in record.get("versions", [])}:
+                raise packages.GetError(f"{record['name']} has no version {args.version}.")
+            if not record.get("latest"):
+                raise packages.GetError(f"{record['name']} has no version to install.")
+            print(f"{record['name']} {args.version or record['latest']}: "
+                  f"a {record['type']} by {record['owner']}")
+            print(f"    {record['summary']}")
+            if record["type"] == "tool":
+                # Said every time, because it is true every time. A tool is
+                # code that joins this process with everything the Resident
+                # can reach -- and "anything you install runs as AWORG" is
+                # the design, not an oversight to apologise for.
+                print()
+                print("A tool runs as this Aworg: your files, your shell, your network.")
+                print(f"Read it first:  {record['url']}")
+                if not args.yes:
+                    if not sys.stdin.isatty():
+                        print("Not installed. Add --yes to install a tool without being asked.",
+                              file=sys.stderr)
+                        return 1
+                    try:
+                        answer = input("Install it? [y/N] ")
+                    except EOFError:
+                        # isatty() can say yes on Windows when there is no
+                        # one there to answer; no answer is a no.
+                        answer = ""
+                    if answer.strip().lower() not in ("y", "yes"):
+                        print("\nNot installed.")
+                        return 1
+            paths.ensure()
+            version, data = packages.download(record, store, args.version)
+            print()
+            print(packages.describe(packages.install(paths, record, version, data)))
+        except packages.GetError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
         return 0
 
     if args.command in ("install", "init"):
