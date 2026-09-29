@@ -140,7 +140,11 @@ def main(argv: list[str] | None = None) -> int:
     get = commands.add_parser(
         "get", help="Install a skill, tool or persona from the AWORG store",
     )
-    get.add_argument("name")
+    get.add_argument(
+        "name", metavar="TYPE/NAME",
+        help="skills/NAME, tools/NAME or personas/NAME. A bare NAME works "
+             "when only one type has it.",
+    )
     get.add_argument("--version", help="A specific version, rather than the latest")
     get.add_argument("--store", help="Another store (default: $AWORG_STORE, or https://aworg.com)")
     get.add_argument(
@@ -181,8 +185,7 @@ def main(argv: list[str] | None = None) -> int:
                 raise packages.GetError(f"{record['name']} has no version {args.version}.")
             if not record.get("latest"):
                 raise packages.GetError(f"{record['name']} has no version to install.")
-            print(f"{record['name']} {args.version or record['latest']}: "
-                  f"a {record['type']} by {record['owner']}")
+            print(f"{record['id']} {args.version or record['latest']} by {record['owner']}")
             print(f"    {record['summary']}")
             if record["type"] == "tool":
                 # Said every time, because it is true every time. A tool is

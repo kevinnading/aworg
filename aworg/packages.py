@@ -57,23 +57,54 @@ def store_url(override: str | None = None) -> str:
     return (override or os.environ.get("AWORG_STORE") or DEFAULT_STORE).rstrip("/")
 
 
-def lookup(name: str, store: str) -> dict:
-    """The store's record of a package, or a GetError saying why not."""
-    if not NAME.match(name):
-        raise GetError(f"{name!r} isn't a package name.")
+#: The words the store uses for each type, in its URLs and here.
+PLURALS = ("skills", "tools", "personas")
+
+
+def _fetch(url: str, **params: str) -> httpx.Response:
     try:
-        response = httpx.get(f"{store}/api/v1/packages/{name}", timeout=TIMEOUT,
-                             follow_redirects=True)
+        return httpx.get(url, params=params or None, timeout=TIMEOUT, follow_redirects=True)
     except httpx.HTTPError as exc:
-        raise GetError(f"Couldn't reach the store at {store}: {exc}") from None
-    if response.status_code == 404:
-        raise GetError(f"There's no package called {name} in the store.")
-    if response.status_code != 200:
-        raise GetError(f"The store answered {response.status_code} for {name}.")
+        raise GetError(f"Couldn't reach the store: {exc}") from None
+
+
+def _json(response: httpx.Response) -> dict:
     try:
         return response.json()
     except ValueError:
         raise GetError("The store's answer wasn't JSON.") from None
+
+
+def lookup(target: str, store: str) -> dict:
+    """The store's record of a package, or a GetError saying why not.
+
+    `target` is TYPE/NAME -- skills/house-style, tools/weather -- or a bare
+    NAME. Names are unique per type, so a skill and a tool may both be
+    called weather; a bare name is resolved when only one type has it, and
+    otherwise the owner is shown the choices rather than given a guess.
+    """
+    plural, _, name = target.strip().rpartition("/")
+    if plural and plural not in PLURALS:
+        raise GetError(f"{plural!r} isn't a kind of package. Use skills/, tools/ or personas/.")
+    if not NAME.match(name):
+        raise GetError(f"{name!r} isn't a package name.")
+    if not plural:
+        response = _fetch(f"{store}/api/v1/packages", name=name)
+        if response.status_code != 200:
+            raise GetError(f"The store answered {response.status_code} when asked for {name}.")
+        matches = [p["id"] for p in _json(response).get("packages", [])]
+        if not matches:
+            raise GetError(f"There's no package called {name} in the store.")
+        if len(matches) > 1:
+            raise GetError(f"More than one package is called {name}. Say which:\n"
+                           + "\n".join(f"    aworg get {m}" for m in sorted(matches)))
+        plural = matches[0].split("/", 1)[0]
+    response = _fetch(f"{store}/api/v1/packages/{plural}/{name}")
+    if response.status_code == 404:
+        raise GetError(f"There's no package called {plural}/{name} in the store.")
+    if response.status_code != 200:
+        raise GetError(f"The store answered {response.status_code} for {plural}/{name}.")
+    return _json(response)
 
 
 def target_root(paths: Paths, kind: str) -> Path:
@@ -89,12 +120,7 @@ def download(record: dict, store: str, version: str | None) -> tuple[str, bytes]
     entry = next((v for v in record.get("versions", []) if v["version"] == wanted), None)
     if entry is None:
         raise GetError(f"{record['name']} has no version {wanted}.")
-    try:
-        response = httpx.get(f"{store}/api/v1/packages/{record['name']}/download",
-                             params={"version": wanted}, timeout=TIMEOUT,
-                             follow_redirects=True)
-    except httpx.HTTPError as exc:
-        raise GetError(f"The download failed: {exc}") from None
+    response = _fetch(f"{store}/api/v1/packages/{record['id']}/download", version=wanted)
     if response.status_code != 200:
         raise GetError(f"The download failed: the store answered {response.status_code}.")
     digest = hashlib.sha256(response.content).hexdigest()
