@@ -27,10 +27,8 @@ from ._paths import describe
 NAME = "make_directory"
 
 DESCRIPTION = (
-    "Create a folder, including any parent folders it needs. Says so and "
-    "changes nothing if it is already there. Use it to lay out a project "
-    "before writing into it -- writing a file already makes the folders "
-    "above it."
+    "Create a folder, including any parent folders it needs. Writing a file "
+    "already creates the folders above it."
 )
 
 INPUT_SCHEMA = {

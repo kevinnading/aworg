@@ -34,9 +34,8 @@ from ._paths import describe, refuse_if_ours, target
 NAME = "delete_file"
 
 DESCRIPTION = (
-    "Delete a file or folder. It moves to this Aworg's trash rather than "
-    "being destroyed, so it can be recovered -- but the owner will not see "
-    "it in the workspace any more. Say what you removed and why."
+    "Delete a file or folder. It moves to this Aworg's trash, so it can be "
+    "recovered."
 )
 
 INPUT_SCHEMA = {

@@ -10,9 +10,8 @@ from ._cdp import _browser
 NAME = "close_browser"
 
 DESCRIPTION = (
-    "Close the browser and free what it is holding. The next open_page "
-    "starts a fresh one. Worth doing when you have finished looking at "
-    "something; it is not an error to call it when nothing is open."
+    "Close the browser and free what it is holding. The next open_page starts"
+    " a fresh one."
 )
 
 INPUT_SCHEMA = {"type": "object", "properties": {}}

@@ -7,11 +7,7 @@ from ..base import ToolContext, ToolError, ToolResult
 
 NAME = "update_task"
 
-DESCRIPTION = (
-    "Change a task's state as you work: active when you start it, done when "
-    "you have watched it succeed, blocked when you genuinely cannot proceed. "
-    "Never mark something done that you have not verified."
-)
+DESCRIPTION = "Change a task's state, note or detail."
 
 INPUT_SCHEMA = {
     "type": "object",
@@ -21,17 +17,14 @@ INPUT_SCHEMA = {
             "type": "string",
             "enum": ["pending", "active", "blocked", "done", "abandoned"],
             "description": (
-                "active = working on it now. done = finished and verified. "
-                "blocked = cannot proceed, say why in the note. abandoned = "
-                "no longer worth doing."
+                "active = working on it now. done = finished. blocked = "
+                "cannot proceed. abandoned = no longer worth doing."
             ),
         },
         "note": {
             "type": "string",
             "description": (
-                "What happened, for whoever reads this later. Required when "
-                "blocking or abandoning: a task that is stuck without a "
-                "reason cannot be picked up by anyone."
+                "What happened. Required when blocking or abandoning."
             ),
         },
         "detail": {
@@ -82,8 +75,7 @@ async def run(
         )
     if state in NEEDS_REASON and not str(note).strip():
         raise ToolError(
-            f"Marking a task {state} needs a note saying why. Whoever picks "
-            "this up next was not here for the reason."
+            f"Marking a task {state} needs a note saying why."
         )
 
     updated = store.update_task(

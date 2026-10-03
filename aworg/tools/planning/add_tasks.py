@@ -21,10 +21,8 @@ from ..base import ToolContext, ToolError, ToolResult
 NAME = "add_tasks"
 
 DESCRIPTION = (
-    "Write down what you intend to do, as a list of tasks. Use this before "
-    "starting anything that takes more than a couple of steps, and add to it "
-    "whenever you discover work you had not planned for. Your plan survives "
-    "even when this conversation no longer fits in your context."
+    "Add tasks to your plan. The owner sees it in the Tasks pane, and your "
+    "open tasks are in your prompt every turn."
 )
 
 INPUT_SCHEMA = {
@@ -43,10 +41,8 @@ INPUT_SCHEMA = {
                     "detail": {
                         "type": "string",
                         "description": (
-                            "Everything needed to do this later, written for "
-                            "a reader who was not present: exact paths, exact "
-                            "requirements. You may be picking this up when "
-                            "the conversation that produced it is gone."
+                            "Everything needed to do this later: exact paths,"
+                            " exact requirements."
                         ),
                     },
                     "parent": {

@@ -32,10 +32,7 @@ from ..base import ToolContext, ToolError, ToolResult, resolve_path
 NAME = "read_image"
 
 DESCRIPTION = (
-    "Look at an image file -- PNG, JPEG, GIF or WebP. Use it whenever the "
-    "owner points you at a picture: a mockup to match, a screenshot of "
-    "something wrong, a design, a photo. You see the image itself, not a "
-    "description of it. For text files use read_file."
+    "Look at an image file: PNG, JPEG, GIF or WebP. You see the image itself."
 )
 
 INPUT_SCHEMA = {

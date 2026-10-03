@@ -37,12 +37,9 @@ INPUT_SCHEMA = {
         "script": {
             "type": "string",
             "description": (
-                "The JavaScript to run. A single expression comes back as "
-                "its value -- 'document.querySelectorAll(\"li\").length', "
-                "'getComputedStyle(document.body).backgroundColor'. Several "
-                "statements run as a function body, so end with an explicit "
-                "`return`. Ask for a small, specific value rather than a "
-                "whole object graph."
+                "The JavaScript to run. A single expression comes back as its"
+                " value; several statements run as a function body, so end "
+                "with `return`."
             ),
         },
     },

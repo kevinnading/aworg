@@ -20,10 +20,9 @@ from ._cdp import BrowserError, browser
 NAME = "page_requests"
 
 DESCRIPTION = (
-    "List what the open page fetched and what came back: method, URL, "
-    "status, type and size. Use it when something is missing or empty and "
-    "the console says nothing. Give 'contains' to narrow it to one endpoint, "
-    "and 'body' to read that response's content."
+    "List what the open page fetched and what came back: method, URL, status,"
+    " type and size. 'contains' narrows it to one endpoint, 'body' reads that"
+    " response."
 )
 
 INPUT_SCHEMA = {

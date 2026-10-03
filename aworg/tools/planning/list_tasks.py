@@ -14,9 +14,8 @@ from ..base import ToolContext, ToolError, ToolResult, size_for_model
 NAME = "list_tasks"
 
 DESCRIPTION = (
-    "Read your plan in full, including each task's detail and id. Your open "
-    "tasks are already summarised for you every turn, so use this when you "
-    "need the detail of one, or want to see what is already finished."
+    "Read your plan in full, with each task's detail and id. Open tasks are "
+    "already in your prompt."
 )
 
 INPUT_SCHEMA = {

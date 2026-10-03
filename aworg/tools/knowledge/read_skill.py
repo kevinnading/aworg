@@ -57,9 +57,7 @@ async def run(context: ToolContext, skill: str = "") -> ToolResult:
             why = library.standing(exists)[1]
             raise ToolError(
                 f"{exists.name} exists but is not available to you: {why}. "
-                "Carry on without it rather than asking again. If the job "
-                "genuinely needs it, say so to the owner -- the switch is "
-                "theirs, not yours."
+                "The switch is in the owner's Skills pane."
             )
         known = ", ".join(s.name for s in library.offered()) or "none"
         raise ToolError(f"There is no skill called {skill!r}. You have: {known}.")

@@ -161,7 +161,8 @@ _SHELL_CANDIDATES = ("pwsh", "powershell", "bash")
 def _default_shell() -> str:
     """The shell a command should be run through on this machine.
 
-    Not reported to anyone, and still gathered. execute_command and
+    Reported in the environment block, so the Resident knows what syntax its
+    commands are read in. execute_command and
     start_process read the shell out of these facts rather than deciding for
     themselves, so the shell chosen here and the shell commands actually run
     through are the same one by construction.
@@ -313,6 +314,10 @@ def environment(facts: dict[str, Any], workspace: Any = None) -> list[tuple[str,
     # the owner has not dragged taller.
     pairs.append(("AWORG", f"version {facts.get('aworg', 'unknown')}"))
     pairs.append(("Python", f"{facts['python']} at {facts['python_executable']}"))
+    # What execute_command and start_process actually run through: the
+    # gathered shell on Windows, /bin/sh everywhere else (see their _argv).
+    shell = facts.get("shell") if sys.platform == "win32" else "/bin/sh"
+    pairs.append(("Shell", f"{shell}, for execute_command and start_process"))
     pairs.append(("Machine", f"{facts['os']} {facts['release']} ({facts['version']})"))
     pairs.append((
         "Privileges",
@@ -346,8 +351,8 @@ def summary(facts: dict[str, Any], workspace: Any = None) -> str:
         "WHERE YOU ARE",
         "You are the Resident of an Aworg. The owner uses it through a "
         "browser: they see your tool calls, your plan (Tasks pane), the "
-        "workspace, what is running (Project pane) and the Living Log. You "
-        "cannot see their screen.",
+        "Living Workspace, a live preview of what you build, and the Living "
+        "Log. You cannot see their screen.",
         "",
         "Your tools come from Capabilities, which the owner switches on and "
         "off in the Capabilities pane; skills likewise in the Skills pane. "

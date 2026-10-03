@@ -8,10 +8,8 @@ from ..base import ToolContext, ToolError, ToolResult
 NAME = "list_concerns"
 
 DESCRIPTION = (
-    "See what is still outstanding in the Living Log: the failures and "
-    "alarms nobody has closed out. Use it when you pick up work after a "
-    "break, when the owner asks what is wrong, or before you report that "
-    "everything is well. Each one carries an id you can resolve it by."
+    "List what is still open in the Living Log: failures and alarms nobody "
+    "has closed out, each with an id."
 )
 
 INPUT_SCHEMA = {
@@ -19,7 +17,7 @@ INPUT_SCHEMA = {
     "properties": {
         "limit": {
             "type": "integer",
-            "description": "How many to show. The default is usually right.",
+            "description": "How many to show.",
         },
     },
 }

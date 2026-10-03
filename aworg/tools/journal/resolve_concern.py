@@ -8,11 +8,7 @@ from ..base import ToolContext, ToolError, ToolResult
 NAME = "resolve_concern"
 
 DESCRIPTION = (
-    "Close one open concern in the Living Log, saying what you did about "
-    "it. Use it when you have fixed the thing, when you recovered from it "
-    "at the time and it needs no further work, or when it turns out not to "
-    "have been trouble at all. Always say which of those it was -- a "
-    "concern closed without an account is worse than one left open."
+    "Close one open concern in the Living Log, saying what was done about it."
 )
 
 INPUT_SCHEMA = {
@@ -25,9 +21,8 @@ INPUT_SCHEMA = {
         "resolution": {
             "type": "string",
             "description": (
-                "What actually happened to it: what you fixed, how you "
-                "recovered, or why it was never a problem. Whoever reads "
-                "this back was not here."
+                "What you fixed, how it recovered, or why it was never a "
+                "problem."
             ),
         },
     },
@@ -80,10 +75,8 @@ async def run(context: ToolContext, entry: int = 0, resolution: str = "") -> Too
     account = " ".join(str(resolution).split())
     if len(account) < MIN_RESOLUTION:
         raise ToolError(
-            "Say what happened to it. A concern closed with "
-            f"{account!r} tells whoever reads this back nothing at all -- "
-            "what did you fix, how did you recover, or why was it never "
-            "trouble?"
+            f"A resolution of {account!r} is too short. Say what was fixed, "
+            "how it recovered, or why it was never trouble."
         )
 
     closed = journal.resolve(entry_id, by=context.source, resolution=account)

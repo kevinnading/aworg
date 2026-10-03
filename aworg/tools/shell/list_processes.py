@@ -9,8 +9,7 @@ NAME = "list_processes"
 
 DESCRIPTION = (
     "List the programs you started with start_process, whether each is still "
-    "running, and read their recent output. Use this to check on a server "
-    "you started, or to find out why one stopped."
+    "running, and their recent output."
 )
 
 INPUT_SCHEMA = {

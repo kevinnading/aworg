@@ -12,10 +12,8 @@ NAME = "open_page"
 
 DESCRIPTION = (
     "Open a URL in a real browser and read the page after its JavaScript has "
-    "run. Use this rather than http_request whenever the page is an "
-    "application rather than a document -- including anything you built "
-    "yourself. Returns the page's text, its links and controls, and anything "
-    "the console or the network complained about. The page stays open for "
+    "run. Returns the page's text, its links and controls, and anything the "
+    "console or the network complained about. The page stays open for "
     "read_page, page_do and screenshot."
 )
 
@@ -43,10 +41,8 @@ INPUT_SCHEMA = {
         "screen": {
             "type": "string",
             "description": (
-                "What kind of screen to open it on: 'phone' (390x844, touch), "
-                "'tablet' (820x1180, touch) or 'desktop' (1280x900, the "
-                "default). Use phone to check that something you built works "
-                "at the width most people will open it at."
+                "Screen to open it on: 'phone' (390x844, touch), 'tablet' "
+                "(820x1180, touch) or 'desktop' (1280x900, the default)."
             ),
         },
         "width": {

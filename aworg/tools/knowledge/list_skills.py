@@ -20,11 +20,8 @@ from ..base import ToolContext, ToolError, ToolResult
 NAME = "list_skills"
 
 DESCRIPTION = (
-    "See every skill installed on this machine, switched on or not, with "
-    "what each is for. Use it when a job looks like it should have a "
-    "procedure and you were offered none, or when the owner asks what this "
-    "Aworg knows. You cannot read or switch on a skill that is off -- but "
-    "you can tell the owner it exists and why it would help."
+    "List every skill installed, switched on or not, with what each is for. "
+    "One that is off cannot be read until the owner switches it on."
 )
 
 INPUT_SCHEMA = {"type": "object", "properties": {}}

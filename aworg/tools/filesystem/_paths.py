@@ -75,10 +75,8 @@ def refuse_if_ours(context: ToolContext, path: Path, verb: str) -> None:
         # those has no past tense that a suffix will find.
         raise ToolError(
             f"Refusing to {verb} the Living Workspace itself ({workspace}). "
-            "Everything inside it can be. If the owner wants it emptied, that "
-            "is Reset in Settings -- it counts what will go, asks them to "
-            "confirm with a code, backs up both databases and stops anything "
-            "still running. Point them at it rather than doing it here."
+            "Everything inside it can be. Emptying the workspace is Reset in "
+            "the owner's Settings."
         )
 
     raise ToolError(

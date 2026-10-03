@@ -28,10 +28,12 @@ from ..base import ToolContext, ToolError, ToolResult, resolve_path, size_for_mo
 NAME = "start_process"
 
 DESCRIPTION = (
-    "Start a long-running program -- a web server, a dev server, a watcher -- "
-    "and leave it running in the background. Returns its id and whatever it "
-    "printed as it started. Use this instead of execute_command for anything "
-    "that is not meant to exit."
+    "Start a long-running program -- a web server, a dev server, a watcher --"
+    " and leave it running in the background. Returns its id and whatever it "
+    "printed as it started. It gets AWORG_LOG_URL and AWORG_LOG_TOKEN in its "
+    "environment: POST JSON {summary, severity, where, detail} there with the"
+    " token in an X-Aworg-Token header, and the failure lands in the Living "
+    "Log."
 )
 
 INPUT_SCHEMA = {

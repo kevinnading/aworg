@@ -19,8 +19,7 @@ NAME = "read_page"
 
 DESCRIPTION = (
     "Read the page that is currently open, without loading it again. Give a "
-    "CSS selector to read one part of it, or nothing to read the whole page. "
-    "Use this after page_do, or to look again at a page that updates itself."
+    "CSS selector to read one part of it, or nothing for the whole page."
 )
 
 INPUT_SCHEMA = {

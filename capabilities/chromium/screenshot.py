@@ -34,12 +34,8 @@ NAME = "screenshot"
 
 DESCRIPTION = (
     "Take a picture of the page that is open. It is saved as a PNG in the "
-    "Living Workspace and you are shown it, so this is how you find out "
-    "what a page actually looks like -- layout, spacing, whether something "
-    "renders correctly. Pass for_owner when the owner asked to see it, "
-    "which puts it in the chat rather than folded away. Never describe how "
-    "a page looks from a screenshot you did not see; for what a page says "
-    "rather than how it looks, read_page is cheaper and more exact."
+    "Living Workspace and you are shown it. for_owner puts it in the chat for"
+    " the owner; otherwise it is folded away with the other results."
 )
 
 INPUT_SCHEMA = {
@@ -62,19 +58,13 @@ INPUT_SCHEMA = {
         "for_owner": {
             "type": "boolean",
             "description": (
-                "Put the picture in the chat where the owner will see it "
-                "straight away. Use it when they asked to see something. "
-                "Leave it off when you are checking your own work -- those "
-                "are still there, folded away with the other results."
+                "Show it to the owner in the chat. Defaults to false."
             ),
         },
         "only_save": {
             "type": "boolean",
             "description": (
-                "Save the file without showing it to you. Defaults to false. "
-                "Only for when the owner asked for a file and you have no "
-                "need to see the page yourself -- with this on you will not "
-                "have seen it, and must not describe it."
+                "Save the file without showing it to you. Defaults to false."
             ),
         },
     },

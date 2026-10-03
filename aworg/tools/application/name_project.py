@@ -24,11 +24,8 @@ from ..base import ToolContext, ToolError, ToolResult
 NAME = "name_project"
 
 DESCRIPTION = (
-    "Name what you are building, and set its version. The owner sees this "
-    "at the top of the Application pane. Do it once you know what the job "
-    "is -- an owner should not be looking at 'Unnamed Project' after you "
-    "have understood what they asked for. Raise the version when you finish "
-    "something big enough that the owner would want to tell the two apart."
+    "Name what you are building, and set its version. The name titles the "
+    "preview pane the owner watches."
 )
 
 INPUT_SCHEMA = {
@@ -94,7 +91,7 @@ async def run(context: ToolContext, name: str = "", version: str = "") -> ToolRe
     return ToolResult(
         text=(
             f"The project is now {after['name']}, version {after['version']}. "
-            "The owner sees this at the top of the Application pane."
+            "It titles the owner's preview pane."
         ),
         summary=f"{after['name']} v{after['version']}",
     )

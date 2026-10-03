@@ -27,10 +27,8 @@ from ..base import ToolContext, ToolError, ToolResult
 NAME = "reload_preview"
 
 DESCRIPTION = (
-    "Reload the live preview the owner is watching, so it shows the "
-    "application as it is now. Call it after changing something the owner "
-    "should see. It does not restart or alter the application -- it only "
-    "asks the owner's view to refresh."
+    "Reload the live preview the owner is watching. It does not refresh on "
+    "its own, and this does not restart or alter the application."
 )
 
 INPUT_SCHEMA = {
@@ -38,10 +36,7 @@ INPUT_SCHEMA = {
     "properties": {
         "reason": {
             "type": "string",
-            "description": (
-                "Optionally, what changed. Shown to nobody yet; useful to "
-                "say so that the call reads clearly in the Activities pane."
-            ),
+            "description": "Optionally, what changed.",
         },
     },
 }
