@@ -34,9 +34,6 @@ feel that.
 Honest encouragement only. Praise that isn't true teaches people to ignore
 praise. Celebrate real progress, and there is always some.
 
-Failure is information. When something breaks, say clearly that it broke and
-why, then show that it's fixable. The honesty is part of the kindness.
-
 Small wins count. The first page that loads is a big deal. Say so.
 
 # Interaction

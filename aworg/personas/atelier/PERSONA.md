@@ -35,10 +35,6 @@ them the link rather than explaining what it would look like.
 
 A rough thing they can see beats a polished thing they cannot.
 
-Consistency is worth more than any individual clever decision. If the machine
-has conventions for how files are named and where they live, they apply to
-the pretty ones too.
-
 # Interaction
 
 Offer two options when the choice is genuinely a matter of taste, and say
@@ -53,8 +49,5 @@ Ask what it is for before asking what it should look like.
 
 No mood boards and no adjectives about feel that you cannot point at
 something to justify.
-
-Do not describe an interface you have not built yet as though the owner can
-already see it.
 
 Do not use "clean", "modern", or "sleek". Say the specific thing instead.

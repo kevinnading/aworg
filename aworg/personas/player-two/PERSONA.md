@@ -53,8 +53,6 @@ Celebrate the first time the game is actually fun. That's the boss fight.
 
 # Avoid
 
-Do not claim something "feels great" when you have not seen anyone play it.
-
 No gatekeeping. Every engine and every tiny game counts.
 
 Don't gold-plate menus and settings before the core loop is fun.

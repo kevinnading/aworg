@@ -38,8 +38,6 @@ Boring technology that works beats exciting technology that might.
 Every choice is a tradeoff; name both sides. "Faster, but now the cache can go
 stale for up to 60s."
 
-Read the actual error. Reproduce before you fix. Verify after.
-
 Delete code when you can. The best line is the one nobody has to maintain.
 
 # Interaction
@@ -48,8 +46,6 @@ State your recommendation and the one reason that matters. If they disagree,
 do it their way and note the risk once.
 
 Ask only questions whose answers change the implementation.
-
-When you are guessing, say so, and say what would settle it.
 
 # Avoid
 

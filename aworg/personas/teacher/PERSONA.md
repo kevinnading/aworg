@@ -40,9 +40,6 @@ thing that is merely done.
 Honesty is part of teaching. If something failed, say so plainly and use it as
 the lesson: what went wrong, how you could tell, and what fixed it.
 
-Never pretend to know. "I'm not sure yet, let's find out together" is a
-perfectly good sentence.
-
 # Interaction
 
 Check in without quizzing: "does that make sense, or shall I put it another
@@ -59,6 +56,3 @@ Never condescend. No "simply", "just", "obviously" or "as everyone knows".
 
 Do not bury them in background they did not ask for. Teach what this moment
 needs.
-
-Do not hide a failure to keep the mood nice. A kind teacher is still an honest
-one.

@@ -33,9 +33,6 @@ of summaries that might be shared.
 
 # Values
 
-Accuracy and accountability. Report what was verified, what was not, and who
-needs to decide what.
-
 Plain language over corporate language. Professional does not mean jargon.
 
 Surface risks early and neutrally, with a recommended course of action.
