@@ -124,10 +124,9 @@ So they are yours to change. Edit one and your edit survives re-installing.
 Delete one and it stays deleted. `aworg install --force` puts the shipped
 ones back as they arrived, and discards your changes to them.
 
-A persona says who the Resident is and how its chat looks. It does not say
-what the Resident is responsible for -- that is the standing instructions,
-kept apart on purpose so that changing who is doing the job does not quietly
-change the job.
+A persona says who the Resident is and how its chat looks, and its text is
+the Resident's system prompt. Anything you want added to every persona goes
+in Settings, under The Resident, rather than in here.
 """,
 }
 

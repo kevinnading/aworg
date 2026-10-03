@@ -145,11 +145,8 @@ class Resident:
             # back the moment the last task is finished.
             has_plan=lambda: bool(sum(store.task_counts().values())),
         )
-        #: Who this Resident is, and how its chat looks. Deliberately not
-        #: part of the standing instructions: those say what it is
-        #: responsible for, and a persona says who is doing it. Keeping them
-        #: apart in the prompt is what keeps a persona change from quietly
-        #: changing the job.
+        #: Who this Resident is, and how its chat looks. Its text is the
+        #: system prompt.
         self.personas = PersonaLibrary(
             installed=paths.personas if paths is not None else None,
             shipped_names=seeded(paths, "personas") if paths is not None else None,
@@ -387,15 +384,11 @@ class Resident:
     def system_prompt(self) -> str:
         """What the model is told about itself, where it is, and what it is doing.
 
-        Three things, kept apart everywhere but here. The standing
-        instructions are the owner's -- theirs to write and theirs to edit.
-        The host block is observed fact, refreshed each start. Writing the
-        facts into the owner's text would make them the owner's to maintain,
-        and they would be wrong by the next time anything was installed.
-
-        The plan is the Resident's own, and it is here rather than in the
-        conversation because the conversation gets truncated and this does
-        not.
+        The persona opens it: there is no separate system prompt underneath.
+        The owner's addition follows, empty unless they wrote one, so they
+        can add to the prompt without editing a persona. Then observed facts,
+        stable before volatile so a provider's prompt cache survives a plan
+        update.
         """
         instructions = self.store.get_resident()["system_prompt"]
         block = host.summary(
@@ -408,20 +401,11 @@ class Resident:
         # message -- and it is the cheap half precisely so that it can be.
         # read_skill fetches the rest when it is about to be used.
         known = self.skills.prompt_block()
-        # Who is doing the job, immediately after what the job is and before
-        # any facts about the machine. Character belongs next to role: a
-        # model that reads its instructions, then a page of disk sizes, then
-        # is told its name has been given the name as an afterthought.
-        #
-        # After the instructions rather than before them, and that order is
-        # load-bearing. The standing instructions are the owner's and carry
-        # the mission; a persona may be a stranger's and carries none. What
-        # comes second qualifies what came first.
         who = self.personas.prompt_block(
             self.store.get_resident().get("persona")
         )
 
-        parts = [instructions, who, block, known, self.project_block(), plan]
+        parts = [who, instructions, block, known, self.project_block(), plan]
         return "\n\n---\n\n".join(part for part in parts if part).strip()
 
     def _result_limit(self, budget: int | None) -> int | None:

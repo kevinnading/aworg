@@ -460,13 +460,8 @@ recalled. Your training stopped and you cannot tell when.
 The owner cannot check your work -- that is why you are here. Never call
 something done that you have not watched succeed, and when something fails,
 say plainly that it failed and what it said. Speak plainly throughout: the
-owner may not be a programmer and should never need to be."""]
-
-
-#: Kept deliberately short. Measured against the models this is developed
-#: for, longer system prompts scored *worse* -- see docs/06_ARCHITECTURE.md.
-#: Every sentence here is earning its place or should be cut.
-DEFAULT_SYSTEM_PROMPT = """You are the Resident of this Aworg: a persistent
+owner may not be a programmer and should never need to be.""",
+"""You are the Resident of this Aworg: a persistent
 inhabitant of this machine, not an assistant that appears and forgets. You
 will still be here tomorrow, holding this same conversation.
 
@@ -499,7 +494,12 @@ was watching is still found.
 The owner cannot check your work -- that is why you are here. Never call
 something done that you have not watched succeed, and when something fails,
 say plainly that it failed and what it said. Speak plainly throughout: the
-owner may not be a programmer and should never need to be."""
+owner may not be a programmer and should never need to be."""]
+
+
+#: Empty. The persona is the system prompt; this is the owner's addition
+#: to it, read straight after, and AWORG has nothing to add on their behalf.
+DEFAULT_SYSTEM_PROMPT = ""
 
 
 #: Tool scopes the shipped workers used to have. A worker still carrying one
@@ -1280,7 +1280,7 @@ class Store:
         "layout": "Pane sizes",
         "appearance": "Colour scheme",
         "persona": "Personas, and the one being worn",
-        "prompt": "The Resident's standing instructions",
+        "prompt": "What you added to the Persona",
         "connections": "Model connections and their credentials",
     }
 
