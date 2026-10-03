@@ -339,50 +339,20 @@ class SkillLibrary:
         return None
 
     def prompt_block(self) -> str:
-        """The skills, as the Resident is told about them every message.
+        """The offered skills, by name and description, on every message.
 
-        Names and the standing instruction, and nothing else. The
-        descriptions used to be here too, and they are now on the read_skill
-        tool's own schema instead -- see read_skill.describe_for, which
-        argued for exactly that and then did not do it, so for a while the
-        prompt paid for them and the schema went without.
-
-        They live in one place rather than both. A description is there to
-        settle which skill applies, that choice is made while reading tool
-        schemas, and a second copy up here would be roughly seventy tokens
-        per skill per message buying nothing. What stays is the instruction
-        -- consult a skill before acting -- because that is a standing
-        instruction and this is where those live, and the bare names, so the
-        Resident knows what exists even glancing at prose.
-
-        Bodies are never here. They are read on demand with read_skill, which
-        is the whole point of the convention: a dozen skills cost a line, not
-        a book.
-
-        There was briefly an `always` field here that carried a skill's whole
-        body in the prompt, added because the 9B this is developed against
-        never calls read_skill -- one time in eighteen runs, across three
-        rewritten descriptions and with the instruction moved into the
-        standing prompt. It worked, and it was the wrong fix: a measurement
-        about a model became a permanent feature of the format.
-
-        The floor these models represent is meant to prove the loop holds,
-        not to be designed around. A model that will not consult a procedure
-        it has been told about is a model that cannot be trusted with an
-        Aworg's conventions, and the answer to that is a better model rather
-        than a bigger prompt.
+        Bodies are never here; read_skill fetches one when it is needed, so a
+        dozen skills cost a list rather than a book.
         """
         skills = self.offered()
         if not skills:
             return ""
-
-        listed = ", ".join(s.name for s in skills)
+        listed = "\n".join(f"- {s.name}: {s.description}" for s in skills)
         return (
-            "SKILLS you can load: " + listed + ".\n"
-            "Call read_skill when the job matches one of these, before "
-            "planning or acting -- a skill is how this machine does that "
-            "job, which is not always how you would. What each one is for "
-            "is on the read_skill tool itself."
+            "SKILLS\n"
+            "Each is a written procedure for one kind of job. Only this "
+            "summary is here; call read_skill with the name to load the full "
+            "text when you take on that job.\n" + listed
         )
 
 

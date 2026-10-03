@@ -1,7 +1,6 @@
 # Skills
 
-Procedures AWORG does not ship, bound for the store. The one it does ship,
-`barebones`, lives in `aworg/skills/` and is put in place by the installer.
+Procedures AWORG does not ship, bound for the store.
 
 A skill is a folder with a `SKILL.md` in it: YAML frontmatter naming it and
 saying when to use it, then the procedure itself. Optional `references/`

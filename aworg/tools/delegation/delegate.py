@@ -37,7 +37,8 @@ DESCRIPTION = (
     "for work that is well described and self-contained, and for checking "
     "work you have already done. A worker cannot see or speak to the owner, "
     "so never delegate asking a question, gathering requirements, or "
-    "anything else that needs a person to answer -- those are yours."
+    "anything else that needs a person to answer -- those are yours. The "
+    "worker ends when it replies, and that reply is all you get back."
 )
 
 INPUT_SCHEMA = {

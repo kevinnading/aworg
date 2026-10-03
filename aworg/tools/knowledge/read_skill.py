@@ -1,9 +1,7 @@
 """Read a procedure the Aworg knows.
 
-The other half of progressive disclosure. Every skill's description is in the
-system prompt on every message, so the Resident knows what exists; the body
-is here, read only when it is about to be used. That split is what lets an
-Aworg carry dozens of skills for the cost of a paragraph.
+The other half of progressive disclosure. Every offered skill's name and
+description is in the system prompt; the body is here, read when it is used.
 """
 
 from __future__ import annotations
@@ -19,11 +17,7 @@ NAME = "read_skill"
 #: the argument for it, which is measured rather than aesthetic.
 DYNAMIC = True
 
-DESCRIPTION = (
-    "Read one of your skills in full. A skill tells you how to go about a "
-    "kind of job. Read the relevant one before starting that kind of work, "
-    "not after."
-)
+DESCRIPTION = "Load the full text of one of the skills listed in your prompt."
 
 INPUT_SCHEMA = {
     "type": "object",
@@ -90,60 +84,21 @@ async def run(context: ToolContext, skill: str = "") -> ToolResult:
 
 
 def describe_for(skills: list[dict] | None = None, **_: object) -> dict:
-    """This tool's MCP descriptor, with the actual skills written into it.
+    """This tool's descriptor, with the skill names as an enum.
 
-    **The names and descriptions go in the schema, not only in the prose.**
-
-    Every skill's description was already on every message, in a block near
-    the top of the system prompt, and no local model tested would act on it:
-    six configurations, and read_skill called about once in eighteen runs.
-    Four explanations were tested and eliminated -- the wording, the
-    placement, thinking, model size -- and the one asymmetry left was this
-    file.
-
-    `delegate` faces the identical decision: pick one name out of a list of
-    specialists, each distinguished only by a sentence. It writes that list
-    into its own schema as an enum, and routing to workers is the one thing
-    these models do reliably. `read_skill` asked instead for a free-text
-    name "as listed in your skills", which requires the model to recall prose
-    from the top of a long prompt at the moment it is scanning tool schemas.
-    Small models decide by reading the schemas.
-
-    So the enumeration comes here, where the choice is actually made. This
-    costs nothing extra in the general case: it is the same descriptions, and
-    if it works the prompt block can carry fewer of them.
-
-    A tool with no skills to offer returns nothing and is dropped, which is
-    the right outcome -- an Aworg with an empty library should not advertise
-    a way to read from it.
+    Names only. What each skill is for is in the system prompt, beside the
+    name, and one copy is enough. A tool with no skills to offer returns
+    nothing and is dropped.
     """
     if not skills:
         return {}
-
-    # The descriptions, beside the names they belong to.
-    #
-    # This is the half the paragraph above argued for and the code did not
-    # do. resident.py has always passed {name, description} here, and this
-    # function used the name and dropped the rest -- so the schema carried
-    # bare slugs and "Which skill to read." A model scanning tool schemas,
-    # which is the behaviour the whole measurement was about, got the list
-    # without a single word on when any of them applies, and had to go back
-    # to the prose the experiment had just concluded it was not reading.
-    #
-    # JSON Schema has nowhere to hang a description on an individual enum
-    # value, so they go in the field's own description, which is where the
-    # rest of these tools put the meaning of their choices.
-    catalogue = "\n".join(f"  {s['name']}: {s['description']}" for s in skills)
     schema = {
         "type": "object",
         "properties": {
             "skill": {
                 "type": "string",
                 "enum": [s["name"] for s in skills],
-                "description": (
-                    "Which skill to read. Pick the one whose subject matches "
-                    "the job you are about to start:\n" + catalogue
-                ),
+                "description": "Which skill to read, by name.",
             },
         },
         "required": ["skill"],

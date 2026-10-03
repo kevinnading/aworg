@@ -336,42 +336,30 @@ def environment(facts: dict[str, Any], workspace: Any = None) -> list[tuple[str,
 
 
 def summary(facts: dict[str, Any], workspace: Any = None) -> str:
-    """The environment, compactly enough to send with every message.
+    """Where the Resident is: what AWORG is from its side, then the machine.
 
-    Facts, and as little prose as they can be stated in. The block this
-    replaced had grown to about 800 tokens, of which roughly six hundred were
-    advice -- five paragraphs of shell workarounds, each added after a real
-    incident and each true, which together made the largest thing in a prompt
-    that this project's own measurements say gets worse as it gets longer.
-
-    The advice is not deleted, it is relocated: a note about what PowerShell
-    does to a redirect is worth reading at the moment a redirect fails, and
-    worth nothing on the four hundred messages where nobody redirects
-    anything. Facts are the opposite -- useless at the moment of failure,
-    because by then the wrong assumption has already been acted on.
-
-    Two sentences are still prose and both earn it. The workspace needs
-    saying rather than labelling, because what an owner calls a folder and
-    what a Resident does with a relative path are not obviously the same
-    thing. And the interpreter needs the warning beside it, because the path
-    is inside AWORG's own checkout and a Resident that reads it as "the
-    project" writes into the source tree.
+    Only what the model cannot know. How to work is its own business; what
+    the owner sees, where its tools come from, and the scanned facts are not
+    things it could work out.
     """
-    lines = ["ENVIRONMENT -- observed on this machine, not remembered."]
+    lines = [
+        "WHERE YOU ARE",
+        "You are the Resident of an Aworg. The owner uses it through a "
+        "browser: they see your tool calls, your plan (Tasks pane), the "
+        "workspace, what is running (Project pane) and the Living Log. You "
+        "cannot see their screen.",
+        "",
+        "Your tools come from Capabilities, which the owner switches on and "
+        "off in the Capabilities pane; skills likewise in the Skills pane. "
+        "Anything switched off is not offered to you. New ones install with "
+        "`aworg get` and need no restart.",
+        "",
+    ]
     lines += [f"  {label}: {value}" for label, value in environment(facts, workspace)]
-
-    if workspace:
-        lines.append(
-            f"Build in {workspace}. A relative path goes there -- write "
-            "`notes.md` and it lands there. You are not confined to it, but "
-            "nothing should end up outside it by accident."
-        )
+    lines.append("")
     lines.append(
-        "That Python path is AWORG's own installation. Use the interpreter; "
-        "leave the directory alone, and do not run `python` by name."
-    )
-    lines.append(
-        "These were observed, not assumed. Anything not here is something to "
-        "check rather than to rule out."
+        ("Relative paths land in the workspace. " if workspace else "")
+        + "That Python is AWORG's own: use the interpreter, leave its "
+        "directory alone, and do not run `python` by name."
     )
     return "\n".join(lines)
