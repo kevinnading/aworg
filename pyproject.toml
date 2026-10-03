@@ -55,16 +55,16 @@ include = ["aworg*"]
 # from PyPI a Resident with no character -- failing quietly, as an empty
 # picker rather than an error.
 #
-# Skills are not here at all any more. Like capabilities, they live outside
-# the package (skills/ at the top of the repository) because a procedure is
-# something an owner chose and one that arrives inside the program is one
-# they cannot remove.
+# One skill ships: barebones, which tells the Resident how AWORG works, so an
+# Aworg without it is a Resident guessing at its own tools. Every other skill
+# comes from the store.
 #
 # Globbed by extension rather than with `**/*` so that a stray file dropped
 # into one of these folders during development does not silently become part
 # of a release.
 aworg = [
     "web/*",
+    "skills/*/*.md",
     "personas/*/*.md",
     "personas/*/*.svg",
     "personas/*/*.json",

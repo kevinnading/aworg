@@ -26,17 +26,18 @@ not seeded. They stay inside the package because an Aworg missing them is not
 a plainer Aworg, it is a broken one, and a folder an owner can delete should
 never be load-bearing.
 
-Nothing else is in the package either. AWORG ships no capabilities and no
-skills: they live in `capabilities/` and `skills/` at the top of the
-repository, destined for the store, and are installed by copying a folder
-until that exists. Personas still ship, because an Aworg with no character
-is a worse first impression than one with eighteen to choose from.
+AWORG ships no capabilities: they live in `capabilities/` at the top of the
+repository, bound for the store, and come from `aworg get`. One skill ships,
+barebones, because it tells the Resident how AWORG works and a Resident
+without it is guessing at its own tools; every other skill lives in
+`skills/` beside the capabilities. Personas ship, because an Aworg with no
+character is a worse first impression than one with eighteen to choose from.
 
-The seeding below still applies to all three, because a per-OS package that
-wants to arrive with Chromium and a skill or two included copies the folders
-into its own `aworg/` at build time and the installer sows them from there
-like anything else. In a wheel there is nothing to sow, and the installer
-says "nothing shipped" rather than implying otherwise.
+The seeding below applies to all three, because a per-OS package that wants
+to arrive with Chromium included copies the folders into its own `aworg/` at
+build time and the installer sows them from there like anything else. In a
+wheel there are no capabilities to sow, and the installer says "nothing
+shipped" rather than implying otherwise.
 """
 
 from __future__ import annotations
@@ -58,9 +59,9 @@ SEEDS = ("skills", "personas", "capabilities")
 
 #: A note left in each of the three folders, for whoever opens one.
 #:
-#: Two of them are empty on a fresh Aworg, because AWORG ships no skills and
-#: no capabilities. An empty directory says nothing about whether it is
-#: broken, unused, or waiting for something, and the person most likely to
+#: Capabilities is empty on a fresh Aworg, because AWORG ships none, and
+#: skills holds only barebones. An empty directory says nothing about whether
+#: it is broken, unused, or waiting for something, and the person most likely to
 #: find it is someone poking around their own machine wondering what AWORG
 #: put there. So each says what goes in it and how to put one there.
 #:
@@ -78,12 +79,13 @@ This folder is yours. A skill is a folder in here with a `SKILL.md`: YAML
 frontmatter naming it and saying when to use it, then the procedure itself.
 An optional `references/` beside it holds whatever the procedure points at.
 
-**AWORG ships no skills**, so this folder is empty until you put something
-in it. That is not a fault. What ships is the runtime; what this Aworg knows
-how to do is yours to choose.
+**AWORG ships one skill, `barebones`**: how this Aworg works, written for
+the Resident. Install puts it here and a reset with Skills ticked puts it
+back. Everything else this Aworg knows how to do is yours to choose.
 
-To install one, copy its folder in here. Skills are re-read on every
-request, so it is available immediately -- no restart needed.
+To install one, `aworg get skills/NAME`, or copy its folder in here. Skills
+are re-read on every request, so it is available immediately -- no restart
+needed.
 
 Switch them on and off in Settings.
 """,
@@ -98,8 +100,8 @@ internal ones the Resident reaches AWORG's own subsystems through -- live
 inside the package instead, because an Aworg missing those is not a plainer
 Aworg, it is a broken one.
 
-To install one, copy its folder in here and then **restart**. Capabilities
-are discovered once at startup, which is where they differ from skills.
+To install one, `aworg get tools/NAME`, or copy its folder in here. A
+running Aworg notices and loads it before the next message -- no restart.
 
 Anything installed here runs in this process, as AWORG, with the same
 permissions AWORG has. There is no sandbox. That is deliberate rather than
@@ -114,7 +116,7 @@ declare itself internal or required.
 This folder is yours. A persona is a folder in here with a `PERSONA.md` and
 whatever images it wears.
 
-Unlike skills and capabilities, **these do ship** -- the installer copied
+Unlike capabilities, **these do ship** -- the installer copied
 them in here as ordinary folders, so a persona AWORG wrote and one you wrote
 are the same kind of thing, in the same place, loaded by the same code.
 

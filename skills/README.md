@@ -1,6 +1,7 @@
 # Skills
 
-Procedures AWORG does not ship.
+Procedures AWORG does not ship, bound for the store. The one it does ship,
+`barebones`, lives in `aworg/skills/` and is put in place by the installer.
 
 A skill is a folder with a `SKILL.md` in it: YAML frontmatter naming it and
 saying when to use it, then the procedure itself. Optional `references/`
@@ -13,19 +14,11 @@ something an owner chose, and a skill that arrives inside the program is one
 they cannot remove. What ships is the runtime; what an Aworg knows how to do
 is theirs.
 
-## What is here
-
-- **barebones** — how this Aworg works, explained to the Resident: where
-  tools come from and why some are missing, how skills are installed and
-  switched on, how to plan a job into tasks small enough to finish, how to
-  hand work to workers and get it back, and how to look at what it built.
-  The one to copy in first, on any Aworg.
-
 ## Installing one
 
-Copy the folder:
+From the store, `aworg get skills/NAME`. Or copy the folder:
 
-    cp -r skills/barebones ~/.aworg/skills/
+    cp -r skills/NAME ~/.aworg/skills/
 
 Skills are re-read on every request, so it is available immediately — no
 restart, unlike a capability. The owner switches it on or off in the Skills
