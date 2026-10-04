@@ -708,10 +708,7 @@ class Resident:
         """Queue a finished worker's run, unless the Resident reads it first."""
         self.inbox.put(
             f"worker:{worker.id}",
-            lambda: (
-                f"A worker finished.\n\n{worker.take()}\n\n"
-                f"Stop it with stop_worker({worker.id}) once you are done with it."
-            ),
+            lambda: f"A worker finished.\n\n{worker.take()}",
             relevant=lambda: worker.id in self.workers.workers and worker.unread,
         )
 

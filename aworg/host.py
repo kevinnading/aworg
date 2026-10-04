@@ -368,3 +368,15 @@ def summary(facts: dict[str, Any], workspace: Any = None) -> str:
         "directory alone, and do not run `python` by name."
     )
     return "\n".join(lines)
+
+
+def worker_summary(facts: dict[str, Any], workspace: Any = None) -> str:
+    """The machine as a worker is told it: the scanned facts, nothing of AWORG."""
+    lines = ["THIS MACHINE"]
+    lines += [f"  {label}: {value}" for label, value in environment(facts, workspace)]
+    lines.append("")
+    lines.append(
+        ("Relative paths land in the workspace. " if workspace else "")
+        + "Use that Python by its full path; do not run `python` by name."
+    )
+    return "\n".join(lines)

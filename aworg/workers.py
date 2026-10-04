@@ -22,6 +22,7 @@ import time
 import uuid
 from typing import Any
 
+from . import host as host_facts
 from .activities import ActivityManager
 from .agent import AgentLoop, _describe_arguments
 from .models import Message, ModelError, build_adapter, needs_credential
@@ -68,6 +69,8 @@ class Worker:
         self.calls: list[dict[str, Any]] = []
         self.error: str | None = None
         self.started = time.time()
+        #: When its current or latest run began.
+        self.run_started = self.started
         self.task: asyncio.Task | None = None
         #: How many runs it has started, and the last one the Resident read.
         self.runs = 0
@@ -95,9 +98,13 @@ class Worker:
 
     def take(self) -> str:
         """render(), as the Resident reads it: a finished run is now read."""
-        if self.state != self.WORKING:
-            self.read = self.runs
-        return self.render()
+        if self.state == self.WORKING:
+            return self.render()
+        self.read = self.runs
+        return (
+            f"{self.render()}\n\nStop it with stop_worker({self.id}) once you "
+            "are done with it."
+        )
 
     def render(self) -> str:
         """Its latest run in full: what it said, then what AWORG saw it do."""
@@ -222,19 +229,6 @@ class WorkerPool:
     def all(self) -> list[Worker]:
         return list(self.workers.values())
 
-    async def wait(self, workers: list[Worker], seconds: float) -> None:
-        """Until any of these is no longer working, or the time runs out."""
-        working = [w for w in workers if w.state == Worker.WORKING]
-        if not working or seconds <= 0:
-            return
-        waits = [asyncio.create_task(w.done.wait()) for w in working]
-        try:
-            await asyncio.wait(waits, timeout=seconds,
-                               return_when=asyncio.FIRST_COMPLETED)
-        finally:
-            for t in waits:
-                t.cancel()
-
     # -- running ------------------------------------------------------------
 
     def _connection(self, name: str) -> dict[str, Any]:
@@ -258,6 +252,7 @@ class WorkerPool:
     def _start(self, worker: Worker) -> None:
         worker.state = Worker.WORKING
         worker.runs += 1
+        worker.run_started = time.time()
         worker.reply, worker.calls, worker.error = "", [], None
         worker.done = asyncio.Event()
         worker.task = asyncio.create_task(self._run(worker))
@@ -281,7 +276,12 @@ class WorkerPool:
         return sorted(granted & own)
 
     def _system(self, worker: Worker) -> str:
+        """Its instructions, then this machine, then any skills it was given."""
         parts = [worker.instructions.strip()] if worker.instructions.strip() else []
+        parts.append(host_facts.worker_summary(
+            self.host(),
+            workspace=self.paths.workspace if self.paths is not None else None,
+        ))
         library = self.skills
         for name in worker.skills:
             skill = library.get_any(name) if library is not None else None

@@ -13,10 +13,10 @@ DYNAMIC = True
 
 DESCRIPTION = (
     "Start a worker: a separate model run with its own context, working in "
-    "the background. It knows only what you give it here -- nothing about "
-    "this machine, the workspace or this conversation, so the environment "
-    "details its job needs go in the task. Returns its id at once; you are "
-    "told when it finishes."
+    "the background. It is given this machine's environment; it does not "
+    "see this conversation, so everything else its job needs goes in the "
+    "task. Returns its id at once. Its reply arrives as a message after your "
+    "current reply ends."
 )
 
 INPUT_SCHEMA = {
@@ -38,8 +38,8 @@ INPUT_SCHEMA = {
             "type": "array",
             "items": {"type": "string"},
             "description": (
-                "Names of the tools it may use, from your own list. It gets "
-                "only these, and never the worker tools."
+                "Names of the tools it may use, from your own list, or "
+                "[\"none\"]. It gets only these, and never the worker tools."
             ),
         },
         "skills": {
@@ -70,14 +70,19 @@ async def run(
         raise ToolError("Workers are not wired up in this Aworg.")
     if not str(task).strip():
         raise ToolError("No task was given.")
-    if tools is None:
-        raise ToolError("No tools were given: name the ones its job needs.")
+    named = [str(t).strip() for t in (tools or []) if str(t).strip()]
+    if not named:
+        raise ToolError(
+            'No tools were given. Name the ones its job needs, or ["none"].'
+        )
+    if [t.lower() for t in named] == ["none"]:
+        named = []
     try:
         worker = pool.spawn(
             name=str(name).strip(),
             task=str(task),
             instructions=str(instructions or ""),
-            tools=[str(t) for t in tools],
+            tools=named,
             skills=[str(s) for s in (skills or [])],
             connection=str(connection or ""),
         )
@@ -86,7 +91,8 @@ async def run(
     return ToolResult(
         text=(
             f"Started worker {worker.id} ({worker.name}) on "
-            f"{worker.connection['name']}. You will be told when it finishes."
+            f"{worker.connection['name']}. Its reply arrives as a message "
+            "after your current reply ends."
         ),
         summary=f"{worker.name} on {worker.connection['name']}",
     )
