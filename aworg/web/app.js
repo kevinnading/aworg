@@ -132,6 +132,12 @@ async function refreshPanes() {
     return;
   }
   const byId = new Map(panes.map((pane) => [pane.id, pane]));
+  const pool = byId.get("workers");
+  if (pool) {
+    const at = app.panes.findIndex((pane) => pane.id === "workers");
+    if (at >= 0) app.panes[at] = pool;
+    paintWorkers();
+  }
   for (const id of POLLED_PANES) {
     const fresh = byId.get(id);
     if (!fresh) continue;
@@ -1473,22 +1479,6 @@ function renderSettings() {
     select.appendChild(option);
   }
 
-  const worker = el("worker-select");
-  worker.innerHTML = "";
-  // Unassigned is a real choice, not a missing one: workers then think with
-  // whatever the Resident does.
-  const same = document.createElement("option");
-  same.value = "";
-  same.textContent = "Same as the Resident";
-  worker.appendChild(same);
-  for (const connection of app.connections) {
-    const option = document.createElement("option");
-    option.value = connection.id;
-    option.textContent = `${connection.name} (${connection.model})`;
-    option.selected = connection.id === app.state.worker_connection_id;
-    worker.appendChild(option);
-  }
-
   el("system-prompt").value = app.state.system_prompt;
   renderConnections();
 }
@@ -2051,58 +2041,27 @@ async function toggleActivityPayload(item) {
   paintWorkers();
 }
 
-/* Who is working right now.
+/* The Resident's workers: every one it has started and not stopped.
  *
- * Painted from the same live stream as Activities rather than from the pane
- * payload, because a worker's whole nature is to appear and then go: a pane
- * drawn from a snapshot would show a roster that is already out of date.
- *
- * Only unfinished workers. A worker that has finished is not working for you
- * any more, and leaving it here would rebuild the permanent list this pane
- * was changed to stop being. What it did remains in the conversation, which
- * is permanent and is where the question "what happened" is answered.
- *
- * **And what each one is doing, indented under it.** That is the half of
- * the Activities pane worth keeping: "three workers are running" is not
- * information, and "the checker is nine seconds into read_file" is. The
- * nesting was already there and unused -- a worker's tool calls carry its
- * id as `parent_id` -- so this only draws a relationship the manager has
- * always tracked. */
-//: How long a finished worker stays visible. Twelve seconds is long enough
-//: that an owner glancing over sees it happened, and short enough that the
-//: pane still answers "who is working now" rather than "who has ever worked".
-const WORKER_LINGER = 12;
+ * The pool comes from the pane poll, so a worker that has replied and is
+ * waiting stays listed until the Resident stops it. What a working one is
+ * doing right now comes from the live Activity stream, indented under it:
+ * its tool calls carry its run's Activity as their parent. */
+
+//: The pool's states, as the activity dot styles them.
+const WORKER_DOT = { working: "running", replied: "completed", failed: "failed", stopped: "completed" };
 
 function paintWorkers() {
   const host = document.querySelector("#pane-workers .pane-body");
   if (!host) return;
+  const pane = (app.panes || []).find((p) => p.id === "workers");
+  const pool = (pane && pane.items) || [];
 
-  // Running ones, plus any that finished a moment ago.
-  //
-  // Dropping a worker the instant it finishes is technically right and
-  // practically useless: a worker that did eight tool calls and left was
-  // never on screen long enough to be seen, so the pane read as permanently
-  // empty while workers were in fact doing the job. "I did not see any
-  // workers working" was the report, and the workers had worked.
-  //
-  // So a finished one lingers briefly, dimmed, then goes. Long enough to
-  // notice, short enough that this stays a pane about now rather than
-  // becoming the roster it was changed to stop being.
-  const now = Date.now() / 1000;
-  const workers = [...activityState.known.values()].filter(
-    (a) =>
-      a.kind === "worker" &&
-      (!isActivityFinished(a) ||
-        now - (a.created_at + (a.duration || 0)) < WORKER_LINGER)
-  );
-
-  if (!workers.length) {
+  if (!pool.length) {
     host.replaceChildren(
-      emptyPane({
-        empty_heading: "No workers running.",
-        empty_detail:
-          "Workers appear here while they are working and leave when they " +
-          "finish. What kinds of worker exist is set in Settings.",
+      emptyPane(pane || {
+        empty_heading: "No workers.",
+        empty_detail: "The Resident starts workers when it wants help, and they stay here until it stops them.",
       })
     );
     return;
@@ -2110,35 +2069,27 @@ function paintWorkers() {
 
   const list = document.createElement("div");
   list.className = "activity-list";
-  for (const worker of workers.reverse()) {
+  for (const worker of pool) {
     const row = document.createElement("div");
-    row.className = `activity-row worker ${worker.state}`;
-    if (isActivityFinished(worker)) row.classList.add("leaving");
+    row.className = `activity-row worker ${WORKER_DOT[worker.state] || ""}`;
+    row.title = worker.state;
 
     const dot = document.createElement("span");
     dot.className = "activity-dot";
 
     const name = document.createElement("span");
     name.className = "activity-name";
-    name.textContent = worker.label;
+    name.textContent = worker.name;
 
-    // What it was actually asked to do. Without it the pane says three
-    // workers are running and nothing about what any of them is doing.
     const detail = document.createElement("span");
     detail.className = "activity-detail";
-    detail.textContent = worker.detail || "";
+    detail.textContent = `${worker.state} · ${worker.detail || ""}`;
 
     row.append(dot, name, detail);
     list.appendChild(row);
 
-    // What it is doing right now, underneath it.
-    //
-    // Unfinished children only, and the newest of them: a worker runs its
-    // tools one at a time, so there is exactly one answer, and showing the
-    // finished ones as well would turn a pane about now into the scrolling
-    // list this one exists instead of.
     const doing = [...activityState.known.values()]
-      .filter((a) => a.parent_id === worker.id && !isActivityFinished(a))
+      .filter((a) => a.parent_id === worker.activity && !isActivityFinished(a))
       .pop();
     if (doing) {
       const child = activityRow(doing);
@@ -2478,7 +2429,6 @@ function paneItems(items) {
   for (const item of items) {
     list.appendChild(
       item.kind === "capability" ? capabilityRow(item)
-      : item.kind === "worker" ? workerRow(item)
       : item.kind === "task" ? taskRow(item)
       : item.kind === "skill" ? skillRow(item)
       : item.kind === "entry" ? logRow(item)
@@ -2787,57 +2737,6 @@ function capabilityRow(item) {
   return row;
 }
 
-/* A configured worker, with the tools it is allowed to use.
- *
- * The scope is the interesting fact about a worker, so it is shown rather
- * than summarised. Seeing that the checker holds no write tool is what makes
- * it worth trusting to check -- it is not being asked to avoid changing
- * things, it has not been handed the means. */
-function workerRow(item) {
-  const row = document.createElement("div");
-  row.className = `pane-item capability ${item.state || ""}`;
-
-  const head = document.createElement("div");
-  head.className = "capability-head";
-
-  const name = document.createElement("span");
-  name.className = "pane-item-name";
-  name.textContent = item.name;
-
-  const toggle = document.createElement("button");
-  toggle.type = "button";
-  toggle.className = "capability-toggle";
-  toggle.setAttribute("aria-pressed", String(item.enabled));
-  toggle.textContent = item.enabled ? "On" : "Off";
-  toggle.title = item.enabled
-    ? `Stop offering ${item.name} to the Resident.`
-    : `Offer ${item.name} to the Resident again.`;
-  toggle.onclick = () => setWorker(item.id, !item.enabled);
-  head.append(name, toggle);
-
-  const detail = document.createElement("span");
-  detail.className = "pane-item-detail";
-  detail.textContent = item.detail || "";
-
-  const tools = document.createElement("div");
-  tools.className = "capability-tools";
-  if (!item.tools.length) {
-    const none = document.createElement("span");
-    none.className = "pane-item-detail";
-    none.textContent = "No tools — it can only talk.";
-    tools.appendChild(none);
-  }
-  for (const tool of item.tools) {
-    const chip = document.createElement("code");
-    chip.className = "tool-chip";
-    chip.textContent = tool.name;
-    tools.appendChild(chip);
-  }
-
-  row.append(head, detail, tools);
-  return row;
-}
-
 /* One task in the plan.
  *
  * State is shown as a word rather than only a colour, because "blocked" and
@@ -2960,19 +2859,6 @@ async function setSkill(name, enabled) {
   }
   app.panes = await api("/api/panes");
   repaintPane("skills");
-}
-
-async function setWorker(id, enabled) {
-  try {
-    await api(`/api/workers/${encodeURIComponent(id)}`, {
-      method: "PATCH",
-      body: JSON.stringify({ enabled }),
-    });
-  } catch (error) {
-    return;
-  }
-  app.panes = await api("/api/panes");
-  repaintPane("workers");
 }
 
 async function setCapability(id, enabled) {
@@ -4258,7 +4144,6 @@ function wireEvents() {
     const chosen = el("primary-select").value;
     if (chosen) body.primary_connection_id = chosen;
     // Sent even when empty -- that is how the assignment is cleared.
-    body.worker_connection_id = el("worker-select").value;
     await api("/api/resident", { method: "PATCH", body: JSON.stringify(body) });
     await refresh();
     const saved = el("resident-saved");

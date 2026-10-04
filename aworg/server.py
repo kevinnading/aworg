@@ -182,7 +182,6 @@ RESET_NAMES = {
     "conversation": "messages",
     "tasks": "tasks",
     "journal": "Living Log entries",
-    "workers": "workers",
     "capabilities": "capability settings",
     "skills": "skill settings",
     "connections": "model connections",
@@ -259,7 +258,6 @@ class ConnectionPatch(BaseModel):
 
 class ResidentPatch(BaseModel):
     primary_connection_id: str | None = None
-    worker_connection_id: str | None = None
     system_prompt: str | None = None
 
 
@@ -289,31 +287,6 @@ class TaskPatch(BaseModel):
     state: str | None = None
     note: str | None = None
     position: int | None = None
-
-
-class WorkerBody(BaseModel):
-    name: str
-    description: str = ""
-    connection_id: str | None = None
-    system_prompt: str = ""
-    #: Tool names, capability ids, or both. Empty means no tools at all --
-    #: deliberately not "all of them", because a worker's scope is the thing
-    #: that makes it safe to hand work to.
-    tools: list[str] = []
-    #: Skill names this worker is given in full. Scoped like tools; unlike
-    #: the Resident's, these are put in front of it rather than offered.
-    skills: list[str] = []
-    enabled: bool = True
-
-
-class WorkerPatch(BaseModel):
-    name: str | None = None
-    description: str | None = None
-    connection_id: str | None = None
-    system_prompt: str | None = None
-    tools: list[str] | None = None
-    skills: list[str] | None = None
-    enabled: bool | None = None
 
 
 class WakeBody(BaseModel):
@@ -529,7 +502,6 @@ def create_app(paths: Paths, address: str = "http://127.0.0.1:8420") -> FastAPI:
         return {
             "resident": resident.state(),
             "primary_connection_id": config["primary_connection_id"],
-            "worker_connection_id": config["worker_connection_id"],
             "system_prompt": config["system_prompt"],
             # Here rather than in /api/meta, which is read once at boot. The
             # Resident can rename the project mid-conversation, and a header
@@ -682,15 +654,6 @@ def create_app(paths: Paths, address: str = "http://127.0.0.1:8420") -> FastAPI:
             if store.get_connection(body.primary_connection_id) is None:
                 raise HTTPException(404, "No such connection")
             fields["primary_connection_id"] = body.primary_connection_id
-        if body.worker_connection_id is not None:
-            # An empty string clears the assignment; workers then fall back to
-            # whatever the Resident itself is using.
-            if body.worker_connection_id == "":
-                fields["worker_connection_id"] = None
-            elif store.get_connection(body.worker_connection_id) is None:
-                raise HTTPException(404, "No such connection")
-            else:
-                fields["worker_connection_id"] = body.worker_connection_id
         if body.system_prompt is not None:
             fields["system_prompt"] = body.system_prompt
         if fields:
@@ -869,7 +832,12 @@ def create_app(paths: Paths, address: str = "http://127.0.0.1:8420") -> FastAPI:
             resident.host,
             resident.registry,
             store.capability_enabled,
-            store.list_workers(),
+            [
+                {"id": w.id, "name": w.name, "state": w.state,
+                 "connection": w.connection["name"], "calls": len(w.calls),
+                 "activity": w.activity_id}
+                for w in resident.workers.all()
+            ],
             store.list_tasks(store.OPEN_STATES),
             [
                 {
@@ -972,7 +940,6 @@ def create_app(paths: Paths, address: str = "http://127.0.0.1:8420") -> FastAPI:
             "workspace": count_files(workspace),
             "trash": count_files(trash),
             "processes": sum(1 for p in resident.processes.all() if p.alive),
-            "workers": len(store.list_workers()),
             # How many are in the folder, the same question the workspace
             # and the trash answer. The switches these parts also clear are
             # not worth a second number: nobody weighs a reset by how many
@@ -1463,45 +1430,6 @@ def create_app(paths: Paths, address: str = "http://127.0.0.1:8420") -> FastAPI:
     def clear_tasks() -> dict[str, int]:
         """Forget finished tasks. Open ones are never touched."""
         return {"removed": store.clear_tasks()}
-
-    # -- workers --------------------------------------------------------
-
-    @app.get("/api/workers")
-    def list_workers() -> list[dict[str, Any]]:
-        return store.list_workers()
-
-    @app.patch("/api/workers/{worker_id}")
-    def update_worker(worker_id: str, body: WorkerPatch) -> dict[str, Any]:
-        """Change a worker.
-
-        Its description is worth as much care as its prompt: it is the only
-        thing the Resident routes on, so editing it changes which jobs this
-        worker gets. See docs/06_ARCHITECTURE.md.
-        """
-        fields = {k: v for k, v in body.model_dump().items() if v is not None}
-        updated = store.update_worker(worker_id, **fields)
-        if updated is None:
-            raise HTTPException(404, "No such worker")
-        return updated
-
-    @app.post("/api/workers")
-    def create_worker(body: WorkerBody) -> dict[str, Any]:
-        return store.create_worker(
-            name=body.name,
-            description=body.description,
-            connection_id=body.connection_id,
-            system_prompt=body.system_prompt,
-            tools=body.tools,
-            skills=body.skills,
-            enabled=body.enabled,
-        )
-
-    @app.delete("/api/workers/{worker_id}")
-    def delete_worker(worker_id: str) -> dict[str, str]:
-        if store.get_worker(worker_id) is None:
-            raise HTTPException(404, "No such worker")
-        store.delete_worker(worker_id)
-        return {"status": "deleted"}
 
     # -- Activities -----------------------------------------------------
 

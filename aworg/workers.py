@@ -1,30 +1,25 @@
-"""Spawning a worker, and reporting what it actually did.
+"""Workers: model runs the Resident starts, steers and stops.
 
-A worker is three things and not two:
+There is no roster. The Resident spawns a worker for whatever it needs,
+writes everything the worker is told, chooses its tools, skills and model,
+and decides when it is finished with it. A worker runs in the background,
+so the Resident can start as many as it likes and carry on; when one
+replies it waits, holding its conversation, until the Resident sends it
+further or stops it.
 
-    connection      which model it thinks with
-    system prompt   how it works
-    tool scope      what it is allowed to do
+Workers live in this process. A restart ends them, the same as the programs
+in the process table.
 
-The third does the most work and is the easiest to leave out. A checker that
-cannot write files cannot damage the workspace however badly it misreads its
-job -- it is not trusted to avoid writing, it is simply not handed the means.
-It is also what makes a 2B usable as a specialist: three tools and a narrow
-prompt are far more reliable than twelve tools and a general prompt.
-
-Workers are temporary. One bounded job, no memory of it afterwards, disposed.
-Their conversation is a scratch list that is thrown away when they finish --
-which is why the loop takes a `record` callback rather than a store.
-
-The part that matters most is what comes back. A worker's result carries both
-what the worker *claimed* and what AWORG *observed* while it worked, because a
-worker reporting success on work that failed is precisely the failure the
-owner cannot catch for themselves, and it is not fixed by choosing a better
-model. It is fixed by the result being evidence rather than testimony.
+What comes back carries both what the worker said and the tool calls AWORG
+saw it make, so a worker reporting success over calls that failed can be
+told apart from one that succeeded.
 """
 
 from __future__ import annotations
 
+import asyncio
+import time
+import uuid
 from typing import Any
 
 from .activities import ActivityManager
@@ -33,429 +28,333 @@ from .models import Message, ModelError, build_adapter, needs_credential
 from .secrets import credential_ref
 from .tools import Registry, ToolContext
 
+#: The capability whose tools start and steer workers. A worker is never
+#: handed it: the pool belongs to the Resident.
+WORKERS_CAPABILITY = "workers"
 
-#: Fewer than the Resident, but not by much, and for a different reason than
-#: it used to be. This was six, on the theory that a small model going round
-#: eight times has lost the thread. That theory was wrong in the same way the
-#: Resident's ten was: it stops a worker doing a genuinely long job, and a
-#: worker that has actually lost the thread is caught by the loop's
-#: repetition check rather than by a count.
-#:
-#: Lower than 200 only because the Resident is blocked while this runs, so a
-#: worker that somehow gets past the repetition check should give the turn
-#: back sooner than the Resident would give it back to the owner.
-WORKER_MAX_ROUNDS = 60
+#: Characters per token, generously. Matches Resident.CHARS_PER_TOKEN_GENEROUS.
+CHARS_PER_TOKEN_GENEROUS = 4.2
+
+#: What a worker keeps back for its own reply, as a share of its window.
+REPLY_SHARE = 4
 
 
-class WorkerResult:
-    """What a worker did, in both of the forms the Resident needs.
+class Worker:
+    """One worker: its brief, its means, its conversation, its state."""
 
-    `claimed` is the worker's own account. `observed` is what AWORG watched
-    happen -- which tools ran, what they returned, what failed. The Resident
-    is shown both and told which is which, so that "it says it worked" and
-    "it worked" stay separable.
-    """
+    #: working -> replied -> (message) -> working ... ; or failed / stopped.
+    WORKING, REPLIED, FAILED, STOPPED = "working", "replied", "failed", "stopped"
 
-    def __init__(self, worker: str, task: str):
-        self.worker = worker
-        self.task = task
-        self.claimed: str = ""
+    def __init__(
+        self,
+        name: str,
+        instructions: str,
+        tools: list[str] | None,
+        skills: list[str],
+        connection: dict[str, Any],
+    ):
+        self.id = uuid.uuid4().hex[:6]
+        self.name = name
+        self.instructions = instructions
+        #: None means every tool the Resident has, except the worker tools.
+        self.tools = tools
+        self.skills = skills
+        self.connection = connection
+        self.history: list[Message] = []
+        self.state = self.WORKING
+        #: What it said at the end of its latest run.
+        self.reply = ""
+        #: Tool calls of its latest run, as AWORG observed them.
         self.calls: list[dict[str, Any]] = []
         self.error: str | None = None
+        self.started = time.time()
+        self.task: asyncio.Task | None = None
+        #: The Activity for its current or latest run; its tool calls hang
+        #: under it, which is how the Workers pane shows what it is doing.
+        self.activity_id: str | None = None
+        self.done = asyncio.Event()
 
     @property
     def failed_calls(self) -> list[dict[str, Any]]:
         return [c for c in self.calls if c["is_error"]]
 
+    def line(self) -> str:
+        """One row of a listing."""
+        return (
+            f"{self.id}  {self.name}  [{self.state}]  on {self.connection['name']}"
+            f", {len(self.calls)} call{'s' if len(self.calls) != 1 else ''} this run"
+        )
+
     def render(self) -> str:
-        """The result as the Resident reads it.
-
-        Deliberately laid out so the evidence cannot be skimmed past. The
-        worker's account comes first because it is what was asked for, and
-        the observed record follows under a heading that says plainly it is
-        AWORG's and not the worker's.
-        """
-        parts = [f"Worker `{self.worker}` finished."]
-
+        """Its latest run in full: what it said, then what AWORG saw it do."""
+        parts = [self.line()]
         if self.error:
-            parts.append(f"\nIt did not complete: {self.error}")
-
-        parts.append(f"\nWhat it reported:\n{self.claimed.strip() or '(it said nothing)'}")
-
-        if not self.calls:
-            parts.append(
-                "\nWhat AWORG observed: it used no tools at all. Whatever it "
-                "reported above, it did not do anything."
-            )
-        else:
+            parts.append(f"\nIt did not finish: {self.error}")
+        if self.state != self.WORKING:
+            parts.append(f"\nIts reply:\n{self.reply.strip() or '(it said nothing)'}")
+        if self.calls:
             lines = [
                 f"  {'FAILED' if c['is_error'] else 'ok'}  {c['name']}"
                 f"({c['arguments']}) -> {c['summary'] or 'no summary'}"
                 for c in self.calls
             ]
             parts.append(
-                "\nWhat AWORG observed it actually do "
-                f"({len(self.calls)} tool call{'s' if len(self.calls) != 1 else ''}"
+                f"\nTool calls AWORG observed ({len(self.calls)}"
                 + (f", {len(self.failed_calls)} failed" if self.failed_calls else "")
                 + "):\n" + "\n".join(lines)
             )
-
-        if self.failed_calls and "fail" not in self.claimed.lower():
-            # The exact case this whole design exists for: a worker that
-            # reports success over work that did not succeed. The Resident is
-            # told, rather than being left to notice.
-            parts.append(
-                "\nNote: some of those calls failed and the worker's report "
-                "does not mention it. Check before relying on this."
-            )
-
+        else:
+            parts.append("\nTool calls AWORG observed: none.")
         return "\n".join(parts)
 
 
-async def run_worker(
-    worker: dict[str, Any],
-    task: str,
-    *,
-    store: Any,
-    secrets: Any,
-    registry: Registry,
-    activities: ActivityManager,
-    paths: Any,
-    host_facts: dict[str, Any],
-    processes: Any = None,
-    parent_id: str | None = None,
-    skills: Any = None,
-    journal: Any = None,
-) -> WorkerResult:
-    """Run one worker on one task and come back with what happened.
+class WorkerPool:
+    """Every worker the Resident has started and not yet stopped."""
 
-    The Resident does not call this directly -- it asks for the `delegate`
-    tool, which calls this. Everything the worker needs is passed in, so
-    nothing here reaches for the Resident's conversation or its connection.
-    """
-    result = WorkerResult(worker["name"], task)
-
-    connection = _connection_for(worker, store)
-    if connection is None:
-        result.error = (
-            "No model is connected at all. Connect one in Settings, and "
-            "optionally give workers a cheaper one of their own."
-        )
-        return result
-
-    # Running on the Resident's own model because nothing cheaper was set.
-    #
-    # Said out loud rather than discovered on a bill. The fall-through is
-    # what makes delegation work on an Aworg nobody has configured, and the
-    # whole objection to it was the cost -- so the cost is reported. The
-    # Living Log is where a state of affairs the owner would want to find
-    # later belongs.
-    config = store.get_resident()
-    if (
-        journal is not None
-        and not worker.get("connection_id")
-        and not config.get("worker_connection_id")
+    def __init__(
+        self,
+        *,
+        store: Any,
+        secrets: Any,
+        registry: Registry,
+        activities: ActivityManager,
+        paths: Any,
+        host: Any,
+        processes: Any,
+        skills: Any,
     ):
-        journal.note_once(
-            f"Workers are running on {connection['name']}",
+        self.store = store
+        self.secrets = secrets
+        self.registry = registry
+        self.activities = activities
+        self.paths = paths
+        #: A callable returning the current host facts; they are refreshed
+        #: as the Aworg ages, so they are read at run time.
+        self.host = host
+        self.processes = processes
+        self.skills = skills
+        self.workers: dict[str, Worker] = {}
+
+    # -- what the Resident is offered ------------------------------------
+
+    def connections(self) -> list[dict[str, Any]]:
+        """The connections a worker can be put on: enabled, and usable."""
+        usable = []
+        for c in self.store.list_connections():
+            if not c.get("enabled"):
+                continue
+            if needs_credential(c) and not self.secrets.get(credential_ref(c["id"])):
+                continue
+            usable.append(c)
+        return usable
+
+    # -- lifecycle --------------------------------------------------------
+
+    def spawn(
+        self,
+        *,
+        name: str,
+        task: str,
+        instructions: str = "",
+        tools: list[str] | None = None,
+        skills: list[str] | None = None,
+        connection: str = "",
+    ) -> Worker:
+        """Start a worker in the background and return it at once.
+
+        Raises ValueError for a request that cannot start: an unknown
+        connection, or no usable connection at all.
+        """
+        chosen = self._connection(connection)
+        worker = Worker(name or "worker", instructions, tools, list(skills or []), chosen)
+        worker.history.append(Message("owner", task))
+        self.workers[worker.id] = worker
+        self._start(worker)
+        return worker
+
+    def message(self, worker_id: str, text: str) -> Worker:
+        worker = self.get(worker_id)
+        if worker.state == Worker.WORKING:
+            raise ValueError(f"{worker.id} is still working.")
+        if worker.state == Worker.STOPPED:
+            raise ValueError(f"{worker.id} was stopped.")
+        worker.history.append(Message("owner", text))
+        self._start(worker)
+        return worker
+
+    def stop(self, worker_id: str) -> Worker:
+        worker = self.get(worker_id)
+        if worker.task is not None and not worker.task.done():
+            worker.task.cancel()
+        worker.state = Worker.STOPPED
+        worker.done.set()
+        del self.workers[worker.id]
+        return worker
+
+    def stop_all(self) -> None:
+        for worker_id in list(self.workers):
+            self.stop(worker_id)
+
+    def get(self, worker_id: str) -> Worker:
+        worker = self.workers.get(str(worker_id).strip())
+        if worker is None:
+            known = ", ".join(self.workers) or "none"
+            raise KeyError(f"No worker {worker_id!r}. Current workers: {known}.")
+        return worker
+
+    def all(self) -> list[Worker]:
+        return list(self.workers.values())
+
+    async def wait(self, workers: list[Worker], seconds: float) -> None:
+        """Until any of these is no longer working, or the time runs out."""
+        working = [w for w in workers if w.state == Worker.WORKING]
+        if not working or seconds <= 0:
+            return
+        waits = [asyncio.create_task(w.done.wait()) for w in working]
+        try:
+            await asyncio.wait(waits, timeout=seconds,
+                               return_when=asyncio.FIRST_COMPLETED)
+        finally:
+            for t in waits:
+                t.cancel()
+
+    # -- running ------------------------------------------------------------
+
+    def _connection(self, name: str) -> dict[str, Any]:
+        usable = self.connections()
+        if not usable:
+            raise ValueError("No usable model connection is enabled.")
+        if name:
+            for c in usable:
+                if c["name"].lower() == name.strip().lower():
+                    return c
+            raise ValueError(
+                f"No usable connection called {name!r}. Usable: "
+                + ", ".join(c["name"] for c in usable) + "."
+            )
+        primary = self.store.get_resident().get("primary_connection_id")
+        for c in usable:
+            if c["id"] == primary:
+                return c
+        return usable[0]
+
+    def _start(self, worker: Worker) -> None:
+        worker.state = Worker.WORKING
+        worker.reply, worker.calls, worker.error = "", [], None
+        worker.done = asyncio.Event()
+        worker.task = asyncio.create_task(self._run(worker))
+
+    def _scope(self, worker: Worker) -> list[str]:
+        """The tools this worker may call: what it was given, never the pool."""
+        own = {
+            spec.name
+            for spec in self.registry.specs(None)
+            if spec.capability != WORKERS_CAPABILITY
+        }
+        if worker.tools is None:
+            return sorted(own)
+        granted = set()
+        for name in worker.tools:
+            capability = self.registry.get_capability(name)
+            if capability is not None and capability.id != WORKERS_CAPABILITY:
+                granted.update(s.name for s in capability.tools)
+            elif name in own:
+                granted.add(name)
+        return sorted(granted & own)
+
+    def _system(self, worker: Worker) -> str:
+        parts = [worker.instructions.strip()] if worker.instructions.strip() else []
+        library = self.skills
+        for name in worker.skills:
+            skill = library.get_any(name) if library is not None else None
+            if skill is None:
+                continue
+            allowed, reason = library.standing(skill)
+            if not allowed and reason != library.RETIRED:
+                continue
+            parts.append(f"# Skill: {skill.name}\n\n{skill.body().strip()}")
+        return "\n\n---\n\n".join(parts)
+
+    async def _run(self, worker: Worker) -> None:
+        connection = worker.connection
+        api_key = self.secrets.get(credential_ref(connection["id"])) or ""
+        activity = self.activities.create(
             kind="worker",
-            detail=(
-                "No separate worker connection is set, so delegated work goes "
-                "to the same model the Resident thinks with. That works, and "
-                "on a hosted model it is charged like any other request. "
-                "Settings can point workers at something cheaper."
+            label=worker.name,
+            source="resident",
+            detail=(worker.history[-1].content or "")[:80],
+        )
+        self.activities.started(activity)
+        worker.activity_id = activity.id
+
+        loop = AgentLoop(
+            adapter=build_adapter(connection, api_key),
+            registry=self.registry,
+            context=ToolContext(
+                paths=self.paths,
+                activities=self.activities,
+                host=self.host(),
+                processes=self.processes,
+                skills=self.skills,
+                result_limit=_result_limit(connection),
             ),
+            activities=self.activities,
+            scope=self._scope(worker),
+            source=f"worker:{worker.id}",
+            label=f"{worker.name} ({connection['model']})",
+            parent_id=activity.id,
         )
 
-    api_key = secrets.get(credential_ref(connection["id"]))
-    if not api_key and needs_credential(connection):
-        result.error = f"{connection['name']} has no credential stored."
-        return result
-    # A local model has nobody to prove anything to; see needs_credential.
-    api_key = api_key or ""
+        said: list[str] = []
+        grown: list[Message] = []
 
-    activity = activities.create(
-        kind="worker",
-        label=worker["name"],
-        source="resident",
-        parent_id=parent_id,
-        detail=task[:80],
-    )
-    activities.started(activity)
+        def record(role: str, content: str, blocks: Any = None,
+                   model_label: Any = None, thinking: Any = None,
+                   thinking_for: Any = None) -> int:
+            # Kept on the worker, so a message sent to it later continues
+            # this conversation. Nothing enters the owner's.
+            grown.append(Message(role, content, blocks))
+            return 0
 
-    loop = AgentLoop(
-        adapter=build_adapter(connection, api_key),
-        registry=registry,
-        context=ToolContext(
-            paths=paths,
-            activities=activities,
-            host=host_facts,
-            # Shared with the Resident on purpose. A worker that started a
-            # server on its own private table would leave something running
-            # that nothing could later find or stop.
-            processes=processes,
-            # From its own connection, which may be a far smaller model than
-            # the Resident's. A worker on an 8k window and a Resident on a
-            # million should not be handed the same ceiling, and neither
-            # should be handed a constant.
-            result_limit=_result_limit(connection),
-        ),
-        activities=activities,
-        # The whole point. An empty scope would mean every enabled tool,
-        # which is the Resident's scope and not a worker's, so a worker
-        # configured with no tools is given none rather than all.
-        scope=list(worker.get("tools") or []),
-        source=f"worker:{worker['name']}",
-        label=f"{worker['name']} ({connection['model']})",
-        max_rounds=WORKER_MAX_ROUNDS,
-        # Its tool calls hang under this worker in the Activities pane, so
-        # the owner can see which worker did what rather than a flat list.
-        parent_id=activity.id,
-    )
-
-    said: list[str] = []
-
-    def record(role: str, content: str, blocks: Any = None,
-               model_label: Any = None, thinking: Any = None,
-               thinking_for: Any = None) -> int:
-        # Thrown away with the worker. Nothing a worker says enters the
-        # owner's conversation except through the result the Resident reads
-        # -- its reasoning least of all, which is why `thinking` is taken and
-        # dropped here rather than being an argument this does not accept.
-        return 0
-
-    try:
-        async for event in loop.run(
-            [Message("owner", task)],
-            _system(
-                worker,
-                host_facts,
-                workspace=paths.workspace if paths is not None else None,
-                library=skills,
-            ),
-            record,
-        ):
-            kind = event["type"]
-            if kind == "delta":
-                said.append(event["text"])
-            elif kind == "tool_end":
-                result.calls.append(
-                    {
+        try:
+            async for event in loop.run(worker.history, self._system(worker), record):
+                kind = event["type"]
+                if kind == "delta":
+                    said.append(event["text"])
+                elif kind == "tool_end":
+                    worker.calls.append({
                         "name": event["name"],
-                        # A description, not the arguments.
-                        #
-                        # This held the whole dict, and a write_file's
-                        # content argument is the whole file -- so a builder
-                        # that wrote five pages put all five into the
-                        # Resident's context through its own report. One such
-                        # report came to 12,971 tokens, which is the opposite
-                        # of what delegating is for: the point of a worker is
-                        # that the work happens in a context that is then
-                        # thrown away.
-                        "arguments": _describe_arguments(
-                            event.get("arguments") or {}
-                        ),
+                        # A description, not the arguments: a write_file's
+                        # content is the whole file.
+                        "arguments": _describe_arguments(event.get("arguments") or {}),
                         "summary": event.get("summary") or "",
                         "is_error": bool(event.get("is_error")),
-                    }
-                )
-            elif kind == "error":
-                result.error = event["message"]
-    except ModelError as exc:
-        result.error = str(exc)
-    except Exception as exc:                                  # noqa: BLE001
-        # A worker falling over is the Resident's problem to report, not a
-        # reason for the Resident's own turn to end.
-        result.error = f"{exc.__class__.__name__}: {exc}"
+                    })
+                elif kind == "error":
+                    worker.error = event["message"]
+        except asyncio.CancelledError:
+            self.activities.failed(activity, "stopped", worker.render())
+            raise
+        except ModelError as exc:
+            worker.error = str(exc)
+        except Exception as exc:                                  # noqa: BLE001
+            worker.error = f"{exc.__class__.__name__}: {exc}"
 
-    result.claimed = "".join(said)
+        worker.history.extend(grown)
+        worker.reply = "".join(said)
+        worker.state = Worker.FAILED if worker.error else Worker.REPLIED
+        worker.done.set()
 
-    summary = f"{len(result.calls)} call{'s' if len(result.calls) != 1 else ''}"
-    if result.error:
-        activities.failed(activity, result.error, result.render())
-    else:
-        activities.completed(activity, summary, result.render())
-
-    return result
-
-
-#: Characters per token, generously. Matches Resident.CHARS_PER_TOKEN_GENEROUS
-#: and is duplicated for the same reason panes.py duplicates its own: this
-#: module has no business importing the Resident, and the number belongs to
-#: the tokenizer rather than to either of them.
-CHARS_PER_TOKEN_GENEROUS = 4.2
-
-#: What a worker keeps back for its own reply, as a share of its window.
-#: A result that filled the whole window would leave nothing to answer with.
-REPLY_SHARE = 4
+        summary = f"{len(worker.calls)} call{'s' if len(worker.calls) != 1 else ''}"
+        if worker.error:
+            self.activities.failed(activity, worker.error, worker.render())
+        else:
+            self.activities.completed(activity, summary, worker.render())
 
 
 def _result_limit(connection: dict[str, Any]) -> int | None:
-    """The largest tool result this worker's model could carry.
-
-    None where the window is unknown, which is the ordinary case for a
-    hosted model and means nothing is cut. A worker on a small local model
-    gets a real ceiling, because there the edge is real.
-    """
+    """The largest tool result this worker's model could carry, if known."""
     window = connection.get("context")
     if not window or window <= 0:
         return None
     return int((window - window // REPLY_SHARE) * CHARS_PER_TOKEN_GENEROUS)
-
-
-def _connection_for(worker: dict[str, Any], store: Any) -> dict[str, Any] | None:
-    """Which model this worker thinks with.
-
-    Its own if it names one, then the Aworg's worker connection, then the
-    Resident's own.
-
-    That last fall-through was deliberately absent, on the argument that it
-    was wrong in the expensive direction -- a hosted frontier model answering
-    fifteen delegated jobs the owner thought were going to the 2B on their
-    own card. The argument was sound and the conclusion was not, because the
-    alternative it produced is worse in every case: an Aworg where nobody
-    has set a worker connection has no workers at all, and the Resident
-    discovers this by trying to delegate and being told to go and configure
-    something.
-
-    That is what happened. A Resident planned four tasks, handed the first to
-    the builder, got "No model is connected for workers", and did the whole
-    job itself -- one wasted round trip, and a division of labour silently
-    abandoned on an Aworg whose owner had changed nothing.
-
-    Spending the owner's money without being asked is a real cost, so it is
-    reported rather than hidden: a worker running on the Resident's own
-    connection says so in the Living Log the first time it happens. Cheap
-    workers stay one setting away, and the setting is now an optimisation
-    rather than a precondition for delegation working at all.
-    """
-    if worker.get("connection_id"):
-        found = store.get_connection(worker["connection_id"])
-        if found:
-            return found
-    config = store.get_resident()
-    for key in ("worker_connection_id", "primary_connection_id"):
-        if config.get(key):
-            found = store.get_connection(config[key])
-            if found:
-                return found
-    return None
-
-
-def _system(
-    worker: dict[str, Any],
-    facts: dict[str, Any] | None = None,
-    workspace: Any = None,
-    library: Any = None,
-) -> str:
-    """What the worker is told about itself, and the little it needs about here.
-
-    Not the Resident's full host block. That runs to several hundred tokens
-    and would be a large share of a 2B's window spent on facts about a disk
-    it is not going to think about.
-
-    But not nothing either, and that was a real finding rather than a guess.
-    With no machine facts at all, a runner told to "run python hello.py" did
-    exactly that, hit the Windows Store stub, and failed -- and the Resident
-    had to read the failure and dispatch a second worker with the full path.
-    It recovered, which is the behaviour wanted, but it spent a round doing
-    it. Two lines prevent that.
-
-    So: which shell commands go through, where a working interpreter is, and
-    where its own work is supposed to land. All three are things a worker
-    acts on directly. Everything else stays with the Resident, whose job is
-    to put what matters into the task.
-
-    The workspace earns its line for the same reason the interpreter did. A
-    worker never told where it is picks an absolute path out of the air --
-    observed repeatedly, and the paths it picked were inside AWORG's own
-    source tree, because that was the only directory anything had named to
-    it.
-    """
-    prompt = (worker.get("system_prompt") or "").strip() or (
-        "You are a worker. Do exactly what the task asks, then report what "
-        "you did and whether it worked."
-    )
-    prompt += _skills_block(worker, library)
-    if not facts:
-        return prompt
-
-    lines = []
-    if workspace:
-        lines.append(
-            f"Work in {workspace} unless the task names somewhere else -- a "
-            "relative path goes there. Do not invent a directory."
-        )
-    lines.append(f"Commands run through {facts.get('shell', 'the system shell')}.")
-    if facts.get("python_executable"):
-        lines.append(
-            f"A working Python is at {facts['python_executable']} -- use that "
-            "full path rather than `python`."
-        )
-    # The stub warning that used to sit here has gone with the scan that made
-    # it necessary. It only ever corrected a claim the tool list made -- and
-    # with nothing advertising a `python` on PATH, the positive instruction
-    # above is the whole of what a worker needs: here is one that works, use
-    # it by path.
-    return f"{prompt}\n\n{' '.join(lines)}"
-
-
-def _skills_block(worker: dict[str, Any], library: Any) -> str:
-    """The worker's skills, in full, in front of it.
-
-    **Given, not offered.** The Resident gets descriptions and fetches a body
-    with read_skill when it judges one applies; a worker gets the body
-    outright. That is a deliberate departure from progressive disclosure, and
-    it is the right one here for two separate reasons.
-
-    The first is that progressive disclosure solves a problem a worker does
-    not have. It exists so a Resident carrying a dozen skills across an
-    open-ended conversation pays for a paragraph rather than a book. A worker
-    is a fresh context for one bounded job, holding the two or three skills
-    its owner scoped it to. There is nothing to defer, and deferring would
-    cost it a round trip out of the few it has.
-
-    The second is measured. Asked plainly, a local model reaches for a
-    matching skill about one time in six; told to read a named one, it does
-    so four times out of four, on two unrelated model families. The reliable
-    half of that is being told. So the Resident's judgement -- which worker
-    should do this -- is what routes a skill to where it is needed, and by
-    the time the worker sees it there is no decision left to get wrong.
-
-    A named skill that no longer exists is skipped rather than raised on. An
-    owner who deletes a skill file should not find three workers refusing to
-    start.
-    """
-    names = worker.get("skills") or []
-    if not names or library is None:
-        return ""
-
-    bodies = []
-    for name in names:
-        skill = library.get_any(name)
-        # The owner's switch reaches workers too. This handed a worker every
-        # skill it was scoped to whether or not the owner had switched it
-        # off -- get_any exists precisely to find a skill that is off, for
-        # the toggle that turns it back on. So a builder went on writing
-        # house-style's provenance lines into every file after the owner had
-        # turned house-style off, and the switch was half a switch.
-        #
-        # Retired skills are the one "no" that does not apply here. That rule
-        # is about a Resident still getting started; a worker was scoped to
-        # the skill on purpose and has no start to be past.
-        if skill is not None:
-            allowed, reason = library.standing(skill)
-            if not allowed and reason != library.RETIRED:
-                skill = None
-        if skill is None:
-            continue
-        bodies.append(f"## {skill.name}\n\n{skill.body().strip()}")
-    if not bodies:
-        return ""
-
-    return (
-        "\n\nThese are this machine's own conventions for the kind of work "
-        "you do. They are not general good practice and you could not have "
-        "guessed them. Follow them exactly, in preference to how you would "
-        "normally do it.\n\n" + "\n\n".join(bodies)
-    )

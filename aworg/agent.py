@@ -85,8 +85,7 @@ class AgentLoop:
         #: no sign of who ran them.
         self.parent_id = parent_id
         #: State a self-describing tool needs at the moment it is offered --
-        #: today just the worker list, which decides whether `delegate`
-        #: appears at all and what its enumeration contains.
+        #: the usable connections for spawn_worker, the skills for read_skill.
         self.live = live or {}
         #: Precomputed descriptors, when the caller has already built them --
         #: the Resident does, because it has to measure what the tool schemas
@@ -301,7 +300,7 @@ class AgentLoop:
         # Copied from the loop's own context rather than rebuilt field by
         # field, so that only the two per-call values differ and everything
         # else travels automatically. Rebuilding it by hand silently dropped
-        # `spawn` the day delegation was added, and would drop the next
+        # the worker hook the day workers were added, and would drop the next
         # field added too -- the failure is invisible, because the tool just
         # finds the attribute missing and reports itself unwired.
         context = replace(self.context, activity=activity, source=self.source)

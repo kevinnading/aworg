@@ -103,12 +103,10 @@ class ToolContext:
     #: The Activity representing this call, so a long-running tool can say
     #: how far it has got without knowing who is listening.
     activity: Activity | None = None
-    #: How a tool starts a worker, and the names it may start. Supplied by
-    #: whoever builds the context -- the delegate tool asks for them by
-    #: attribute rather than importing anything, so a tool still cannot
-    #: acquire something it was not handed.
-    spawn: Any = None
-    workers: list[str] = field(default_factory=list)
+    #: The Resident's worker pool, for the worker tools. Handed in rather
+    #: than imported, so a tool still cannot acquire something it was not
+    #: given -- and a worker's own context never carries it.
+    workers: Any = None
     #: The store, for the internal tools that keep durable state -- the plan,
     #: today. Handed in like everything else rather than imported, so a tool
     #: still cannot reach anything it was not given, and a test can hand it

@@ -45,12 +45,11 @@ PANES: list[dict[str, Any]] = [
     {
         "id": "workers",
         "label": "Workers",
-        "hint": "Workers running right now. They appear when dispatched and go when done.",
+        "hint": "Workers the Resident has started and not yet stopped.",
         "available": True,
-        "empty": ("No workers running.",
-                  "Workers appear here while they are working and leave when "
-                  "they finish. What kinds of worker exist is set in "
-                  "Settings, under Model Pool."),
+        "empty": ("No workers.",
+                  "The Resident starts workers when it wants help, and they "
+                  "stay here until it stops them."),
         "blocked": None,
     },
     {
@@ -305,25 +304,23 @@ def _machine_facts(facts: dict[str, Any], workspace: Any = None) -> list[dict[st
     ]
 
 
-def workers(crew: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Deliberately empty at rest.
+def workers(pool: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The worker pool, one row each: name, state, model, calls this run.
 
-    A worker is temporary: spawned for one bounded job, disposed when it
-    finishes. So this pane answers "who is working for me right now", not
-    "what kinds of worker exist" -- the second is configuration and belongs
-    in Settings beside the models, which is where a worker's connection and
-    prompt are chosen anyway.
-
-    Listing the configured kinds here made a permanent roster out of
-    something whose defining property is being temporary, and left an owner
-    unable to see the thing they actually wanted: that three workers are
-    running and one of them is stuck.
-
-    The rows come from the live Activity stream rather than from here, for
-    the same reason Activities does -- a pane painted from a snapshot cannot
-    show work arriving and leaving.
+    Live tool calls still arrive through the Activity stream; this is what
+    exists, including workers that have replied and are waiting.
     """
-    return []
+    return [
+        {
+            "kind": "worker",
+            "name": w["name"],
+            "detail": f"{w['id']} on {w['connection']}, {w['calls']} "
+                      f"call{'s' if w['calls'] != 1 else ''} this run",
+            "state": w["state"],
+            "activity": w["activity"],
+        }
+        for w in pool
+    ]
 
 
 def tasks(plan: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -443,7 +440,7 @@ def describe(
     facts: dict[str, Any] | None = None,
     registry: Any = None,
     enabled: Any = None,
-    crew: list[dict[str, Any]] | None = None,
+    pool: list[dict[str, Any]] | None = None,
     plan: list[dict[str, Any]] | None = None,
     known: list[dict[str, Any]] | None = None,
     happened: list[dict[str, Any]] | None = None,
@@ -466,8 +463,8 @@ def describe(
             items = capabilities(facts or {}, registry, enabled)
         elif pane["id"] == "environment" and facts:
             items = system(facts, workspace=workspace)
-        elif pane["id"] == "workers" and crew:
-            items = workers(crew)
+        elif pane["id"] == "workers" and pool:
+            items = workers(pool)
         elif pane["id"] == "tasks" and plan:
             items = tasks(plan)
         elif pane["id"] == "skills" and known:

@@ -328,13 +328,12 @@ class Registry:
 
         Most tools describe themselves once, at discovery, from constants in
         their own file. A tool marked DYNAMIC describes itself here instead,
-        from whatever `live` state it is given -- `delegate` does, because its
-        enumeration is the owner's list of workers and that changes without
+        from whatever `live` state it is given -- spawn_worker does, because
+        its enumeration is the owner's connections and those change without
         any code changing.
 
-        A dynamic tool that returns nothing is left out entirely. With no
-        workers configured there is no delegate tool, which is better than
-        offering the Resident a way to dispatch to an empty list.
+        A dynamic tool that returns nothing is left out entirely: with no
+        usable connection there is no spawn_worker.
         """
         out: list[dict[str, Any]] = []
         for spec in self.specs(scope):

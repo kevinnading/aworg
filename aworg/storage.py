@@ -139,35 +139,9 @@ CREATE TABLE IF NOT EXISTS tasks (
 
 CREATE INDEX IF NOT EXISTS idx_tasks_state ON tasks (state, position, id);
 
-CREATE TABLE IF NOT EXISTS workers (
-    id            TEXT PRIMARY KEY,
-    name          TEXT NOT NULL,
-    -- Load-bearing, not decoration. It is the only thing the Resident routes
-    -- on when choosing which worker to hand a job to, so a vague one is a
-    -- misrouted job the owner experiences as the wrong specialist doing
-    -- their work. See docs/06_ARCHITECTURE.md.
-    description   TEXT NOT NULL DEFAULT '',
-    -- NULL means "whatever the worker connection is set to", which is the
-    -- ordinary case: workers share one small model and differ by prompt and
-    -- tool scope. A worker may name its own connection when it needs a
-    -- bigger mind than its siblings.
-    connection_id TEXT,
-    system_prompt TEXT NOT NULL DEFAULT '',
-    -- JSON list of tool names or capability ids. Empty means every tool the
-    -- owner has enabled, which is deliberately not the default: a worker
-    -- that cannot write cannot damage the workspace however badly it
-    -- misreads its job.
-    tools         TEXT NOT NULL DEFAULT '[]',
-    -- JSON list of skill names this worker is given. Scoped exactly like
-    -- tools and for the same reason: what a worker knows how to do is the
-    -- owner's decision, not something the Resident can widen at dispatch.
-    -- Unlike the Resident's skills these are not offered to be read -- they
-    -- are put in front of the worker, which is why the list should be short.
-    skills        TEXT NOT NULL DEFAULT '[]',
-    enabled       INTEGER NOT NULL DEFAULT 1,
-    created_at    TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
-);
+-- Premade workers are gone: the Resident spawns its own. An Aworg that
+-- still has the old table loses it.
+DROP TABLE IF EXISTS workers;
 
 CREATE TABLE IF NOT EXISTS skill_state (
     id         TEXT PRIMARY KEY,
@@ -502,152 +476,6 @@ owner may not be a programmer and should never need to be."""]
 DEFAULT_SYSTEM_PROMPT = ""
 
 
-#: Tool scopes the shipped workers used to have. A worker still carrying one
-#: of these exactly was configured by AWORG and never touched by the owner,
-#: so it is safe to bring up to date -- the same exact-match rule the system
-#: prompt uses, and for the same reason.
-#:
-#: Needed because tools arrive after workers do. The runner shipped before
-#: start_process existed, so it was left trying to launch a web server with
-#: the tool that waits for things to finish, and sat there until the timeout.
-#: Crews that AWORG shipped and the owner has not touched. A database whose
-#: worker names are exactly one of these was configured by AWORG alone, so a
-#: newly shipped worker can safely be added to it; anything else is the
-#: owner's arrangement and is left as it is.
-PREVIOUS_WORKER_CREWS = [
-    {"builder", "runner", "checker"},
-]
-
-PREVIOUS_WORKER_TOOLS = {
-    "runner": [["execute_command", "read_file"]],
-    "checker": [["read_file", "search_files", "execute_command"]],
-    "builder": [],
-}
-
-
-#: The workers a fresh Aworg starts with.
-#:
-#: Seeded once, when the table is empty, and never again -- an owner who
-#: deletes one should not find it back tomorrow.
-#:
-#: Four, and the number is still the point. The Resident routes by picking a
-#: name out of this list, and routing degrades as the list grows exactly the
-#: way tool selection does. A few specialists whose jobs do not overlap are
-#: routed correctly; ten shading into each other are not.
-#:
-#: The fourth earned its place by what it keeps out of the conversation. A
-#: Resident fetching four pages for research put 175,000 tokens of markup
-#: into its own memory, against 855 tokens of everything it had actually
-#: said -- and carried all of it on every request afterwards. Reading a page
-#: to learn one fact from it is precisely the kind of work that should happen
-#: in a context that is then thrown away.
-#:
-#: Prompts are deliberately short. Measured against the models this is built
-#: for, longer system prompts scored *worse* -- see docs/06_ARCHITECTURE.md.
-#:
-#: Note what each one is *not given*. The builder has no shell, so it cannot
-#: run anything however badly it misreads a job. The checker cannot write, so
-#: its report cannot be a change it made. That is not trust, it is the tool
-#: scope: a worker is not asked to avoid something, it is simply not handed
-#: the means.
-DEFAULT_WORKERS = [
-    {
-        "name": "builder",
-        "description": (
-            "Writes and edits files. Give it what the file should contain "
-            "and where it goes. Cannot run anything."
-        ),
-        "tools": ["read_file", "write_file", "search_files"],
-        # The one worker that creates files, so the one that has to know how
-        # this Aworg names and places them. Given rather than offered: see
-        # workers._system.
-        "skills": ["house-style"],
-        "system_prompt": (
-            "You write files. Do exactly what the task asks and nothing more.\n\n"
-            "Write the file, then say in one or two sentences what you wrote "
-            "and where. If you could not, say so plainly and say why."
-        ),
-    },
-    {
-        "name": "runner",
-        "description": (
-            "Runs commands and reports exactly what they printed and the "
-            "exit code. Can also start and stop long-running things like "
-            "servers. Cannot write files."
-        ),
-        "tools": [
-            "execute_command", "start_process", "list_processes",
-            "stop_process", "read_file",
-        ],
-        # None. A runner types what it is told to type; conventions about
-        # how files are written are not its business, and context spent on
-        # them is context it does not have.
-        "skills": [],
-        "system_prompt": (
-            "You run commands. Run what the task asks, then report exactly "
-            "what came back.\n\n"
-            "Quote the output rather than summarising it, and always give the "
-            "exit code. A command that failed is a normal result: report the "
-            "failure, do not try to hide or fix it."
-        ),
-    },
-    {
-        "name": "researcher",
-        "description": (
-            "Looks things up on the web and reports what it found in its own "
-            "words, with the addresses it found them at. Use it instead of "
-            "fetching pages yourself. Cannot change anything."
-        ),
-        "tools": ["http_request", "read_file"],
-        # None. Reading a page has no conventions to follow, and a skill here
-        # would be context spent on advice about writing files by something
-        # that cannot write one.
-        "skills": [],
-        "system_prompt": (
-            "You look things up and report what you found.\n\n"
-            "Fetch the pages, read them, and write back what they "
-            "actually say -- in your own words, short, with the address "
-            "you found each thing at. Quote only the lines that matter.\n\n"
-            "**Never paste a page back.** The whole reason you exist is "
-            "that the Resident must not have to hold a web page in its "
-            "memory to learn one fact from it. A page handed back unread "
-            "is a job not done.\n\n"
-            "Say plainly what you could not find. A gap reported is "
-            "useful; a gap filled in with something plausible is worse "
-            "than useless, because the Resident cannot tell the "
-            "difference and the owner will not check."
-        ),
-    },
-    {
-        "name": "checker",
-        "description": (
-            "Checks whether something actually works and reports what it "
-            "found. Use it to verify work rather than trusting it. Cannot "
-            "change anything."
-        ),
-        # http_request so it can check that a served page actually answers,
-        # which is the difference between "the server process exists" and
-        # "the site works". list_processes for the same reason.
-        "tools": [
-            "read_file", "search_files", "execute_command",
-            "http_request", "list_processes",
-        ],
-        # A checker needs the conventions for the opposite reason to the
-        # builder: it is checking whether they were followed, and it cannot
-        # find a missing provenance line it was never told to look for.
-        "skills": ["house-style"],
-        "system_prompt": (
-            "You check whether something actually works. You did not do the "
-            "work and you have no stake in it having gone well.\n\n"
-            "Look for yourself: read the file, run the thing, see what it "
-            "does. Report what you found, not what was hoped for. Saying "
-            "\"this does not work, here is what happened\" is the most useful "
-            "thing you can do. Never report success you did not observe."
-        ),
-    },
-]
-
-
 class Store:
     def __init__(self, path: Path):
         self.path = path
@@ -672,7 +500,6 @@ class Store:
         ("connections", "reasoning", "TEXT NOT NULL DEFAULT 'auto'"),
         ("connections", "context", "INTEGER"),
         ("messages", "blocks", "TEXT"),
-        ("workers", "skills", "TEXT NOT NULL DEFAULT '[]'"),
         # Which persona the Resident is wearing. On the resident row rather
         # than in a table of its own because there is exactly one Resident
         # and it wears exactly one at a time -- and because putting it here
@@ -716,96 +543,6 @@ class Store:
             )
             self._rename_presets(conn)
             self._refresh_default_prompt(conn)
-            self._seed_workers(conn)
-            self._refresh_worker_tools(conn)
-            self._adopt_new_workers(conn)
-
-    @staticmethod
-    def _refresh_worker_tools(conn) -> None:
-        """Give a shipped worker any tools it predates.
-
-        Only where its scope is still exactly one AWORG set. A worker whose
-        tools the owner has changed is theirs, and widening it behind their
-        back would hand a specialist abilities they deliberately withheld --
-        which is the one thing a tool scope exists to prevent.
-        """
-        wanted = {w["name"]: w["tools"] for w in DEFAULT_WORKERS}
-        for row in conn.execute("SELECT id, name, tools FROM workers").fetchall():
-            target = wanted.get(row["name"])
-            if not target:
-                continue
-            try:
-                current = json.loads(row["tools"] or "[]")
-            except ValueError:
-                continue
-            if current == target:
-                continue
-            if current in PREVIOUS_WORKER_TOOLS.get(row["name"], []):
-                conn.execute(
-                    "UPDATE workers SET tools = ?, updated_at = datetime('now') "
-                    "WHERE id = ?",
-                    (json.dumps(target), row["id"]),
-                )
-
-    @staticmethod
-    def _adopt_new_workers(conn) -> None:
-        """Give an existing Aworg a worker that shipped after it was made.
-
-        Only where the crew is still exactly an older shipped set -- the same
-        exact-match rule the system prompt and the tool scopes use, and for
-        the same reason. A crew the owner has edited is theirs, and adding to
-        it would be AWORG deciding they wanted something.
-
-        Without this a worker added here reaches only fresh installs, and the
-        Aworgs that most need it are the ones that have been running long
-        enough to have a conversation worth protecting.
-        """
-        have = {
-            row["name"] for row in conn.execute("SELECT name FROM workers").fetchall()
-        }
-        if not have or have not in PREVIOUS_WORKER_CREWS:
-            return
-        for spec in DEFAULT_WORKERS:
-            if spec["name"] in have:
-                continue
-            conn.execute(
-                "INSERT INTO workers "
-                "(id, name, description, system_prompt, tools, skills) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                (
-                    uuid.uuid4().hex[:12],
-                    spec["name"],
-                    spec["description"],
-                    spec["system_prompt"],
-                    json.dumps(spec["tools"]),
-                    json.dumps(spec.get("skills") or []),
-                ),
-            )
-
-    @staticmethod
-    def _seed_workers(conn) -> None:
-        """Put the shipped workers in, once, if there are none at all.
-
-        Only when the table is completely empty. An owner who deleted the
-        builder meant to delete it, and finding it back at the next restart
-        would be AWORG overruling them about their own machine.
-        """
-        if conn.execute("SELECT COUNT(*) c FROM workers").fetchone()["c"]:
-            return
-        for spec in DEFAULT_WORKERS:
-            conn.execute(
-                "INSERT INTO workers "
-                "(id, name, description, system_prompt, tools, skills) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                (
-                    uuid.uuid4().hex[:12],
-                    spec["name"],
-                    spec["description"],
-                    spec["system_prompt"],
-                    json.dumps(spec["tools"]),
-                    json.dumps(spec.get("skills") or []),
-                ),
-            )
 
     @staticmethod
     def _rename_presets(conn) -> None:
@@ -856,29 +593,6 @@ class Store:
             existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
             if column not in existing:
                 conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
-                cls._on_column_added(conn, table, column)
-
-    @staticmethod
-    def _on_column_added(conn, table: str, column: str) -> None:
-        """Fill in a new column for the shipped rows, once, as it appears.
-
-        Here rather than in a refresh that runs at every start, and the
-        difference matters. A refresh cannot tell an owner who cleared a
-        setting from a database that never had it, so it would keep handing
-        back something they deliberately removed. This runs exactly once, in
-        the same step that creates the column, when empty provably means
-        "this database predates the idea" rather than "no thanks".
-        """
-        if (table, column) != ("workers", "skills"):
-            return
-        wanted = {w["name"]: w.get("skills") or [] for w in DEFAULT_WORKERS}
-        for row in conn.execute("SELECT id, name FROM workers").fetchall():
-            target = wanted.get(row["name"])
-            if target:
-                conn.execute(
-                    "UPDATE workers SET skills = ? WHERE id = ?",
-                    (json.dumps(target), row["id"]),
-                )
 
     # -- connections ----------------------------------------------------
 
@@ -1273,7 +987,6 @@ class Store:
         "workspace": "Files in the Living Workspace",
         "trash": "The trash",
         "processes": "Running programs (servers and the like)",
-        "workers": "Workers, back to the shipped four",
         "capabilities": "Capabilities, back to the ones that shipped",
         "skills": "Skills, back to the ones that shipped",
         "project": "The project's name and version",
@@ -1299,7 +1012,6 @@ class Store:
         "conversation": ("messages", "conversations"),
         "tasks": ("tasks",),
         "journal": ("journal",),
-        "workers": ("workers",),
         "capabilities": ("capability_state",),
         "skills": ("skill_state",),
         "connections": ("connections",),
@@ -1384,8 +1096,6 @@ class Store:
                     " overrides = '{}' WHERE id = 1",
                     (DEFAULT_PRESET,),
                 )
-            if "workers" in chosen:
-                self._seed_workers(conn)
 
         # Scrub what was deleted, rather than merely unlinking it.
         #
@@ -1643,105 +1353,6 @@ class Store:
                 "SELECT state, COUNT(*) n FROM tasks GROUP BY state"
             ).fetchall()
         return {row["state"]: row["n"] for row in rows}
-
-    # -- workers --------------------------------------------------------
-
-    def list_workers(self, enabled_only: bool = False) -> list[dict[str, Any]]:
-        with self._connect() as conn:
-            rows = conn.execute(
-                "SELECT * FROM workers"
-                + (" WHERE enabled = 1" if enabled_only else "")
-                + " ORDER BY name"
-            ).fetchall()
-        return [self._worker_row(r) for r in rows]
-
-    def get_worker(self, worker_id: str) -> dict[str, Any] | None:
-        with self._connect() as conn:
-            row = conn.execute(
-                "SELECT * FROM workers WHERE id = ?", (worker_id,)
-            ).fetchone()
-        return self._worker_row(row) if row else None
-
-    def worker_by_name(self, name: str) -> dict[str, Any] | None:
-        """Find a worker the way the Resident names one.
-
-        Matched case-insensitively, because the name travels through a model
-        and comes back capitalised however that model felt about it.
-        """
-        with self._connect() as conn:
-            row = conn.execute(
-                "SELECT * FROM workers WHERE lower(name) = lower(?)", (name.strip(),)
-            ).fetchone()
-        return self._worker_row(row) if row else None
-
-    def create_worker(
-        self,
-        name: str,
-        description: str = "",
-        connection_id: str | None = None,
-        system_prompt: str = "",
-        tools: list[str] | None = None,
-        enabled: bool = True,
-        skills: list[str] | None = None,
-    ) -> dict[str, Any]:
-        worker_id = uuid.uuid4().hex[:12]
-        with self._connect() as conn:
-            conn.execute(
-                "INSERT INTO workers (id, name, description, connection_id, "
-                "system_prompt, tools, skills, enabled) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    worker_id,
-                    name,
-                    description,
-                    connection_id,
-                    system_prompt,
-                    json.dumps(tools or []),
-                    json.dumps(skills or []),
-                    1 if enabled else 0,
-                ),
-            )
-        return self.get_worker(worker_id)  # type: ignore[return-value]
-
-    def update_worker(self, worker_id: str, **fields: Any) -> dict[str, Any] | None:
-        allowed = {
-            "name", "description", "connection_id", "system_prompt", "tools",
-            "skills", "enabled",
-        }
-        sets, values = [], []
-        for key, value in fields.items():
-            if key not in allowed:
-                continue
-            if key in ("tools", "skills"):
-                value = json.dumps(value or [])
-            elif key == "enabled":
-                value = 1 if value else 0
-            sets.append(f"{key} = ?")
-            values.append(value)
-        if not sets:
-            return self.get_worker(worker_id)
-        sets.append("updated_at = datetime('now')")
-        with self._connect() as conn:
-            conn.execute(
-                f"UPDATE workers SET {', '.join(sets)} WHERE id = ?",
-                (*values, worker_id),
-            )
-        return self.get_worker(worker_id)
-
-    def delete_worker(self, worker_id: str) -> None:
-        with self._connect() as conn:
-            conn.execute("DELETE FROM workers WHERE id = ?", (worker_id,))
-
-    @staticmethod
-    def _worker_row(row: sqlite3.Row) -> dict[str, Any]:
-        worker = dict(row)
-        for column in ("tools", "skills"):
-            try:
-                worker[column] = json.loads(worker.get(column) or "[]")
-            except (TypeError, ValueError):
-                worker[column] = []
-        worker["enabled"] = bool(worker["enabled"])
-        return worker
 
     # -- capabilities ---------------------------------------------------
 

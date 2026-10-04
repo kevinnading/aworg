@@ -38,7 +38,7 @@ from .skills import SkillLibrary
 from .agent import AgentLoop
 from .models import Message, ModelError, build_adapter, needs_credential
 from .tools import Registry, ToolContext
-from .workers import run_worker
+from .workers import WorkerPool
 from .secrets import SecretStore, credential_ref
 from .stopping import next_or_stop
 from .storage import Store
@@ -178,6 +178,18 @@ class Resident:
         #: started once and left running for weeks would otherwise be
         #: working from a picture of the machine as it was on the first day.
         self.host = host.observe()
+        #: Workers the Resident has started and not stopped. In this process
+        #: only, like the process table.
+        self.workers = WorkerPool(
+            store=store,
+            secrets=secrets,
+            registry=self.registry,
+            activities=self.activities,
+            paths=paths,
+            host=lambda: self.host,
+            processes=self.processes,
+            skills=self.skills,
+        )
         #: At most one, because there is one Resident and one conversation.
         self.turn: Turn | None = None
 
@@ -434,65 +446,26 @@ class Resident:
     def _estimate(self, text: str) -> int:
         return int(len(text) / self.CHARS_PER_TOKEN)
 
-    #: Tools the Resident does not get, however enabled they are.
-    #:
-    #: Fetching a page is doing, and doing belongs to a worker. The Resident
-    #: having http_request meant it used it: one turn delegated research to
-    #: the researcher and *then* fetched six pages itself anyway, putting
-    #: 25,577 tokens of web text into the conversation it has to carry for
-    #: the rest of its life.
-    #:
-    #: A worker reading a page and reporting three sentences is the whole
-    #: argument for workers existing. The researcher and the checker keep
-    #: http_request; the Resident asks one of them.
-    #:
-    #: Deliberately a short list, and deliberately not a setting. If it grows
-    #: past a couple of entries the answer is worker-only capabilities rather
-    #: than more names here.
-    NOT_THE_RESIDENTS = ("http_request",)
-
-    def _offered_tools(self, adapter: Any, crew: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def _offered_tools(self, adapter: Any) -> list[dict[str, Any]]:
         """The tool descriptors this turn will send, or none if it cannot.
 
-        Built here rather than left to the loop because the same list has to
-        be measured before the conversation is fitted around it.
-
-        Minus the few that belong to workers. See NOT_THE_RESIDENTS.
+        Every enabled tool. Built here rather than left to the loop because
+        the same list has to be measured before the conversation is fitted
+        around it.
         """
         if not getattr(adapter, "supports_tools", False):
             return []
-        return self.registry.descriptors(
-            None,
-            workers=crew,
-            # Skills go to the tool that reads them, not only into the prose
-            # above -- see read_skill.describe_for for why that turned out to
-            # matter more than any wording of the prose did.
-            skills=[
+        return self.registry.descriptors(None, **self._live())
+
+    def _live(self) -> dict[str, Any]:
+        """What the self-describing tools describe themselves from."""
+        return {
+            "connections": self.workers.connections(),
+            "skills": [
                 {"name": s.name, "description": s.description}
                 for s in self.skills.offered()
             ],
-        )
-
-    def _without_workers_tools(
-        self, offered: list[dict[str, Any]], crew: list[dict[str, Any]]
-    ) -> list[dict[str, Any]]:
-        """Drop the tools that are a worker's to use, when one can take them.
-
-        Only when a worker actually has the tool and is enabled. An Aworg
-        whose researcher the owner deleted should not find the Resident
-        unable to fetch anything at all -- the rule exists to route work to
-        workers, not to make a capability unreachable.
-        """
-        covered = {
-            name
-            for worker in crew
-            for name in (worker.get("tools") or [])
         }
-        return [
-            tool for tool in offered
-            if tool["name"] not in self.NOT_THE_RESIDENTS
-            or tool["name"] not in covered
-        ]
 
     def _tools_cost(self, offered: list[dict[str, Any]]) -> int:
         """What the tool schemas cost, in tokens, on every request.
@@ -621,10 +594,7 @@ class Resident:
             # the request the provider refuses.
             if api_key:
                 tools_cost = self._tools_cost(
-                    self._offered_tools(
-                        build_adapter(connection, api_key),
-                        self.store.list_workers(enabled_only=True),
-                    )
+                    self._offered_tools(build_adapter(connection, api_key))
                 )
             plan = self._fit(history, system, window, tools_cost)
             if api_key:
@@ -1034,16 +1004,9 @@ class Resident:
         history = self._to_messages(self.store.messages(conversation_id))
         adapter = build_adapter(connection, api_key)
 
-        # Who the Resident may hand work to. Read fresh each turn rather than
-        # captured, so a worker the owner adds mid-conversation is available
-        # on the next message instead of the next restart.
-        crew = self.store.list_workers(enabled_only=True)
-
         # Built before fitting, because the schemas are part of every request
         # and the conversation has to fit in what is left after them.
-        offered = self._without_workers_tools(
-            self._offered_tools(adapter, crew), crew
-        )
+        offered = self._offered_tools(adapter)
 
         # Only what fits goes to the model. Everything stays on disk.
         system = self.system_prompt()
@@ -1073,34 +1036,6 @@ class Resident:
                 thinking_for,
             )
 
-        async def spawn(name: str, task: str):
-            """Start one worker. Returns None if there is no such worker.
-
-            Handed to the tool layer rather than imported by it, so that
-            `delegate` can start a worker without being able to reach
-            anything else the Resident owns.
-            """
-            worker = self.store.worker_by_name(name)
-            if worker is None or not worker["enabled"]:
-                return None
-            return await run_worker(
-                worker,
-                task,
-                store=self.store,
-                secrets=self.secrets,
-                registry=self.registry,
-                activities=self.activities,
-                paths=self.paths,
-                host_facts=self.host,
-                processes=self.processes,
-                parent_id=None,
-                # So a worker's scoped skills can be resolved to their
-                # bodies. The Resident holds the library; the worker is
-                # handed only what it was scoped to.
-                skills=self.skills,
-                journal=self.journal,
-            )
-
         loop = AgentLoop(
             adapter=adapter,
             registry=self.registry,
@@ -1109,8 +1044,7 @@ class Resident:
                 paths=self.paths,
                 activities=self.activities,
                 host=self.host,
-                spawn=spawn,
-                workers=[w["name"] for w in crew],
+                workers=self.workers,
                 store=self.store,
                 processes=self.processes,
                 skills=self.skills,
@@ -1124,11 +1058,8 @@ class Resident:
                 result_limit=self._result_limit(plan.get("budget")),
             ),
             activities=self.activities,
-            live={"workers": crew},
+            live=self._live(),
             # None: the Resident sees every tool the owner has left enabled.
-            # A worker gets a list; that is the same argument, used
-            # differently, which is the point of the loop not being a method
-            # on this class any more.
             scope=None,
             source="resident",
             label=label,
