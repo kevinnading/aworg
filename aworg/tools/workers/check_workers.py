@@ -45,7 +45,7 @@ async def run(context: ToolContext, worker: str = "", wait: float = 0) -> ToolRe
         except KeyError as exc:
             raise ToolError(str(exc.args[0])) from None
         await pool.wait([one], seconds)
-        return ToolResult(text=one.render(), summary=f"{one.id}: {one.state}")
+        return ToolResult(text=one.take(), summary=f"{one.id}: {one.state}")
 
     everyone = pool.all()
     await pool.wait(everyone, seconds)

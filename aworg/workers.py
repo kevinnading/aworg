@@ -69,6 +69,9 @@ class Worker:
         self.error: str | None = None
         self.started = time.time()
         self.task: asyncio.Task | None = None
+        #: How many runs it has started, and the last one the Resident read.
+        self.runs = 0
+        self.read = 0
         #: The Activity for its current or latest run; its tool calls hang
         #: under it, which is how the Workers pane shows what it is doing.
         self.activity_id: str | None = None
@@ -84,6 +87,17 @@ class Worker:
             f"{self.id}  {self.name}  [{self.state}]  on {self.connection['name']}"
             f", {len(self.calls)} call{'s' if len(self.calls) != 1 else ''} this run"
         )
+
+    @property
+    def unread(self) -> bool:
+        """Finished a run the Resident has not read."""
+        return self.state != self.WORKING and self.read < self.runs
+
+    def take(self) -> str:
+        """render(), as the Resident reads it: a finished run is now read."""
+        if self.state != self.WORKING:
+            self.read = self.runs
+        return self.render()
 
     def render(self) -> str:
         """Its latest run in full: what it said, then what AWORG saw it do."""
@@ -122,6 +136,7 @@ class WorkerPool:
         host: Any,
         processes: Any,
         skills: Any,
+        on_finish: Any = None,
     ):
         self.store = store
         self.secrets = secrets
@@ -133,6 +148,8 @@ class WorkerPool:
         self.host = host
         self.processes = processes
         self.skills = skills
+        #: Called with a worker each time one of its runs ends on its own.
+        self.on_finish = on_finish
         self.workers: dict[str, Worker] = {}
 
     # -- what the Resident is offered ------------------------------------
@@ -240,6 +257,7 @@ class WorkerPool:
 
     def _start(self, worker: Worker) -> None:
         worker.state = Worker.WORKING
+        worker.runs += 1
         worker.reply, worker.calls, worker.error = "", [], None
         worker.done = asyncio.Event()
         worker.task = asyncio.create_task(self._run(worker))
@@ -344,6 +362,11 @@ class WorkerPool:
         worker.reply = "".join(said)
         worker.state = Worker.FAILED if worker.error else Worker.REPLIED
         worker.done.set()
+        if self.on_finish is not None:
+            try:
+                self.on_finish(worker)
+            except Exception:                                 # noqa: BLE001
+                pass
 
         summary = f"{len(worker.calls)} call{'s' if len(worker.calls) != 1 else ''}"
         if worker.error:

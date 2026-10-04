@@ -395,6 +395,8 @@ def create_app(paths: Paths, address: str = "http://127.0.0.1:8420") -> FastAPI:
         # with the app, and an Aworg serving pages with nothing watching its
         # log would look calm rather than blind.
         watcher = asyncio.create_task(resident.watch.run())
+        # Holds worker replies and log reports until the Resident is idle.
+        inbox = asyncio.create_task(resident.inbox.run())
         resident.journal.record(
             "AWORG started",
             kind="aworg",
@@ -411,9 +413,9 @@ def create_app(paths: Paths, address: str = "http://127.0.0.1:8420") -> FastAPI:
             # skip it silently. The result was exactly the orphan this
             # docstring opens by describing, produced by the code written to
             # prevent it.
-            for task in (follower, watcher):
+            for task in (follower, watcher, inbox):
                 task.cancel()
-            for task in (follower, watcher):
+            for task in (follower, watcher, inbox):
                 with contextlib.suppress(asyncio.CancelledError, Exception):
                     await task
 
