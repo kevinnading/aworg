@@ -317,7 +317,7 @@ def environment(facts: dict[str, Any], workspace: Any = None) -> list[tuple[str,
     # What execute_command and start_process actually run through: the
     # gathered shell on Windows, /bin/sh everywhere else (see their _argv).
     shell = facts.get("shell") if sys.platform == "win32" else "/bin/sh"
-    pairs.append(("Shell", f"{shell}, for execute_command and start_process"))
+    pairs.append(("Shell", str(shell)))
     pairs.append(("Machine", f"{facts['os']} {facts['release']} ({facts['version']})"))
     pairs.append((
         "Privileges",
