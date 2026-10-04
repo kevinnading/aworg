@@ -21,8 +21,7 @@ NAME = "edit_file"
 
 DESCRIPTION = (
     "Replace an exact piece of text in a file, leaving the rest untouched. "
-    "Use this to change an existing file rather than write_file, which "
-    "replaces the whole thing. The old text must appear exactly once."
+    "The old text must appear exactly once."
 )
 
 INPUT_SCHEMA = {

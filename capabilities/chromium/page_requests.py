@@ -31,8 +31,8 @@ INPUT_SCHEMA = {
         "contains": {
             "type": "string",
             "description": (
-                "Only requests whose URL contains this. Use it to find one "
-                "API call among the assets -- '/api/', 'tasks.json'."
+                "Only requests whose URL contains this, like '/api/' or "
+                "'tasks.json'."
             ),
         },
         "failed_only": {

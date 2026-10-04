@@ -23,9 +23,8 @@ from ._paths import describe, refuse_if_ours, target
 NAME = "move_file"
 
 DESCRIPTION = (
-    "Move or rename a file or folder. Use the same folder with a different "
-    "name to rename. Will not write over something that already exists -- "
-    "delete that first if you mean to replace it."
+    "Move or rename a file or folder. Will not write over something that "
+    "already exists."
 )
 
 INPUT_SCHEMA = {

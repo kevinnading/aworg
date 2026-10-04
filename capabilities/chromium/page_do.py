@@ -15,10 +15,9 @@ NAME = "page_do"
 
 DESCRIPTION = (
     "Act on the page that is open: click something, type into a field, press "
-    "a key, scroll, or wait for something to appear. Takes a list of steps "
-    "and does them in order, then reads the page back to you -- so a whole "
-    "form is one call rather than six. Elements are found by CSS selector or "
-    "by the text on them."
+    "a key, scroll, or wait for something to appear. Takes a list of steps, "
+    "does them in order, then reads the page back. Elements are found by "
+    "ref, CSS selector or the text on them."
 )
 
 INPUT_SCHEMA = {
@@ -41,11 +40,7 @@ INPUT_SCHEMA = {
                         "type": "string",
                         "description": (
                             "A handle from the last read of the page, like "
-                            "'ref_12'. The surest way to name an element: it "
-                            "is the exact thing you were shown, where a "
-                            "selector can match two of them. Goes stale when "
-                            "the page navigates -- read it again for fresh "
-                            "ones."
+                            "'ref_12'. Goes stale when the page navigates."
                         ),
                     },
                     "to_ref": {

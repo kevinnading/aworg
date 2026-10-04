@@ -35,8 +35,7 @@ INPUT_SCHEMA = {
         "html": {
             "type": "boolean",
             "description": (
-                "Return the HTML of the selected part rather than its text. "
-                "Only useful when you need the markup itself."
+                "Return the HTML of the selected part rather than its text."
             ),
         },
         "outline": {
@@ -44,8 +43,7 @@ INPUT_SCHEMA = {
             "description": (
                 "Return the page's structure -- landmarks, headings, lists, "
                 "controls, nested as they are on the page -- instead of its "
-                "text. For working out how something is laid out, or finding "
-                "a thing to click when the text alone is ambiguous."
+                "text."
             ),
         },
     },

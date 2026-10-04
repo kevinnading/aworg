@@ -24,11 +24,8 @@ from ._cdp import BrowserError, browser
 NAME = "page_eval"
 
 DESCRIPTION = (
-    "Run JavaScript in the page that is open and get the result back. For "
-    "finding out what a page is doing rather than what it shows: inspect a "
-    "variable, call a function, read an element's computed style, check "
-    "localStorage. A single expression is the result; for several statements "
-    "end with `return`. await works."
+    "Run JavaScript in the page that is open and get the result back. await "
+    "works."
 )
 
 INPUT_SCHEMA = {

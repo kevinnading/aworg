@@ -21,8 +21,7 @@ NAME = "write_file"
 
 DESCRIPTION = (
     "Write text to a file, creating it and any parent directories if needed. "
-    "Replaces the whole file unless append is true. Always writes UTF-8. For "
-    "anything long, write it in several appended pieces rather than one call."
+    "Replaces the whole file unless append is true. Always writes UTF-8."
 )
 
 INPUT_SCHEMA = {
@@ -42,9 +41,7 @@ INPUT_SCHEMA = {
         "append": {
             "type": "boolean",
             "description": (
-                "Add to the end of the file instead of replacing it. Use this "
-                "to build a long file across several calls, which is the only "
-                "way to write something larger than fits in one reply."
+                "Add to the end of the file instead of replacing it."
             ),
         },
     },

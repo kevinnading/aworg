@@ -8,8 +8,7 @@ from ..base import ToolContext, ToolError, ToolResult, resolve_path, size_for_mo
 NAME = "read_file"
 
 DESCRIPTION = (
-    "Read the contents of a text file. Returns the text with line numbers. "
-    "Use offset and limit to read part of a large file rather than all of it."
+    "Read the contents of a text file. Returns the text with line numbers."
 )
 
 INPUT_SCHEMA = {
