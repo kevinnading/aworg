@@ -469,6 +469,7 @@ class Resident:
         """What the self-describing tools describe themselves from."""
         return {
             "connections": self.workers.connections(),
+            "grantable": self.workers.grantable(),
             "skills": [
                 {"name": s.name, "description": s.description}
                 for s in self.skills.offered()

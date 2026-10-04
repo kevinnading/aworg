@@ -38,8 +38,8 @@ INPUT_SCHEMA = {
             "type": "array",
             "items": {"type": "string"},
             "description": (
-                "Names of the tools it may use, from your own list, or "
-                "[\"none\"]. It gets only these, and never the worker tools."
+                "The tools it may use, from your own. It sees these exactly "
+                "as you see them, and no others."
             ),
         },
         "skills": {
@@ -72,11 +72,7 @@ async def run(
         raise ToolError("No task was given.")
     named = [str(t).strip() for t in (tools or []) if str(t).strip()]
     if not named:
-        raise ToolError(
-            'No tools were given. Name the ones its job needs, or ["none"].'
-        )
-    if [t.lower() for t in named] == ["none"]:
-        named = []
+        raise ToolError("No tools were given. Name the ones its job needs.")
     try:
         worker = pool.spawn(
             name=str(name).strip(),
@@ -91,15 +87,19 @@ async def run(
     return ToolResult(
         text=(
             f"Started worker {worker.id} ({worker.name}) on "
-            f"{worker.connection['name']}. Its reply arrives as a message "
-            "after your current reply ends."
+            f"{worker.connection['name']} with {', '.join(named)}. Its reply "
+            "arrives as a message after your current reply ends."
         ),
         summary=f"{worker.name} on {worker.connection['name']}",
     )
 
 
-def describe_for(connections: list[dict] | None = None, **_: object) -> dict:
-    """The descriptor, with the usable connections as an enum and their tags."""
+def describe_for(
+    connections: list[dict] | None = None,
+    grantable: list[str] | None = None,
+    **_: object,
+) -> dict:
+    """The descriptor, with the usable connections and grantable tools as enums."""
     if not connections:
         return {}
     listed = "\n".join(
@@ -112,6 +112,11 @@ def describe_for(connections: list[dict] | None = None, **_: object) -> dict:
         "type": "object",
         "properties": {
             **INPUT_SCHEMA["properties"],
+            "tools": {
+                **INPUT_SCHEMA["properties"]["tools"],
+                "items": {"type": "string", "enum": list(grantable or [])},
+                "minItems": 1,
+            },
             "connection": {
                 "type": "string",
                 "enum": [c["name"] for c in connections],

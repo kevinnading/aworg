@@ -190,6 +190,12 @@ class WorkerPool:
         connection, or no usable connection at all.
         """
         chosen = self._connection(connection)
+        if tools is not None:
+            unknown = sorted(set(tools) - set(self.grantable()))
+            if unknown:
+                raise ValueError(
+                    f"Not tools you can give a worker: {', '.join(unknown)}."
+                )
         worker = Worker(name or "worker", instructions, tools, list(skills or []), chosen)
         worker.history.append(Message("owner", task))
         self.workers[worker.id] = worker
@@ -256,6 +262,14 @@ class WorkerPool:
         worker.reply, worker.calls, worker.error = "", [], None
         worker.done = asyncio.Event()
         worker.task = asyncio.create_task(self._run(worker))
+
+    def grantable(self) -> list[str]:
+        """Every tool the Resident has that a worker may be given."""
+        return sorted(
+            spec.name
+            for spec in self.registry.specs(None)
+            if spec.capability != WORKERS_CAPABILITY
+        )
 
     def _scope(self, worker: Worker) -> list[str]:
         """The tools this worker may call: what it was given, never the pool."""
