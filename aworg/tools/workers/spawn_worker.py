@@ -32,7 +32,10 @@ INPUT_SCHEMA = {
         },
         "instructions": {
             "type": "string",
-            "description": "Its system prompt. Optional.",
+            "description": (
+                "Its system prompt, written for this worker alone: who it is "
+                "and the bounds of its job. It has no other."
+            ),
         },
         "tools": {
             "type": "array",
@@ -52,7 +55,7 @@ INPUT_SCHEMA = {
             "description": "Which model it runs on. Defaults to yours.",
         },
     },
-    "required": ["task", "tools"],
+    "required": ["instructions", "task", "tools"],
 }
 
 
@@ -70,6 +73,8 @@ async def run(
         raise ToolError("Workers are not wired up in this Aworg.")
     if not str(task).strip():
         raise ToolError("No task was given.")
+    if not str(instructions or "").strip():
+        raise ToolError("No instructions were given: write this worker's system prompt.")
     named = [str(t).strip() for t in (tools or []) if str(t).strip()]
     if not named:
         raise ToolError("No tools were given. Name the ones its job needs.")
@@ -123,7 +128,7 @@ def describe_for(
                 "description": "Which model it runs on. Defaults to yours.",
             },
         },
-        "required": ["task", "tools"],
+        "required": ["instructions", "task", "tools"],
     }
     return {
         "name": NAME,
