@@ -13,8 +13,10 @@ DYNAMIC = True
 
 DESCRIPTION = (
     "Start a worker: a separate model run with its own context, working in "
-    "the background. It knows only what you give it here. Returns its id at "
-    "once."
+    "the background. It knows only what you give it here -- nothing about "
+    "this machine, the workspace or this conversation, so the environment "
+    "details its job needs go in the task. Returns its id at once; you are "
+    "told when it finishes."
 )
 
 INPUT_SCHEMA = {
@@ -36,9 +38,8 @@ INPUT_SCHEMA = {
             "type": "array",
             "items": {"type": "string"},
             "description": (
-                "Names of tools from your own list that it may use. Omit to "
-                "give it all of them; an empty list gives it none. It never "
-                "gets the worker tools."
+                "Names of the tools it may use, from your own list. It gets "
+                "only these, and never the worker tools."
             ),
         },
         "skills": {
@@ -51,7 +52,7 @@ INPUT_SCHEMA = {
             "description": "Which model it runs on. Defaults to yours.",
         },
     },
-    "required": ["task"],
+    "required": ["task", "tools"],
 }
 
 
@@ -69,19 +70,24 @@ async def run(
         raise ToolError("Workers are not wired up in this Aworg.")
     if not str(task).strip():
         raise ToolError("No task was given.")
+    if tools is None:
+        raise ToolError("No tools were given: name the ones its job needs.")
     try:
         worker = pool.spawn(
             name=str(name).strip(),
             task=str(task),
             instructions=str(instructions or ""),
-            tools=None if tools is None else [str(t) for t in tools],
+            tools=[str(t) for t in tools],
             skills=[str(s) for s in (skills or [])],
             connection=str(connection or ""),
         )
     except ValueError as exc:
         raise ToolError(str(exc)) from None
     return ToolResult(
-        text=f"Started worker {worker.id} ({worker.name}) on {worker.connection['name']}.",
+        text=(
+            f"Started worker {worker.id} ({worker.name}) on "
+            f"{worker.connection['name']}. You will be told when it finishes."
+        ),
         summary=f"{worker.name} on {worker.connection['name']}",
     )
 
@@ -106,7 +112,7 @@ def describe_for(connections: list[dict] | None = None, **_: object) -> dict:
                 "description": "Which model it runs on. Defaults to yours.",
             },
         },
-        "required": ["task"],
+        "required": ["task", "tools"],
     }
     return {
         "name": NAME,

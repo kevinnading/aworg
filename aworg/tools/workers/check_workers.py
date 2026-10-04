@@ -8,8 +8,9 @@ from ..base import ToolContext, ToolError, ToolResult
 NAME = "check_workers"
 
 DESCRIPTION = (
-    "List your workers and their state: working, replied or failed. Name "
-    "one to read its reply and the tool calls AWORG observed it make."
+    "List your workers and their state, or name one to read its reply and "
+    "the tool calls AWORG observed it make. A finished worker is reported to "
+    "you without asking; this is for one taking longer than expected."
 )
 
 INPUT_SCHEMA = {
