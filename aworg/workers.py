@@ -22,7 +22,6 @@ import time
 import uuid
 from typing import Any
 
-from . import host as host_facts
 from .activities import ActivityManager
 from .agent import AgentLoop, _describe_arguments
 from .models import Message, ModelError, build_adapter, needs_credential
@@ -32,20 +31,6 @@ from .tools import Registry, ToolContext
 #: The capability whose tools start and steer workers. A worker is never
 #: handed it: the pool belongs to the Resident.
 WORKERS_CAPABILITY = "workers"
-
-#: How every worker's system prompt opens: the Resident, speaking to its own
-#: assistant. A worker is a whole session of its own, short-lived and for one
-#: purpose, and this is what it could not otherwise know about its situation.
-WORKER_BASE = (
-    "You are my assistant. I am the Resident of this Aworg, the AI that looks "
-    "after this machine and the software on it for its owner. I started you "
-    "to do one job for me, which follows. You are a full session of your own, "
-    "with your own tools, and you end when you give your final reply: that "
-    "reply comes to me, along with AWORG's record of every tool call you "
-    "made. You cannot reach the owner. Other assistants of mine may be "
-    "working in the same workspace at the same time, on other parts of what "
-    "I am doing."
-)
 
 #: Characters per token, generously. Matches Resident.CHARS_PER_TOKEN_GENEROUS.
 CHARS_PER_TOKEN_GENEROUS = 4.2
@@ -63,15 +48,16 @@ class Worker:
     def __init__(
         self,
         name: str,
+        system: str,
         tools: list[str] | None,
-        skills: list[str],
         connection: dict[str, Any],
     ):
         self.id = uuid.uuid4().hex[:6]
         self.name = name
         #: None means every tool the Resident has, except the worker tools.
         self.tools = tools
-        self.skills = skills
+        #: Its whole system prompt, built by spawn_worker.
+        self.system = system
         self.connection = connection
         self.history: list[Message] = []
         self.state = self.WORKING
@@ -191,8 +177,8 @@ class WorkerPool:
         *,
         name: str,
         task: str,
+        system: str,
         tools: list[str] | None = None,
-        skills: list[str] | None = None,
         connection: str = "",
     ) -> Worker:
         """Start a worker in the background and return it at once.
@@ -207,7 +193,7 @@ class WorkerPool:
                 raise ValueError(
                     f"Not tools you can give a worker: {', '.join(unknown)}."
                 )
-        worker = Worker(name or "worker", tools, list(skills or []), chosen)
+        worker = Worker(name or "worker", system, tools, chosen)
         worker.history.append(Message("owner", task))
         self.workers[worker.id] = worker
         self._start(worker)
@@ -305,28 +291,6 @@ class WorkerPool:
                 granted.add(name)
         return sorted(granted & own)
 
-    def _system(self, worker: Worker) -> str:
-        """Who it is to the Resident, this machine, then its skills.
-
-        The Resident's prompt for the job is its first message, not part of
-        this, so it is said once.
-        """
-        parts = [WORKER_BASE]
-        parts.append(host_facts.worker_summary(
-            self.host(),
-            workspace=self.paths.workspace if self.paths is not None else None,
-        ))
-        library = self.skills
-        for name in worker.skills:
-            skill = library.get_any(name) if library is not None else None
-            if skill is None:
-                continue
-            allowed, reason = library.standing(skill)
-            if not allowed and reason != library.RETIRED:
-                continue
-            parts.append(f"# Skill: {skill.name}\n\n{skill.body().strip()}")
-        return "\n\n---\n\n".join(parts)
-
     async def _run(self, worker: Worker) -> None:
         connection = worker.connection
         api_key = self.secrets.get(credential_ref(connection["id"])) or ""
@@ -369,7 +333,7 @@ class WorkerPool:
             return 0
 
         try:
-            async for event in loop.run(worker.history, self._system(worker), record):
+            async for event in loop.run(worker.history, worker.system, record):
                 kind = event["type"]
                 if kind == "delta":
                     said.append(event["text"])
