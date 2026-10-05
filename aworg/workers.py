@@ -33,15 +33,18 @@ from .tools import Registry, ToolContext
 #: handed it: the pool belongs to the Resident.
 WORKERS_CAPABILITY = "workers"
 
-#: What every worker is told first, before the Resident's instructions for it.
-#: Only what it could not know: what it is, who reads its reply, and that it
-#: is not alone in the workspace.
+#: How every worker's system prompt opens: the Resident, speaking to its own
+#: assistant. A worker is a whole session of its own, short-lived and for one
+#: purpose, and this is what it could not otherwise know about its situation.
 WORKER_BASE = (
-    "You are a worker in an Aworg, started by its Resident to do one job. The "
-    "Resident's instructions for you follow. You cannot talk to the owner: "
-    "your final reply goes to the Resident, together with AWORG's record of "
-    "every tool call you made. Other workers may be working in the same "
-    "workspace at the same time, on other parts of the same request."
+    "You are my assistant. I am the Resident of this Aworg, the AI that looks "
+    "after this machine and the software on it for its owner. I started you "
+    "to do one job for me, which follows. You are a full session of your own, "
+    "with your own tools, and you end when you give your final reply: that "
+    "reply comes to me, along with AWORG's record of every tool call you "
+    "made. You cannot reach the owner. Other assistants of mine may be "
+    "working in the same workspace at the same time, on other parts of what "
+    "I am doing."
 )
 
 #: Characters per token, generously. Matches Resident.CHARS_PER_TOKEN_GENEROUS.
@@ -60,14 +63,12 @@ class Worker:
     def __init__(
         self,
         name: str,
-        instructions: str,
         tools: list[str] | None,
         skills: list[str],
         connection: dict[str, Any],
     ):
         self.id = uuid.uuid4().hex[:6]
         self.name = name
-        self.instructions = instructions
         #: None means every tool the Resident has, except the worker tools.
         self.tools = tools
         self.skills = skills
@@ -190,7 +191,6 @@ class WorkerPool:
         *,
         name: str,
         task: str,
-        instructions: str = "",
         tools: list[str] | None = None,
         skills: list[str] | None = None,
         connection: str = "",
@@ -207,7 +207,7 @@ class WorkerPool:
                 raise ValueError(
                     f"Not tools you can give a worker: {', '.join(unknown)}."
                 )
-        worker = Worker(name or "worker", instructions, tools, list(skills or []), chosen)
+        worker = Worker(name or "worker", tools, list(skills or []), chosen)
         worker.history.append(Message("owner", task))
         self.workers[worker.id] = worker
         self._start(worker)
@@ -224,7 +224,12 @@ class WorkerPool:
         return worker
 
     def stop(self, worker_id: str) -> Worker:
+        """Cancel and discard a worker. Read its reply first if unread."""
         worker = self.get(worker_id)
+        worker.last_words = ""
+        if worker.unread:
+            worker.read = worker.runs
+            worker.last_words = worker.render()
         if worker.task is not None and not worker.task.done():
             worker.task.cancel()
         worker.state = Worker.STOPPED
@@ -301,10 +306,12 @@ class WorkerPool:
         return sorted(granted & own)
 
     def _system(self, worker: Worker) -> str:
-        """What a worker is, its instructions, this machine, then its skills."""
+        """Who it is to the Resident, this machine, then its skills.
+
+        The Resident's prompt for the job is its first message, not part of
+        this, so it is said once.
+        """
         parts = [WORKER_BASE]
-        if worker.instructions.strip():
-            parts.append(worker.instructions.strip())
         parts.append(host_facts.worker_summary(
             self.host(),
             workspace=self.paths.workspace if self.paths is not None else None,

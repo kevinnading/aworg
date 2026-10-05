@@ -7,7 +7,10 @@ from ..base import ToolContext, ToolError, ToolResult
 
 NAME = "stop_worker"
 
-DESCRIPTION = "Stop a worker and discard it. One still working is cancelled."
+DESCRIPTION = (
+    "Stop a worker and discard it. One still working is cancelled; one with a "
+    "reply you have not read hands it over first."
+)
 
 INPUT_SCHEMA = {
     "type": "object",
@@ -26,4 +29,7 @@ async def run(context: ToolContext, worker: str = "") -> ToolResult:
         one = pool.stop(worker)
     except KeyError as exc:
         raise ToolError(str(exc.args[0])) from None
-    return ToolResult(text=f"Worker {one.id} stopped.", summary=f"{one.id} stopped")
+    text = f"Worker {one.id} stopped."
+    if one.last_words:
+        text += f" Its reply, which you had not read:\n\n{one.last_words}"
+    return ToolResult(text=text, summary=f"{one.id} stopped")

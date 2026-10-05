@@ -28,13 +28,10 @@ INPUT_SCHEMA = {
         },
         "task": {
             "type": "string",
-            "description": "Its first message: the job, and whatever it needs to know.",
-        },
-        "instructions": {
-            "type": "string",
             "description": (
-                "Its system prompt, written for this worker alone: who it is "
-                "and the bounds of its job. It has no other."
+                "Your prompt for it, written for this assistant alone: the job, "
+                "its bounds, and whatever it needs to know. It sees nothing "
+                "else from you."
             ),
         },
         "tools": {
@@ -55,7 +52,7 @@ INPUT_SCHEMA = {
             "description": "Which model it runs on. Defaults to yours.",
         },
     },
-    "required": ["instructions", "task", "tools"],
+    "required": ["task", "tools"],
 }
 
 
@@ -63,7 +60,6 @@ async def run(
     context: ToolContext,
     task: str = "",
     name: str = "",
-    instructions: str = "",
     tools: list | None = None,
     skills: list | None = None,
     connection: str = "",
@@ -73,8 +69,6 @@ async def run(
         raise ToolError("Workers are not wired up in this Aworg.")
     if not str(task).strip():
         raise ToolError("No task was given.")
-    if not str(instructions or "").strip():
-        raise ToolError("No instructions were given: write this worker's system prompt.")
     named = [str(t).strip() for t in (tools or []) if str(t).strip()]
     if not named:
         raise ToolError("No tools were given. Name the ones its job needs.")
@@ -82,7 +76,6 @@ async def run(
         worker = pool.spawn(
             name=str(name).strip(),
             task=str(task),
-            instructions=str(instructions or ""),
             tools=named,
             skills=[str(s) for s in (skills or [])],
             connection=str(connection or ""),
@@ -128,7 +121,7 @@ def describe_for(
                 "description": "Which model it runs on. Defaults to yours.",
             },
         },
-        "required": ["instructions", "task", "tools"],
+        "required": ["task", "tools"],
     }
     return {
         "name": NAME,
