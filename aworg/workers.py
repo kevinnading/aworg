@@ -33,6 +33,17 @@ from .tools import Registry, ToolContext
 #: handed it: the pool belongs to the Resident.
 WORKERS_CAPABILITY = "workers"
 
+#: What every worker is told first, before the Resident's instructions for it.
+#: Only what it could not know: what it is, who reads its reply, and that it
+#: is not alone in the workspace.
+WORKER_BASE = (
+    "You are a worker in an Aworg, started by its Resident to do one job. The "
+    "Resident's instructions for you follow. You cannot talk to the owner: "
+    "your final reply goes to the Resident, together with AWORG's record of "
+    "every tool call you made. Other workers may be working in the same "
+    "workspace at the same time, on other parts of the same request."
+)
+
 #: Characters per token, generously. Matches Resident.CHARS_PER_TOKEN_GENEROUS.
 CHARS_PER_TOKEN_GENEROUS = 4.2
 
@@ -290,8 +301,10 @@ class WorkerPool:
         return sorted(granted & own)
 
     def _system(self, worker: Worker) -> str:
-        """Its instructions, then this machine, then any skills it was given."""
-        parts = [worker.instructions.strip()] if worker.instructions.strip() else []
+        """What a worker is, its instructions, this machine, then its skills."""
+        parts = [WORKER_BASE]
+        if worker.instructions.strip():
+            parts.append(worker.instructions.strip())
         parts.append(host_facts.worker_summary(
             self.host(),
             workspace=self.paths.workspace if self.paths is not None else None,
