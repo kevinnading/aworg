@@ -265,21 +265,37 @@ class WorkerPool:
         worker.done = asyncio.Event()
         worker.task = asyncio.create_task(self._run(worker))
 
+    def live(self) -> dict[str, Any]:
+        """The live state self-describing tools are built from, as the
+        Resident's are: today, the skills it is offered."""
+        if self.skills is None:
+            return {"skills": []}
+        return {"skills": [
+            {"name": s.name, "description": s.description}
+            for s in self.skills.offered()
+        ]}
+
     def grantable(self) -> list[str]:
-        """Every tool the Resident has that a worker may be given."""
-        return sorted(
+        """The tools the Resident is offered right now, less the worker tools.
+
+        Asked of the same descriptors the Resident is sent, so a tool it
+        does not have -- switched off, or read_skill with no skills to read
+        -- is not something it can hand on.
+        """
+        mine = {
             spec.name
             for spec in self.registry.specs(None)
-            if spec.capability != WORKERS_CAPABILITY
+            if spec.capability == WORKERS_CAPABILITY
+        }
+        return sorted(
+            d["name"]
+            for d in self.registry.descriptors(None, **self.live())
+            if d["name"] not in mine
         )
 
     def _scope(self, worker: Worker) -> list[str]:
         """The tools this worker may call: what it was given, never the pool."""
-        own = {
-            spec.name
-            for spec in self.registry.specs(None)
-            if spec.capability != WORKERS_CAPABILITY
-        }
+        own = set(self.grantable())
         if worker.tools is None:
             return sorted(own)
         granted = set()
@@ -323,12 +339,7 @@ class WorkerPool:
             # built from, so a granted tool reads exactly as it does to the
             # Resident. Without it read_skill described itself as nothing
             # and was dropped.
-            live={
-                "skills": [
-                    {"name": s.name, "description": s.description}
-                    for s in self.skills.offered()
-                ] if self.skills is not None else [],
-            },
+            live=self.live(),
         )
 
         said: list[str] = []
