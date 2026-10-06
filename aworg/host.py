@@ -361,7 +361,8 @@ def summary(facts: dict[str, Any], workspace: Any = None) -> str:
         "",
         "You can start assistants with spawn_worker: separate sessions with "
         "their own context, running alongside you. Use them where you can, for "
-        "any job that does not need everything you are holding in context.",
+        "any job that does not need everything you are holding in context, "
+        "and you don't need to retain the full context of the task.",
         "",
     ]
     lines += [f"  {label}: {value}" for label, value in environment(facts, workspace)]
