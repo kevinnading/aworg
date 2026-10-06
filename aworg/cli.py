@@ -106,6 +106,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     start.add_argument("--host", default="127.0.0.1")
     start.add_argument("--port", type=int, default=8420)
+    start.add_argument(
+        "--no-password", action="store_true",
+        help="Serve the interface without a password. Only on this machine "
+             "(127.0.0.1): elsewhere it would be an open shell.",
+    )
 
     for name, help_text in (
         ("install", "Create this Aworg: its home, its databases, and the "
@@ -262,13 +267,21 @@ def main(argv: list[str] | None = None) -> int:
         # installed months ago and started today still gets one -- and so
         # that the moment it is printed is the moment somebody is looking
         # at a terminal waiting for an address.
+        open_door = getattr(args, "no_password", False)
+        if open_door and host not in ("127.0.0.1", "localhost", "::1"):
+            print("--no-password is only allowed on 127.0.0.1. Anywhere else a")
+            print("Resident with shell access and no password is an open shell.")
+            return 2
+
         fresh = None
-        if not auth.is_set(SecretStore(paths.secrets_db)):
+        if not open_door and not auth.is_set(SecretStore(paths.secrets_db)):
             fresh = new_password(paths)
 
         print(f"AWORG home     {paths.home}")
         print(f"Interface      http://{host}:{port}")
-        if fresh:
+        if open_door:
+            print("Password       off (this machine only)")
+        elif fresh:
             print(f"Password       {fresh}")
         print()
         if fresh:
@@ -296,7 +309,8 @@ def main(argv: list[str] | None = None) -> int:
         # and throws the Server away. Keeping it is what lets the last line
         # below tell a clean stop from a forced one.
         config = uvicorn.Config(
-            create_app(paths, address=f"http://{host}:{port}"),
+            create_app(paths, address=f"http://{host}:{port}",
+                       password=not open_door),
             host=host, port=port, log_level="warning",
             # Why one Ctrl-C was not enough.
             #

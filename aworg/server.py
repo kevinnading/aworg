@@ -349,7 +349,9 @@ class LayoutPatch(BaseModel):
     sizes: dict[str, Any]
 
 
-def create_app(paths: Paths, address: str = "http://127.0.0.1:8420") -> FastAPI:
+def create_app(
+    paths: Paths, address: str = "http://127.0.0.1:8420", password: bool = True
+) -> FastAPI:
     paths.ensure()
     store = Store(paths.state_db)
     secrets = SecretStore(paths.secrets_db)
@@ -1884,7 +1886,10 @@ def create_app(paths: Paths, address: str = "http://127.0.0.1:8420") -> FastAPI:
                 )
             await refusal(scope, receive, send)
 
-    app.add_middleware(RequireThePassword)
+    # Off only by `aworg start --no-password`, which refuses any address but
+    # this machine's own.
+    if password:
+        app.add_middleware(RequireThePassword)
 
     @app.post("/api/session")
     def sign_in(body: PasswordBody, request: Request) -> Response:
