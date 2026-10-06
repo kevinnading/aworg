@@ -319,6 +319,16 @@ class WorkerPool:
             source=f"worker:{worker.id}",
             label=f"{worker.name} ({connection['model']})",
             parent_id=activity.id,
+            # The same live state the Resident's self-describing tools are
+            # built from, so a granted tool reads exactly as it does to the
+            # Resident. Without it read_skill described itself as nothing
+            # and was dropped.
+            live={
+                "skills": [
+                    {"name": s.name, "description": s.description}
+                    for s in self.skills.offered()
+                ] if self.skills is not None else [],
+            },
         )
 
         said: list[str] = []
