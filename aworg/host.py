@@ -359,6 +359,13 @@ def summary(facts: dict[str, Any], workspace: Any = None) -> str:
         "Anything switched off is not offered to you. New ones install with "
         "`aworg get` and need no restart.",
         "",
+        "You can start assistants with spawn_worker: separate sessions with "
+        "their own context, running alongside you. Use them where you can, for "
+        "any job that does not need everything you are holding in context. "
+        "Their replies, and Living Log reports from software in the workspace, "
+        "arrive as messages from AWORG once your reply ends; those are not the "
+        "owner speaking.",
+        "",
     ]
     lines += [f"  {label}: {value}" for label, value in environment(facts, workspace)]
     lines.append("")
