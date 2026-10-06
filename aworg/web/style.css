@@ -737,11 +737,8 @@ button.tiny { padding: 5px 11px; font-size: 13px; }
   background: var(--bg);
   padding: var(--pane-gap);
 }
-/* Harmless now that the log is alone down here -- `flex-basis` of a share
-   with nothing to share against resolves to the whole strip. Kept because
-   it is what a second pane in the console would need, and removing it would
-   be a change to make in reverse later. */
-.console > .pane:first-child { flex: 0 1 auto; flex-basis: var(--log-width); min-width: 0; }
+/* The log is alone down here, so it takes the whole strip. */
+.console > .pane:first-child { flex: 1 1 0; min-width: 0; }
 
 /* The conversation takes the darker ground it sits on rather than being
    drawn as a card on top of it. The panes around it are the objects; this is
@@ -1259,6 +1256,9 @@ body.has-maximised-pane .resizer { pointer-events: none; }
      always did in the DOM. */
   .workbench, .main, .side, .activity, .console, .region { display: contents; }
   .resizer { display: none; }
+  /* The sequence paintPhone() works out, read only here. Set as `order`
+     inline it leaked to the desktop and put each divider before its panes. */
+  .pane, .chat { order: var(--phone-order, 0); }
 
   .home {
     display: flex;

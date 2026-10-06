@@ -1837,7 +1837,7 @@ function paintPhone() {
   for (const pane of document.querySelectorAll(".pane")) {
     const id = pane.dataset.pane;
     const at = sequence.indexOf(id);
-    pane.style.order = at < 0 ? sequence.length : at;
+    pane.style.setProperty("--phone-order", at < 0 ? sequence.length : at);
     pane.toggleAttribute("data-open", id === open);
 
     const head = pane.querySelector(".pane-head");
@@ -1848,7 +1848,7 @@ function paintPhone() {
 
   const chat = document.querySelector(".chat");
   if (chat) {
-    chat.style.order = sequence.indexOf(CHAT);
+    chat.style.setProperty("--phone-order", sequence.indexOf(CHAT));
     chat.toggleAttribute("data-open", open === CHAT);
   }
   const chatHead = el("chat-head");
