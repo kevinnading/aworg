@@ -11,7 +11,7 @@ NAME = "check_workers"
 
 DESCRIPTION = (
     "List your workers and their state, or name one to read its reply and "
-    "the tool calls AWORG observed it make. You do not need this to hear "
+    "the tool calls it made. You do not need this to hear "
     "from a worker: end your reply, and each finished worker's reply arrives "
     "as the next message. This is for one that seems to be taking too long."
 )

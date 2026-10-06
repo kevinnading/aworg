@@ -118,12 +118,12 @@ class Worker:
                 for c in self.calls
             ]
             parts.append(
-                f"\nTool calls AWORG observed ({len(self.calls)}"
+                f"\nTool calls it made ({len(self.calls)}"
                 + (f", {len(self.failed_calls)} failed" if self.failed_calls else "")
                 + "):\n" + "\n".join(lines)
             )
         else:
-            parts.append("\nTool calls AWORG observed: none.")
+            parts.append("\nTool calls it made: none.")
         return "\n".join(parts)
 
 
