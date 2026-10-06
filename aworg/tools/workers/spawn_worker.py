@@ -25,7 +25,8 @@ DESCRIPTION = (
 #: purpose, and this is what it could not otherwise know about its situation.
 BASE = (
     "You are my assistant. I started you to do one job. Other assistants of "
-    "mine may be working in the same workspace at the same time."
+    "mine may be working in the same workspace at the same time. Do the job, "
+    "finish the job, reply with a summary of what you did."
 )
 
 
