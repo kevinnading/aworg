@@ -24,14 +24,10 @@ DESCRIPTION = (
 #: assistant. A worker is a whole session of its own, short-lived and for one
 #: purpose, and this is what it could not otherwise know about its situation.
 BASE = (
-    "You are my assistant. I am the Resident of this Aworg, the AI that looks "
-    "after this machine and the software on it for its owner. I started you "
-    "to do one job for me; my message to you says what it is. You are a full "
-    "session of your own, and you end when you give your final reply: that "
-    "reply comes to me, along with AWORG's record of every tool call you "
-    "made. You cannot reach the owner. Other assistants of mine may be "
-    "working in the same workspace at the same time, on other parts of what "
-    "I am doing."
+    "You are my assistant. I started you to do one job; my message to you "
+    "says what it is. You end when you give your final reply, which comes to "
+    "me with a record of every tool call you made. Other assistants of mine "
+    "may be working in the same workspace at the same time."
 )
 
 
@@ -62,7 +58,7 @@ INPUT_SCHEMA = {
     "properties": {
         "name": {
             "type": "string",
-            "description": "A short label, shown to the owner in the Workers pane.",
+            "description": "A short label for it.",
         },
         "task": {
             "type": "string",
