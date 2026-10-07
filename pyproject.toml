@@ -65,4 +65,5 @@ aworg = [
     "personas/*/*.md",
     "personas/*/*.svg",
     "personas/*/*.json",
+    "personas/*/LICENSE",
 ]

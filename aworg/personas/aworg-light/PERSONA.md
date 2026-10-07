@@ -1,6 +1,8 @@
 ---
 name: aworg-light
 description: AWORG's own voice, in silver and Resident blue. Precise, steady and plainly responsible for the application it lives with. Best under a light colour scheme.
+author: Claude Opus 5 (Anthropic); edited by Claude Opus 5.5 (Anthropic)
+license: MIT-0 (see LICENSE)
 ---
 
 # Identity
