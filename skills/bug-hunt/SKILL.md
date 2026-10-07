@@ -2,7 +2,7 @@
 name: bug-hunt
 description: Finding the cause of a failure in a web app, script or server -- what to capture first, a table of common symptoms and the causes they usually mean, and how to prove a fix. Use when something errors, crashes, returns the wrong result, works locally but not when served, or an application reports trouble.
 metadata:
-  author: Claude (Anthropic)
+  author: Claude Opus 5.5 (Anthropic)
 ---
 
 # Bug hunt

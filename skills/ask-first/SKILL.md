@@ -2,7 +2,7 @@
 name: ask-first
 description: The questions worth asking before building something for someone -- a short bank per kind of project, how to tell a question that changes the build from one that does not, and the defaults to use for whatever goes unasked. Use when a request to build a site, app, tool, store or automation is short or leaves out who it is for, what it must do, or where it will run.
 metadata:
-  author: Claude (Anthropic)
+  author: Claude Opus 5.5 (Anthropic)
 ---
 
 # Ask first

@@ -2,7 +2,7 @@
 name: site-check
 description: A mechanical pass over a running website or web app in a real browser -- console, network, images, layout at five widths, links, forms and contrast -- with the exact numbers that count as pass or fail. Use before reporting any page, site or web app as done, and after changing one.
 metadata:
-  author: Claude (Anthropic)
+  author: Claude Opus 5.5 (Anthropic)
 ---
 
 # Site check
