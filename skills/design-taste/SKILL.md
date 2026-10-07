@@ -1,6 +1,7 @@
 ---
 name: design-taste
 description: A complete visual direction for websites and web apps -- type scale, spacing, colour, layout and component values, plus the defaults that make a page look machine-made. Use when building or restyling any page, site, landing page, dashboard or front end, before writing CSS.
+license: MIT-0 (see LICENSE)
 metadata:
   author: Claude Opus 5.5 (Anthropic)
 ---

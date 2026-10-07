@@ -4,3 +4,4 @@ DESCRIPTION = (
     "ntfy -- free, no account, set up with one subscription."
 )
 AUTHOR = "Claude Opus 5.5 (Anthropic)"
+LICENSE = "MIT-0"

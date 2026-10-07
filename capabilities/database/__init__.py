@@ -5,3 +5,4 @@ DESCRIPTION = (
     "purpose."
 )
 AUTHOR = "Claude Opus 5.5 (Anthropic)"
+LICENSE = "MIT-0"

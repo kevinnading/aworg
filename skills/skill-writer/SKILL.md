@@ -1,6 +1,7 @@
 ---
 name: skill-writer
 description: How to write an Agent Skill -- the folder layout, SKILL.md frontmatter rules and limits, how to word a description so the skill gets used, what belongs in the body and what does not. Use when asked to create, edit or review a skill, or to turn a repeated way of working into one.
+license: MIT-0 (see LICENSE)
 metadata:
   author: Claude Opus 5.5 (Anthropic)
 ---
