@@ -65,7 +65,4 @@ Say these out loud so they can be corrected:
 ## When not to ask
 
 - The request already answers the bank's questions.
-- The job is small enough that building it is faster than asking (under
-  roughly ten minutes of work): build it, and offer the changes the
-  questions would have raised.
 - The person has said to go ahead without questions.

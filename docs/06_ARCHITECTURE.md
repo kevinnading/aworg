@@ -504,6 +504,7 @@ once with the skill installed and once without, from a reset Aworg:
                              scale, still 17 sizes down to 9px
     ask-first      yes       built anyway, under the skill's own "under ten
                              minutes, just build it" clause; said its defaults
+                             (the clause has since been removed)
     bug-hunt       yes       none: the planted bug was easy enough that both
                              runs found and fixed it identically
 
