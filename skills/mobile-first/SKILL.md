@@ -1,6 +1,8 @@
 ---
 name: mobile-first
 description: The values and rules that make a website or web app work on phones -- viewport, breakpoints, tap target and font minimums, safe areas, dynamic viewport height, touch-only interaction and the layout patterns that hold up at 360px. Use when building any page that people may open on a phone, or when a site looks wrong on mobile.
+metadata:
+  author: Claude (Anthropic)
 ---
 
 # Mobile first

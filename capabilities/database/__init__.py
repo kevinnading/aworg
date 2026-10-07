@@ -4,3 +4,4 @@ DESCRIPTION = (
     "tables, reading their columns, querying read-only, and writing on "
     "purpose."
 )
+AUTHOR = "Claude (Anthropic)"
