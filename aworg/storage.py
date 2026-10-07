@@ -1159,27 +1159,14 @@ class Store:
         source: str = "aworg",
         detail: str = "",
         activity_id: str | None = None,
-        keep: int = 500,
     ) -> dict[str, Any]:
-        """Write one Living Log entry, and drop the oldest past the cap.
-
-        Pruned here rather than on a timer, because the only moment the table
-        can grow is this one and a sweep that runs on a schedule is a sweep
-        that has not run yet when the owner looks.
-        """
+        """Write one Living Log entry. Nothing is ever pruned: it is the
+        record of what happened, and a record that forgets is not one."""
         with self._connect() as conn:
             cursor = conn.execute(
                 "INSERT INTO journal (level, kind, source, summary, detail, activity_id)"
                 " VALUES (?, ?, ?, ?, ?, ?)",
                 (level, kind, source, summary, detail, activity_id),
-            )
-            # Never what is still open: an alarm nobody dealt with is not
-            # old news however much has happened since.
-            conn.execute(
-                "DELETE FROM journal WHERE id <= ("
-                "  SELECT id FROM journal ORDER BY id DESC LIMIT 1 OFFSET ?)"
-                " AND NOT (level IN ('concern', 'alarm') AND resolved = 0)",
-                (keep,),
             )
             row = conn.execute(
                 "SELECT * FROM journal WHERE id = ?", (cursor.lastrowid,)
@@ -1277,6 +1264,10 @@ class Store:
                 "SELECT * FROM journal WHERE id = ?", (entry_id,)
             ).fetchone()
         return dict(row) if row else None
+
+    def count_journal(self) -> int:
+        with self._connect() as conn:
+            return conn.execute("SELECT COUNT(*) c FROM journal").fetchone()["c"]
 
     def clear_journal(self) -> int:
         with self._connect() as conn:

@@ -149,12 +149,6 @@ class Journal:
     question with silence.
     """
 
-    #: How many entries to keep. Small deliberately. This is a log meant to be
-    #: read by a person and by a model with a finite window, and one that has
-    #: grown to ten thousand rows is one that gets summarised instead of read,
-    #: which puts a model's testimony between the owner and the evidence.
-    KEEP = 20000
-
     def __init__(self, store: Any):
         self.store = store
 
@@ -188,7 +182,6 @@ class Journal:
             summary=summary.strip(),
             detail=detail.strip(),
             activity_id=activity_id,
-            keep=self.KEEP,
         )
 
     def report(

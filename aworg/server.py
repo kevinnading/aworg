@@ -32,7 +32,6 @@ from .models import (
 )
 from .install import reseed, seeded
 from .paths import Paths
-from .journal import Journal
 from . import journal as journal_module
 from . import personas as personas_module
 from .resident import Busy, Resident
@@ -941,7 +940,7 @@ def create_app(
         sizes = {
             "conversation": len(conversation),
             "tasks": sum(counts.values()),
-            "journal": len(store.list_journal(limit=Journal.KEEP)),
+            "journal": store.count_journal(),
             "workspace": count_files(workspace),
             "trash": count_files(trash),
             "processes": sum(1 for p in resident.processes.all() if p.alive),
