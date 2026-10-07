@@ -1,0 +1,121 @@
+/* design-taste: starting tokens. Swap the colours and faces for a brand;
+   keep the scale, spacing and structure. */
+
+:root {
+  /* Faces: the Product pairing. See SKILL.md for the others. */
+  --font-heading: "Inter Tight", "Inter", system-ui, sans-serif;
+  --font-body: "Inter", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  /* Type scale, 1.25 from 16px. */
+  --text-xs: 12px;
+  --text-sm: 14px;
+  --text-base: 16px;
+  --text-lg: 20px;
+  --text-xl: 25px;
+  --text-2xl: 31px;
+  --text-3xl: 39px;
+  --text-4xl: 49px;
+  --text-5xl: 61px;
+
+  /* Space, on a 4px grid. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+  --space-16: 64px;
+  --space-24: 96px;
+  --space-32: 128px;
+
+  /* Colour, light. */
+  --bg: #f7f8fa;
+  --surface: #ffffff;
+  --text: #1a1a1a;
+  --muted: #5b6270;
+  --line: #e3e6eb;
+  --accent: #2f5bea;
+  --on-accent: #ffffff;
+  --focus: rgb(47 91 234 / 30%);
+
+  /* Shape: the soft family. */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 20px;
+  --shadow-float: 0 1px 2px rgb(0 0 0 / 6%), 0 8px 24px rgb(0 0 0 / 8%);
+
+  --content: 1160px;
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #131416;
+    --surface: #1b1d20;
+    --text: #ececec;
+    --muted: #a2a7b0;
+    --line: #2c2f34;
+    --accent: #6b8cf0;
+    --on-accent: #0d1324;
+    --focus: rgb(107 140 240 / 35%);
+  }
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 400 var(--text-base) / 1.6 var(--font-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3 {
+  font-family: var(--font-heading);
+  font-weight: 600;
+  line-height: 1.15;
+  margin: 0 0 var(--space-4);
+}
+h1 { font-size: var(--text-4xl); letter-spacing: -0.02em; }
+h2 { font-size: var(--text-3xl); letter-spacing: -0.02em; }
+h3 { font-size: var(--text-xl); }
+
+p { max-width: 68ch; margin: 0 0 var(--space-4); }
+
+a { color: var(--accent); text-underline-offset: 3px; text-decoration-thickness: 1px; }
+
+.container { max-width: var(--content); margin: 0 auto; padding: 0 var(--space-6); }
+.section { padding: var(--space-24) 0; }
+
+.button {
+  display: inline-flex; align-items: center; justify-content: center;
+  height: 44px; padding: 0 20px;
+  border-radius: var(--radius-sm); border: 1px solid transparent;
+  font: 500 var(--text-base) var(--font-body); cursor: pointer;
+  transition: background 200ms var(--ease), border-color 200ms var(--ease);
+}
+.button.primary { background: var(--accent); color: var(--on-accent); }
+.button.secondary { background: transparent; border-color: var(--line); color: var(--text); }
+.button:focus-visible, input:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+
+input, select, textarea {
+  height: 44px; padding: 0 var(--space-3);
+  border: 1px solid var(--line); border-radius: var(--radius-sm);
+  background: var(--surface); color: var(--text); font: inherit;
+}
+
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-md); padding: var(--space-6); }
+
+@media (max-width: 640px) {
+  .container { padding: 0 var(--space-4); }
+  .section { padding: var(--space-16) 0; }
+  h1 { font-size: var(--text-3xl); }
+  h2 { font-size: var(--text-2xl); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition-duration: 0ms !important; animation-duration: 0ms !important; }
+}

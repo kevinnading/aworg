@@ -13,14 +13,30 @@ something an owner chose, and a skill that arrives inside the program is one
 they cannot remove. What ships is the runtime; what an Aworg knows how to do
 is theirs.
 
+## What is here
+
+Written for any harness that reads Agent Skills, not for AWORG alone.
+
+- **ask-first** -- the questions that change what gets built, per kind of
+  project, and the defaults for whatever goes unasked.
+- **bug-hunt** -- what to capture, symptom-to-cause tables for Python, the
+  browser and servers, and how to prove a fix.
+- **design-taste** -- a complete visual direction: type, spacing, colour,
+  components; `references/tokens.css` as a starting stylesheet.
+- **mobile-first** -- viewport, breakpoints, tap and font minimums, safe
+  areas, touch rules and the usual phone breakages.
+- **site-check** -- a pass/fail check of a running site at five widths;
+  `references/check.js` runs most of it in the page.
+- **skill-writer** -- the Agent Skills format, its limits, and how to word a
+  description so the skill gets used.
+
 ## Installing one
 
 From the store, `aworg get skills/NAME`. Or copy the folder:
 
     cp -r skills/NAME ~/.aworg/skills/
 
-Skills are re-read on every request, so it is available immediately — no
-restart, unlike a capability. The owner switches it on or off in the Skills
+Skills are re-read on every request, so it is available immediately. The owner switches it on or off in the Skills
 pane; a switched-off skill is invisible to the Resident, which is worth
 knowing when one of them insists it does not exist.
 
