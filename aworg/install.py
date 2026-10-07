@@ -28,8 +28,9 @@ never be load-bearing.
 
 AWORG ships no capabilities and no skills: they live in `capabilities/` and
 `skills/` at the top of the repository, bound for the store, and come from
-`aworg get`. Personas ship, because an Aworg with no character is a worse
-first impression than one with eighteen to choose from.
+`aworg get`. Seven personas ship, because an Aworg with no character is a
+worse first impression than one with a few to choose from; the rest are in
+`personas/` at the top of the repository, bound for the store.
 
 The seeding below applies to all three, because a per-OS package that wants
 to arrive with Chromium included copies the folders into its own `aworg/` at

@@ -407,29 +407,22 @@ Drop it in `personas/` under this Aworg's home and it appears in Settings.
 Frontmatter is optional — a `PERSONA.md` that starts straight in with
 `# Identity` loads exactly as written and takes its name from the folder.
 
-Eighteen ship, so there is one for most people who will ever open an Aworg.
-`aworg-light` is worn when you have not chosen.
+Seven ship. `aworg-light` is worn when you have not chosen; more are in the
+store.
 
-| For | Personas |
+| Persona | |
 |---|---|
-| AWORG itself | `aworg-light`, `aworg-dark` -- calm and exact, reporting what was checked rather than what was hoped |
-| Skill level | `teacher` (Ms. Hazel, for people who have never written code), `sunny` (warm and honest encouragement), `greybeard` (terse senior engineer) |
-| What you build | `founder` (Sloane: customers, cost, launch), `player-two` (P2: game feel, and honest that only you can playtest), `quill` (words and voice), `atelier` (layouts and second drafts) |
-| Setting | `professional` (Harper: safe on screen at work), `nocturne` (the long job you start and walk away from), `scribe` (as plain as a persona gets) |
-| Vibe | `egirl` (Nyx), `gamer-bro` (Tank, her duo), `cottagecore` (Bramble) |
-| Just for fun | `noir` (Dex Malone, P.I.), `pirate` (Cap'n Barnacle Byte), `wizard` (Ozwald the Compiled) |
+| `aworg-light`, `aworg-dark` | AWORG itself -- calm and exact |
+| `professional` | Harper: polished and neutral, safe on screen at work |
+| `sunny` | warm, honest encouragement for beginners |
+| `atelier` | layouts and second drafts |
+| `player-two` | P2: game feel, and honest that only you can playtest |
+| `egirl` | Nyx: playful in how she talks, serious about whether it works |
 
-Every persona but `scribe` brings a colour and a chat background, and each is
-drawn for one kind of scheme. `aworg-light`, `sunny`, `quill`, `founder` and
-`professional` are for a light interface; the rest are for a dark one. Wear one
-under the opposite scheme and the chat's scrim greys its picture out, so the
-pairing is worth matching.
-
-Every one of them holds the same lines, whatever the voice: code, commands,
-errors and numbers are written exactly; a failure is never dressed up; and
-nothing is called done that was not checked. The characters are not allowed to
-promise what AWORG cannot do -- Nocturne says outright that it cannot reach
-you while you are away, and P2 that it cannot feel a jump.
+Each brings a colour and a chat background, and each is drawn for one kind of
+scheme. `aworg-light`, `sunny` and `professional` are for a light interface;
+the rest are for a dark one. Wear one under the opposite scheme and the chat's
+scrim greys its picture out, so the pairing is worth matching.
 
 ### Changing Persona is not a new Resident
 
