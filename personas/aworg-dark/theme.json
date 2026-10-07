@@ -1,0 +1,17 @@
+{
+  "accent": "#159BFF",
+  "on_accent": "#04121F",
+  "text": "#E6EDF5",
+  "muted": "#93A4B8",
+  "owner": "#172232",
+  "owner_alpha": 0.82,
+  "resident": "#0B1118",
+  "resident_alpha": 0.34,
+  "surface": "#101B27",
+  "line": "#26384C",
+  "font": "system",
+  "font_size": 15,
+  "font_weight": 400,
+  "avatar": "avatar.svg",
+  "chat_background": "background.svg"
+}
