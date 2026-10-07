@@ -91,7 +91,9 @@ body {
 
 .identity { display: flex; align-items: center; gap: 16px; }
 
+/* The page's one heading, so it is an h1; dressed exactly as the span it was. */
 .wordmark {
+  margin: 0;
   font-weight: 600;
   letter-spacing: 0.18em;
   font-size: 13px;
@@ -1405,6 +1407,14 @@ body.has-maximised-pane .resizer { pointer-events: none; }
     font-size: 10px;
   }
 
+  /* Under 16px, iOS zooms the page in when the field is tapped. Padding
+     trimmed so a 24px line still makes the 34px row. */
+  .composer textarea { font-size: 16px; padding-top: 5px; padding-bottom: 5px; }
+
+  /* Home and Settings are tapped, not clicked: a fingertip's 44px, which
+     the 56px bar has room for. */
+  .viewtab { min-height: 44px; }
+
   .home .pane-head, .chat-head { min-width: 0; }
   .home .pane-head h2, .chat-head h2 {
     min-width: 0;
@@ -1941,6 +1951,9 @@ body.resizing.row * { cursor: row-resize !important; }
   white-space: nowrap;
   flex: none;
   opacity: 0.75;
+  /* Pinned right. An open entry carries a Resolve button after it, and
+     space-between with three children put the time in the middle. */
+  margin-left: auto;
 }
 .pane-item.log-entry.alarm .pane-item-name { color: var(--danger); }
 
@@ -2469,6 +2482,9 @@ button.danger:disabled { opacity: 0.4; cursor: not-allowed; }
 .pane-item.log-entry:hover .log-close,
 .log-close:focus-visible,
 .log-resolver .log-close { opacity: 1; }
+/* No pointer to hover with on a touch screen, so the button that waits for
+   one would never appear. */
+@media (hover: none) { .log-close { opacity: 1; } }
 .log-close:hover { border-color: var(--accent); color: var(--text); }
 .log-close.confirm { border-color: color-mix(in srgb, var(--ok) 45%, var(--line)); color: var(--ok); }
 .log-close[disabled] { opacity: 0.4; cursor: default; }
