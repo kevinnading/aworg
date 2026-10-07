@@ -1,0 +1,5 @@
+# Written by capabilities at run time; never committed or shipped.
+notify/notify.json
+database/connections.json
+database/_lib/
+chromium/chromium/

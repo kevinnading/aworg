@@ -22,6 +22,17 @@ inside the program is one they cannot.
   `chromium/` inside the capability if the machine has none.
 - **weather** -- the small one. It exists to prove the path works: a folder
   AWORG does not need, loaded and called exactly like a built-in.
+- **search** -- web search with no key or account: titles, addresses and
+  snippets from DuckDuckGo's plain results page. Unofficial, so heavy use is
+  rate-limited and a change to that page breaks it until updated.
+- **notify** -- push notifications to the owner's phone or desktop through
+  ntfy.sh. A random topic is made on first use and kept in `notify.json`;
+  the owner subscribes to it once.
+- **database** -- named connections to SQLite, PostgreSQL and MySQL: tables,
+  columns, read-only queries, and writes that commit or roll back together.
+  `db_install_driver` installs the PostgreSQL or MySQL driver into `_lib/`
+  in the capability's folder. Connection URLs, passwords included, are kept
+  in `connections.json` there.
 
 These are bound for the AWORG store. Until it exists, installing one is
 copying a folder. Skills work the same way and live in `skills/` beside
