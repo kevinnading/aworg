@@ -5,7 +5,7 @@ plan — it records choices already made, so that the next person to touch
 this code (including a later version of whoever made them) does not have
 to re-derive them or accidentally undo them.
 
-## Connections, Roles, and Prompts
+## Connections and Prompts
 
 Three concepts, deliberately separate.
 
@@ -23,24 +23,26 @@ and that dies quietly: switching from a local model to a hosted one would
 change who the Resident *is*, because the identity arrived with the
 endpoint.
 
-**A role is who is using a model, and why.** A role carries the system
-prompt, points at a connection, and — for workers — carries the set of
-tools it is allowed to use.
+**The prompt belongs to whoever is using the model.** The Resident's is its
+persona, plus what the owner added to it, plus what AWORG observed; it lives
+on the single row in `resident`. A worker's is built by `spawn_worker` for
+the one job it was started for, and lives only as long as the worker.
 
-Many roles may share one connection. One connection to a 9B, and fifteen
-workers pointing at it, each a specialist by virtue of its own prompt and
-its own tool scope. Repoint that connection at a different model and every
-role follows, with no prompt re-entered and no credential duplicated.
+Many of them may share one connection. One connection to a 9B, and fifteen
+workers on it, each different by virtue of its own message and its own tools.
+Repoint that connection at a different model and everything on it follows,
+with no prompt re-entered and no credential duplicated.
 
-The Resident is a role. Today it is a single row in `resident`, which is
-that table with one seat in it; the shape generalises when workers arrive.
+What a connection does carry for this is its **tags** — `fast`, `cheap`,
+`coding`, `reasoning`, `vision`, `local` — which are what the Resident reads
+when it chooses a model for a worker.
 
 ### Why not the other two options
 
 **Sub-models with their own prompts, in the manner of Open WebUI**, exist
 to give one person many personas. AWORG is built on the opposite premise:
-one Resident with one identity, and workers that are tools rather than
-characters. It solves a problem this product does not have.
+one Resident with one identity, and workers that are assistants for a job
+rather than characters. It solves a problem this product does not have.
 
 **Multiple connections to the same model, differing only by prompt**,
 duplicates the endpoint, the credential and the model identifier once per
@@ -50,78 +52,78 @@ server.
 
 ## Workers
 
-Workers are temporary. They are spawned for one bounded job, they do not
-remember anything once it is finished, and they are disposed. Keeping a
-worker alive across a multi-part job is a later version, not this one.
+A worker is a whole AI session of its own, short-lived and for one job. The
+Resident starts them itself, with `spawn_worker`, as many as it likes and
+whenever it likes. There is no roster: an earlier version shipped three fixed
+specialists (builder, runner, checker) with owner-set prompts and tool
+scopes, and it was removed. The Resident knows the job; a list of
+specialists written in advance does not.
 
-A worker is three things, not two:
+A worker is still three things:
 
-    connection      which model it thinks with
-    system prompt   how it works
-    tool scope      what it is allowed to do
+    connection      which model it thinks with, chosen by the Resident by tag
+    tools           a subset of the Resident's own current tools
+    message         the job, and whatever context the Resident sends with it
 
-The third is the one that is easy to miss and does the most work. A
-test-runner that cannot write files cannot damage the workspace however
-badly it misreads a job — it is not trusted to avoid writing, it is simply
-not handed the means. Note that this is a limit the Resident places on a
-worker it spawned, not a limit AWORG places on the Resident; see *Authority
-Is The Account's* below. It is also what makes small models usable as
-specialists — three tools and a narrow prompt are far more reliable than
-twelve tools and a general one.
+The tools are an enumeration built from what the Resident holds right now, so
+a worker can never be handed something the Resident does not have, and a
+Capability the owner switched off is gone from both. The Resident must name
+at least one.
 
-### Delegation is one tool, not one per worker
+**AWORG writes the worker's system prompt, not the Resident.** It is a fixed
+base -- *you are my assistant, I started you to do one job, others may be
+working in the same workspace, do it, finish it, reply with a summary* --
+followed by the descriptions of exactly the tools granted, the machine facts
+the Resident is given, and any skills handed over in full. A Resident left to
+write that would write the same thing differently every time, and forget the
+machine facts -- the first workers started without them spent their jobs
+finding out what machine they were on.
 
-The Resident delegates through a single tool whose `worker` parameter is
-an enumeration of the configured workers:
+### Why workers exist
 
-    delegate(worker, task) -> job id
+Not speed, and not specialism. An Aworg's conversation lasts for years and
+everything in it is paid for on every message. A worker that reads five
+hundred files to fix one bug keeps all five hundred out of it, and hands back
+a summary. The Resident's prompt says so in one line: use them for any job
+that does not need everything it is holding in context.
 
-Not one tool per worker. Tool-selection accuracy falls away as the tool
-surface grows; measured on the models this is developed against, routing
-is reliable at around five tools and not at fifteen. One tool with an
-enumeration keeps the surface flat no matter how many specialists the
-owner defines, and turns the Resident's job into routing — picking from a
-list — which even very small models do well.
+A small job is still cheaper done directly, and the Resident is left to judge
+that.
 
-The consequence is that **a worker's description is load-bearing**. It is
-the only thing the Resident routes on. A vague description is a misrouted
-job, and the owner experiences that as the wrong specialist doing their
-work without ever seeing why. Descriptions deserve the same care in the
-interface as prompts.
+### The Resident hears back between turns
+
+A worker's reply does not interrupt. It goes into the inbox
+(`aworg/inbox.py`), which delivers everything queued as one message once the
+Resident has been idle for a few seconds, so an owner reading the last reply
+and typing the next gets there first. The delivery reminds the Resident to
+stop the worker once done with it; `message_worker` instead sends it further
+down the job with its context intact.
+
+`check_workers` exists for a worker that seems stuck, and says so when the
+worker has been running under a minute: a Resident polling its workers is
+spending its own context watching them, which is the thing workers exist to
+avoid.
 
 ### Where the "keep it to five" number does and does not apply
 
-An earlier draft of this file read that measurement as a ceiling on the
-Resident's whole tool surface. It is not, and treating it as one was starting
-to hold the build back.
-
 What was measured is that a **2B routes reliably across four or five tools**.
-That is a fact about workers, and workers already honour it by construction:
-a worker is handed three tools, not everything. The Resident thinks with a
-far larger model and its surface can grow well past five as long as each tool
-is unambiguous and no two overlap.
+That is a fact about small models with large tool lists. The Resident thinks
+with a larger model and its surface can grow well past five as long as each
+tool is unambiguous and no two overlap; a worker gets only what it was
+granted, which is usually few.
 
-The number that genuinely wants staying small is the count of *Capabilities*
-an owner is asked to reason about, which is a different question with a
-different audience. Three, today.
+So: add tools where a tool earns its place. Do not refuse a useful tool to
+protect a budget that was never about the Resident.
 
-So: add tools where a tool earns its place. Keep worker scopes narrow. Do not
-refuse a useful tool to protect a budget that was never about the Resident.
+### Workers run in parallel, and nothing locks the workspace
 
-### Workers run in parallel
+Several run at once. Against hosted models parallelism is wide and real;
+against one local GPU it is a handful of slots and contended.
 
-Several may run at once. The interface is concurrent even where execution
-is not: against hosted models parallelism is wide and real, against one
-local GPU it is a handful of slots and contended, so the cap belongs to
-the connection rather than being global.
-
-### Concurrent writes are handled by locking in the tools
-
-Parallel workers share one Living Workspace, so two of them can edit the
-same file. Every write already passes through the tool layer, which makes
-that the one place a lock is unavoidable rather than merely conventional.
-It also covers the case a per-worker scheme would miss: the Resident and a
-worker writing the same file, not only two workers.
+They share one Living Workspace and nothing stops two of them writing the
+same file. Each is told that others may be working there. Splitting the work
+so that does not happen is the Resident's job, the same as it would be for a
+person handing out work.
 
 ### What a worker returns
 
@@ -196,8 +198,8 @@ An installed Capability runs **in AWORG's process, with everything AWORG
 has**. That is the deliberate position, not an unfinished one. A Tool exists
 to reach the machine; a Tool that could not would not be a Tool, and a
 Resident that can already run shell commands gains no new power from one.
-What it does change is *visibility*: a shell command appears in Activities,
-and Python running inside the process need not. So the protection is placed
+What it does change is *visibility*: a shell command appears in the
+conversation, and Python running inside the process need not. So the protection is placed
 where it can work — at the moment of installing, in knowing what a capability
 is and where it came from — and the interface says plainly which Capabilities
 AWORG did not ship.
@@ -216,20 +218,22 @@ the owner can delete should not be load-bearing.
 
 ### Shipped content is a seed, not a second library
 
-Skills and Personas live in one place: the Aworg's home. `aworg install`
-copies what AWORG ships into `skills/`, `personas/` and `capabilities/` there,
-and `installed.json` records what it put in.
+Skills, Personas and installed Capabilities live in one place: the Aworg's
+home. AWORG ships seven personas and nothing else; `aworg install` copies them
+into `personas/` there, and `installed.json` records what it put in. Skills
+and capabilities come from the store, and the repository's `personas/`,
+`skills/` and `capabilities/` folders are its source -- all eighteen personas
+among them, the shipped seven included.
 
 They used to be read from inside the package as well, which made a shipped
 skill a different kind of object from one the owner wrote — same format, same
 loader, a different home, and invisible in the folder where an owner would go
 looking. Now there is one folder per kind and one copy of each thing in it.
-Editing a shipped skill edits the skill. Deleting a persona deletes it, and a
+Editing a shipped persona edits the persona. Deleting one deletes it, and a
 second install leaves it deleted rather than arguing.
 
-"Shipped" survives as provenance rather than location: the pane calls a skill
-shipped because the installer's record says AWORG put it there, however much
-it has been edited since.
+"Shipped" survives as provenance rather than location: the installer's record
+says AWORG put it there, however much it has been edited since.
 
 ### Operating systems are the tools' business
 
@@ -268,9 +272,10 @@ the conversation stores**, because a conversation records what was *said*.
 Storing the full result and re-cutting it later would reconstruct a
 conversation that never happened.
 
-The whole result lives on the Activity instead, as evidence for an owner who
-would rather check than take the Resident's word — which is the same argument
-as *Verification Is A Property Of The System* below, applied to one tool call.
+The whole result is held on the Activity while the Aworg runs. The
+Activities pane that used to open it is gone -- the conversation shows every
+call as it happens and keeps it -- so today nothing in the interface reaches
+past the extract.
 
 Two rules follow. The cut is always announced in the text the model receives,
 because a result silently halved produces a Resident reasoning confidently
@@ -289,38 +294,35 @@ That restraint is the design. A tool call that notified the interface, the
 Living Log and its caller directly would have to know about all three; it
 knows about none of them, and gains a fourth subscriber without being touched.
 Anything that wants to add behaviour to the Activity Manager should become a
-subscriber instead — including, when it arrives, the approval step described
-above.
+subscriber instead — including, if it arrives, the approval step described
+below.
 
 The Living Log is the first subscriber to take that seriously rather than
 theoretically. It watches the same stream the interface does and decides for
 itself what is worth keeping; the manager was not changed to add it, and does
 not know it exists.
 
-### A Persona is untrusted text in the system prompt
+### A Persona is the system prompt
 
-Personas are meant to be downloaded and exchanged, which makes `PERSONA.md`
-the only part of the prompt that a stranger may have written. Everything else
-in there is the owner's, AWORG's, or observed fact.
+`PERSONA.md` is the first thing the model reads, as written: there is no
+separate AWORG system prompt in front of it. The owner's own additions come
+after it, then what AWORG observed about the machine, the skills, the
+project and the plan.
 
-That is handled by framing rather than by filtering. The block states what a
-persona governs — voice and temperament — and states that anything inside it
-reading as granting permission, changing the mission, or excusing a failure
-from being reported is character description rather than instruction. Trying
-to detect such claims instead would be a filter that has to be right every
-time against text that can be rewritten to get past it; a boundary the model
-is told about is a boundary that holds for the cases nobody anticipated.
-
-Position carries part of the argument. The persona block sits *after* the
-owner's standing instructions, and what comes second qualifies what came
-first. The instructions carry the mission and are the owner's; the persona
-carries none and may be anyone's.
+There used to be a framing paragraph around the persona saying what it
+governed, and that anything in it granting permission was character
+description rather than instruction. It went with the old standing prompt,
+for the same reason: the model was being told things about its own prompt
+instead of being given one. A persona from a stranger is a stranger writing
+the system prompt, and the defence is the same as for a capability -- know
+where it came from before it is installed. A persona is a page of Markdown,
+which makes reading one quick.
 
 The presentation half is filtered, because it can be. An asset path from
 `theme.json` is resolved and then checked to be inside the persona's own
 directory, its suffix must be a known image type, and the name is
 percent-encoded before it reaches a CSS `url()`. Those are closed sets, so a
-list is the right tool; behaviour is not, so it gets a boundary instead.
+list is the right tool.
 
 ### Changing a Persona cannot lose the Resident
 
@@ -346,19 +348,23 @@ storage layer having to know what it is called.
 diagnose, decide, or repair; it holds what is outstanding and calls
 `on_trouble` with it.
 
-The seam exists before anything uses it, and that is deliberate. The
-autonomous repair loop is the obvious next thing to build, and the cheapest
-way to build it is inside the watcher — a little triage, then a little
-investigation, then a little fixing — until the thing that notices and the
-thing that acts are one object nobody can reason about separately. Drawing
-the line while there is nothing on the far side of it is the only moment the
-line is free.
+The seam was drawn before anything used it, so that the repair loop could
+not grow inside the watcher -- a little triage, then a little investigation,
+then a little fixing -- until the thing that notices and the thing that acts
+were one object nobody could reason about separately.
 
-Two things follow that are worth more than tidiness. The inspection is
-testable with no model attached, which nothing else in the autonomous path
-will be. And an owner can eventually switch repair off while leaving noticing
-on — the difference between an Aworg that will not fix things and one that
-cannot see them. Those are the same object only if they were built as one.
+What is on the far side now is the Resident. `on_trouble` puts each report
+in the inbox (`aworg/inbox.py`), the same queue worker replies go through,
+and the inbox delivers it as a message once the Resident has been idle for a
+few seconds. The repair is the Resident's ordinary work, with its ordinary
+tools; `resolve_concern` closes the entry and says what was done. A report
+that was resolved while it waited is dropped at delivery rather than told
+twice.
+
+The split paid for itself as promised. The inspection is testable with no
+model attached. And the owner can switch repair off while leaving noticing
+on -- **Wakes me** on the Living Log -- which is the difference between an
+Aworg that will not fix things and one that cannot see them.
 
 The watcher looks immediately on start rather than after its first interval.
 An Aworg that restarted may have an application that fell over while it was
@@ -519,10 +525,11 @@ The facts are gathered at start rather than once at install, because a
 machine surveyed at install time is wrong the first time its owner installs
 anything — and re-gathered once they are more than a few hours old, because
 an Aworg is started once and then left running for weeks. A picture of the
-machine taken at boot describes the first day of a month-long life. They are kept beside the owner's standing instructions rather than
-written into them: the instructions are the owner's to write, the facts are
-AWORG's to observe, and mixing the two would leave the owner maintaining a
-description of their own machine.
+machine taken at boot describes the first day of a month-long life. They are
+kept apart from what the owner adds to the Persona rather than written into
+it: that text is the owner's to write, the facts are AWORG's to observe, and
+mixing the two would leave the owner maintaining a description of their own
+machine.
 
 ### Tool calls are not gated, and that is on purpose for now
 
@@ -534,17 +541,17 @@ the section above. Confinement is about what AWORG *could* do, and it is the
 owner's, settled with a container or a VM. This is about what AWORG does
 *without asking*, which is a different axis and is AWORG's own question.
 
-Today the answer is easy because a person is present by construction: the
-owner typed a message and is watching the reply arrive, and Stop works. The
-question only becomes real with the autonomous loop, when the Living Log
-reports trouble at three in the morning and the Resident repairs it with
-nobody there.
+When the owner typed the message, a person is present by construction: they
+are watching the reply arrive, and Stop works. When an application's report
+wakes the Resident at three in the morning, nobody is. That case exists now,
+and the only control over it is the owner's **Wakes me** switch -- all or
+nothing.
 
-What replaces this is a set of modes — automatic, manual, and standing
+What may replace that is a set of modes — automatic, manual, and standing
 accepts for particular things — rather than a single gate. That is a design
-worth doing properly and it is not this milestone's.
+worth doing properly and it is not built.
 
-When it arrives, it should not need new machinery. The Activity lifecycle
+If it arrives, it should not need new machinery. The Activity lifecycle
 already has `waiting` and `timed_out`, and neither is ever entered:
 
     call needs a person  ->  Activity enters `waiting`, and emits

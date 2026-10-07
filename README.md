@@ -13,59 +13,47 @@ the code.
 
 ## Current state
 
-**The Resident is present, legible, and can act.**
+**Version 0.9.** Everything 1.0 needs is in except a second look at History.
 
-It holds one ongoing conversation — the only one there is, with nothing that
-ends it — and connects to whichever model you choose —
-hosted, or one running on your own hardware. The owner interface is one screen:
-the application area and Living Workspace on the left, the conversation down the
-right. Replies render with syntax highlighting, and the workspace listing
-follows along as it changes.
+The Resident holds one ongoing conversation — the only one there is, with
+nothing that ends it — and thinks with whichever model you connect, hosted or
+running on your own hardware. The owner interface is one screen: the
+application and the Living Workspace on the left, the conversation in the
+middle, what the Resident has and knows on the right, and the Living Log
+along the bottom.
 
-It has hands: thirteen tools across five Capabilities. It reads, writes, edits
-and searches files, runs commands, starts and stops long-running programs like
-servers, and makes HTTP requests. What it is doing shows up in the
-**Activities** pane as it happens.
+It has hands: twenty-seven tools across eight Capabilities. It reads, writes,
+edits, moves and searches files, looks at images, runs commands, starts and
+stops long-running programs like servers, and makes HTTP requests. Each call
+shows in the conversation as it happens and stays there.
 
-It writes down a **plan** before starting anything long, and works through it —
-carrying on by itself rather than needing to be told "continue" once per step.
-It hands bounded work to **workers**, specialists with their own prompt, their
-own narrow set of tools, and their own **skills** — this machine's conventions
-put in front of them rather than left to be asked for.
-
-Asked for a three-page website, it plans the work, delegates the writing,
-starts a server, checks the pages actually answer, and shows you the running
-site in the Application pane.
+It writes down a **plan** before starting anything long and works through it
+by itself, rather than needing to be told "continue" once per step. It starts
+**workers** — separate sessions with their own context — for any job that
+does not need everything it is holding, as many as it likes, each with a
+message, the tools it chose for it, and the model it chose by tag.
 
 It keeps a **Living Log** of what happened and mattered, which survives the
-restart that clears everything else — including the one entry nothing else in
-AWORG can produce: a program that stopped on its own, with what it last said
-before it went.
+restart that clears everything else. Applications it builds can **report
+their own trouble** to it, without being wired up, and when they do the
+Resident is woken to deal with it. That is the repair loop: noticed by AWORG,
+delivered when the Resident is free, handled by the Resident.
 
 It has a **Persona** — a name, a manner, and a chat that looks like its own
-room. Changing it does not make a new Resident: the conversation, the plan,
-the log and every permission carry straight on.
+room. The persona's text is the Resident's system prompt. Changing it does not
+make a new Resident: the conversation, the plan, the log and every permission
+carry straight on.
 
-Applications it builds can **report their own trouble** back to it, without
-being wired up: the channel arrives in their environment. AWORG reads that
-log every minute and holds what is still outstanding.
+Seven personas ship. Everything else — more personas, skills, and extra
+capabilities such as a browser, web search or a database connector — comes
+from the store with `aworg get`, and the repository's own
+[personas/](personas/), [skills/](skills/) and [capabilities/](capabilities/)
+folders are what goes there.
 
-It can **look at a page the way a person would** — rendered, after its
-JavaScript has run, with whatever the console and the network complained
-about, and a picture of it the Resident can actually see rather than merely
-save. That is a capability rather than part of the runtime, and AWORG does
-not ship it: [capabilities/](capabilities/) holds it and a small Weather
-capability, and installing one is copying its folder into `capabilities/` in
-an Aworg's home. Deleting that folder removes it again, engine included for
-the browser, which is the point of a capability being a folder.
-
-Skills work the same way and are not shipped either; they come from the
-store with `aworg get skills/NAME`.
-
-What it does not have yet is the autonomous repair loop — the part that takes
-what the watch found at three in the morning and does something about it —
-and History and Reversibility. See
-[docs/02_MVP_SPEC.md](docs/02_MVP_SPEC.md).
+What it does not have yet is **History** in the form 1.0 wants: a record an
+owner can be told will survive an upgrade. Reversibility was dropped — undoing
+work is left to whatever the owner and Resident are comfortable with, git,
+backups or a tool.
 
 ## Running it
 
@@ -76,7 +64,9 @@ python -m venv .venv
 .venv/Scripts/python.exe -m aworg start
 ```
 
-Then open <http://127.0.0.1:8420>.
+Then open <http://127.0.0.1:8420>. The first start prints a password for the
+interface, once; `aworg password` makes a new one if it is lost. On this
+machine only, `aworg start --no-password` serves it without one.
 
 On macOS or Linux the interpreter path is `.venv/bin/python` instead.
 
@@ -84,16 +74,32 @@ Open **Settings**, add a model connection, and start talking.
 
 Installing the package and installing an Aworg are two different things.
 `pip install` puts the program on the machine; `aworg install` makes an Aworg:
-a home, its two databases, its folders, and the skills, personas and
-capabilities AWORG ships — copied into that home as ordinary folders, yours
-from then on. Starting an Aworg that was never installed installs it once, so
-the step is skippable; it is a separate command because "put this back the way
-it shipped" (`--force`) and "keep my workspace over here"
-(`--workspace <path>`) are things you need somewhere to say.
+a home, its two databases, its folders, and the seven personas AWORG ships —
+copied into that home as ordinary folders, yours from then on. Starting an
+Aworg that was never installed installs it once, so the step is skippable; it
+is a separate command because "put this back the way it shipped" (`--force`)
+and "keep my workspace over here" (`--workspace <path>`) are things you need
+somewhere to say.
 
-Edit a shipped skill and it stays edited. Delete a persona and it stays
-deleted — a second install will not bring it back, and says so rather than
-counting it as installed.
+Edit a shipped persona and it stays edited. Delete one and it stays deleted —
+a second install will not bring it back, and says so rather than counting it
+as installed.
+
+## The store
+
+```bash
+aworg get skills/design-taste
+aworg get tools/search
+aworg get personas/wizard
+```
+
+A package is a folder, and `aworg get` unpacks it into this Aworg's home. A
+running Aworg picks it up before its next message, with no restart. A tool is
+Python that runs as this Aworg, so `aworg get` shows where to read it and asks
+before installing one; `--yes` skips the question.
+
+The store is <https://aworg.com>, or wherever `AWORG_STORE` or `--store`
+points.
 
 ## Where an Aworg lives
 
@@ -104,7 +110,7 @@ By default `~/.aworg`, overridable with `AWORG_HOME` or `--home`:
   state.db         configuration, model connections, conversation
   secrets.db       credentials — kept deliberately separate
   workspace/       the Living Workspace, where the Resident builds
-  skills/          procedures it knows — the shipped ones and yours
+  skills/          procedures it can read when it takes on a job
   personas/        who it is, and what its chat looks like
   capabilities/    folders of Tools you installed
   trash/           what delete_file moved instead of destroying
@@ -135,10 +141,11 @@ distinguishable, and that is expensive to retrofit.
 ## Models that think
 
 Some models reason at length before answering. That reasoning is not the
-reply: it is never saved, never sent back as context, and never shown as
-something the Resident said. It *is* shown while it happens, folded away, as
-"Thinking…" with a live count — because a model that says nothing for ninety
-seconds and a model that has hung look identical otherwise.
+reply. It is shown while it happens, folded away, as "Thinking…" with a live
+count — because a model that says nothing for ninety seconds and a model that
+has hung look identical otherwise — and it is kept with the message, so a
+reloaded conversation still says what the Resident thought and for how long.
+It is never sent back to the model as context.
 
 Whether a model thinks at all is a property of its connection, alongside the
 endpoint and the credential. Set **Thinking → Off** on a connection and it
@@ -148,8 +155,8 @@ answers straight away. On the 9B developed against, the same request went from
 ## What the Resident knows about your machine
 
 At every start AWORG looks at the host: operating system, architecture, CPUs,
-memory, free disk, which package manager exists, whether it is running
-elevated, and what is on PATH. About 700ms, no extra dependencies.
+memory, free disk, the shell, which package manager exists, whether it is
+running elevated, and what is on PATH. About 700ms, no extra dependencies.
 
 Being on PATH is not the same as working, and the difference is not academic.
 Windows ships zero-byte "app execution aliases" — typing `python` opens the
@@ -160,12 +167,13 @@ question. So candidates are actually run, and anything that turns out to be a
 placeholder is listed as present-and-unusable rather than counted as a tool.
 That check is most of the 700ms and it is worth every millisecond of it.
 
-Those facts go two places — the **Capabilities** pane, so you can see before
-asking whether this Aworg could install postgres, and the Resident's context,
-so it does not propose `apt install` on Windows. They are taken at start
-rather than at install, and taken again once they are more than three hours
-old: an Aworg is started once and then runs for weeks, so a picture of the
-machine from boot describes the first day of a month-long life.
+Those facts go two places — the **Environment** pane, so you can see before
+asking whether this Aworg could install postgres, and the Resident's prompt,
+so it does not propose `apt install` on Windows. Workers it starts are given
+the same facts. They are taken at start rather than at install, and taken
+again once they are more than three hours old: an Aworg is started once and
+then runs for weeks, so a picture of the machine from boot describes the first
+day of a month-long life.
 
 AWORG runs with exactly the privileges of the account that started it. It does
 not confine itself and does not pretend to — if you want it sandboxed, launch
@@ -174,6 +182,25 @@ it that way. Its job is to tell you which it is.
 The Living Workspace is where the Resident builds by convention, so that what
 it made stays identifiable when snapshots arrive. It is not a fence. Helping
 run the machine is part of the job, and none of that happens in `workspace/`.
+
+## The system prompt
+
+What the model is sent, in order:
+
+1. **The persona** — its text, as written. This is the system prompt.
+2. **What you added to the Persona** — empty unless you write something in
+   Settings. It lets you change how the Resident works without editing a
+   persona.
+3. **Where you are** — what AWORG is from the Resident's side, the machine
+   facts above, and the Living Workspace path.
+4. **Skills** — each installed skill's name and description, and how to load
+   the full text.
+5. **The project** and the **plan**, when there is one.
+
+The rule for everything AWORG writes into it: only what the model cannot know.
+No advice on working in order or checking its work — a capable model already
+does that, and telling it again costs tokens on every message and measurably
+makes small models worse. The tool descriptions follow the same rule.
 
 ## What the Resident can do
 
@@ -184,15 +211,20 @@ Three words that are easy to blur, kept apart here and in the code:
   off as a unit;
 - a **Skill** is knowing how to do something with the Tools you have.
 
-Five Capabilities. Three you can switch, and two that are part of the
-machinery rather than something you installed:
+Eight Capabilities ship inside the package. Two you can switch off, one that
+is required, and five that are part of the machinery rather than something you
+installed:
 
 ```
-Filesystem   read_file  write_file  edit_file  search_files
+Filesystem   read_file  write_file  edit_file  search_files  copy_file
+             move_file  delete_file  make_directory  read_image   (required)
 Shell        execute_command  start_process  list_processes  stop_process
 HTTP         http_request
-Delegation   delegate                                    (internal)
-Planning     add_tasks  update_task  list_tasks          (internal)
+Workers      spawn_worker  check_workers  message_worker  stop_worker  (internal)
+Planning     add_tasks  update_task  list_tasks                      (internal)
+Knowledge    list_skills  read_skill                                 (internal)
+Living Log   list_concerns  resolve_concern                          (internal)
+Application  name_project  reload_preview                            (internal)
 ```
 
 `edit_file` exists because `write_file` replaces the whole file, which is
@@ -208,13 +240,14 @@ out the hard way before it existed.
 matching filenames and searching contents are one question asked in three
 moods.
 
+`delete_file` moves to the Aworg's trash rather than destroying anything.
+
 The **Capabilities** pane names the Tools inside each one rather than counting
 them, and each has a switch. "3 tools" tells you nothing you can act on;
 seeing that Shell is the thing holding `execute_command` is what makes turning
 it off a decision rather than a guess. The switch is yours and it outranks the
-Resident: a disabled Capability is invisible to it, and to any worker it
-spawns, whatever that worker was handed. It takes effect on the next tool
-call, not the next restart.
+Resident: a disabled Capability is invisible to it and to every worker it
+starts. It takes effect on the next tool call, not the next restart.
 
 **MCP is the contract.** Where MCP defines how a tool is described, called and
 answered, that is the format used — a competing dialect would buy nothing and
@@ -230,38 +263,43 @@ wrong everywhere at once and would grow forever.
 
 ## Workers
 
-The Resident can do the work itself or hand it to a specialist. Three ship:
+A worker is a whole AI session of its own, short-lived and for one job. The
+Resident starts one with `spawn_worker`, giving it three things:
 
-```
-builder   writes and edits files          cannot run anything
-runner    runs commands, reports output   cannot write files
-checker   verifies that something works   cannot change anything
-```
+- **a message** — the job, and whatever context the Resident thinks it needs;
+- **a tool list** — chosen from the Resident's own current tools, so a worker
+  can never hold something the Resident does not;
+- **a connection** — picked by the tags on your model connections (`fast`,
+  `cheap`, `coding`, `reasoning`, …), or the Resident's own if it names none.
 
-A worker is three things — a connection, a prompt, and a **tool scope** — and
-the third does the most work. The checker cannot rubber-stamp by quietly
-fixing what it was asked to check, because it holds no tool that writes. That
-is not trust; it was not handed the means.
+It may also hand over skills, which the worker gets in full.
 
-Workers are temporary. One bounded job, no memory of it afterwards, disposed.
-Nothing a worker says reaches your conversation directly — only the result the
-Resident reads.
+AWORG builds the worker's system prompt from those: a short base — *you are
+my assistant, I started you to do one job, others may be working in the same
+workspace, do it, finish it, reply with a summary* — then the descriptions of
+exactly the tools it was given, the facts about this machine, and the skills.
+The Resident does not write any of that, so it cannot forget it.
 
-**Delegation is one tool with a list of names, not one tool per worker.**
-Tool-selection accuracy falls away as the surface grows, so a tool per
-specialist would degrade routing the moment you defined a few. One tool keeps
-the surface flat however many workers exist. The consequence is that a
-worker's *description* is load-bearing: it is the only thing the Resident
-routes on, so a vague one is a misrouted job.
+There is no roster and no limit. The Resident starts as many as it wants, as
+fast as it wants, whenever a job does not need everything it is holding in
+context — which is the real reason they exist. An Aworg's conversation lasts
+for years; a worker that reads five hundred files to fix one bug keeps all
+five hundred out of it.
 
-**What comes back is evidence, not testimony.** A worker's result carries what
-it claimed *and*, separately, what AWORG watched it actually do — which tools
-ran, which failed. Where a worker reports success over failed calls, the
-result says so. That is the one failure you cannot catch for yourself, and it
-is not fixed by a better model.
+When a worker finishes, its reply reaches the Resident as a message once it
+is free to hear it, with a reminder to stop the worker when done with it.
+`check_workers` is for a worker that seems to be taking too long, and says so
+when it has been under a minute. `message_worker` sends one further down its
+job with its context intact; `stop_worker` ends it and hands back anything it
+said that was not yet read.
 
-Their work nests in the Activities pane, so you can see which worker did what
-rather than a flat list with no sign of who ran anything.
+**What comes back is evidence, not testimony.** A worker's report carries what
+it said *and*, separately, the tool calls AWORG watched it make, with the ones
+that failed marked. Where a worker reports success over failed calls, the
+Resident can see it. That is the one failure you cannot catch for yourself,
+and it is not fixed by a better model.
+
+The **Workers** pane lists the ones running and the tool call each is on.
 
 ## Tasks: a plan that outlives the conversation
 
@@ -298,72 +336,28 @@ adds knowing what to do.
 The format is the Agent Skills convention rather than anything invented here:
 a folder, a `SKILL.md` with frontmatter naming it and saying when to use it,
 and optional `references/` alongside for detail. A skill written for anything
-else works here, and one written here works elsewhere. Shipped skills live in
-the package; yours go in `skills/` under this Aworg's home, where a name
-collision means yours wins. Nothing needs registering — a skill is a folder
-with a file in it, which is also how the Resident can write one for itself.
+else works here, and one written here works elsewhere. They live in `skills/`
+under this Aworg's home. Nothing needs registering — a skill is a folder with
+a file in it, which is also how the Resident can write one for itself.
 
-Descriptions are in the system prompt on every message, so the Resident knows
-what exists; bodies are read on demand with `read_skill`. A dozen skills cost
-a paragraph rather than a book. A skill may also declare
-`disable-model-invocation`, which keeps it out of the Resident's reach
-entirely — for procedures a person should run deliberately — and the owner
-can switch any skill off in the Skills pane.
+None ship. They come from the store, and the six in this repository's
+[skills/](skills/) are the first ones there.
+
+Each skill's name and description are in the system prompt on every message,
+so the Resident knows what exists; the body is read on demand with
+`read_skill`. A dozen skills cost a paragraph rather than a book. A skill may
+also declare `disable-model-invocation`, which keeps it out of the Resident's
+reach entirely — for procedures a person should run deliberately — and the
+owner can switch any skill off in the Skills pane.
 
 **A caveat measured rather than assumed.** Progressive disclosure only works
-if the model consults a reference it has been told about, and the 9B this is
-developed against does not. Given a skill whose description reads *"use
-before creating any new file, of any kind"*, and asked to write a file, it
-wrote the file its own way: one `read_skill` call in eighteen runs, across
-three differently-worded descriptions and with the instruction moved into the
-standing prompt. Told explicitly to read it first, it complied exactly — so
-the machinery is right and the disposition is not.
-
-That is a fact about the model, not the format, and it is deliberately not
-worked around. These small models are a floor for proving the loop holds, not
-a target to design for. A model that will not consult a procedure it has been
-told about cannot be trusted with an Aworg's conventions, and the answer is a
-better model rather than a bigger prompt.
-
-Two ship. `house-style` is the conventions this Aworg writes files by;
-`web-project` is how to build and serve a small site end to end.
-
-### Workers are given skills, not offered them
-
-A worker has a skill scope the way it has a tool scope — the owner decides
-what it knows, and the Resident cannot widen it at dispatch. The builder and
-the checker ship with `house-style`; the runner with none, since it types
-what it is told to type.
-
-But a worker does not get descriptions to choose from. It gets the skill
-itself, in full, in its prompt, with no decision left to make. Progressive
-disclosure solves a problem a worker does not have: it exists so a Resident
-carrying a dozen skills across an open-ended conversation pays a paragraph
-rather than a book, and a worker is a fresh context for one bounded job
-holding the two skills it was scoped to.
-
-The rest is measured. Asked plainly, a local model reaches for a matching
-skill about one time in six. Told to read a named one, four times out of
-four. The reliable half is *being told* — so the Resident's part is moved to
-the thing it is good at, which is routing. `delegate` names what each worker
-knows alongside what it does, and choosing the worker that has `house-style`
-is a decision from a described list rather than an unprompted act of
-initiative.
-
-It is a partial win and worth saying so plainly. On granite-4-tiny, five
-runs: putting scripts in `bin/` went from 0/5 to 4/5. Hyphens instead of
-underscores went to 1/5, and the provenance line stayed at 0/5. The skill
-text is verbatim in the worker's prompt, so those two are the model rather
-than the plumbing — `random_tea.py` is what a python file is called in
-essentially all training data, and the house rule loses to the prior.
-
-The checker is the answer to that, and it is this project's own argument
-applied one level down: a check performed by the thing being checked is
-decoration. Given the same skill, the checker caught the missing provenance
-line 4 times out of 4 on a file the builder had just written without one. It
-cannot judge the naming rule — it recites it and then calls `random_tea.py`
-compliant — so it reliably notices something *absent* and cannot evaluate a
-property of a string in front of it.
+if the model consults a reference it has been told about, and the small local
+models this was first developed against do not. Given a skill whose
+description reads *"use before creating any new file, of any kind"*, and
+asked to write a file, a 9B wrote the file its own way: one `read_skill` call
+in eighteen runs. Told explicitly to read it first, it complied exactly — so
+the machinery is right and the disposition is not. That is a fact about the
+model, not the format, and it is deliberately not worked around.
 
 ## Personas: who your Resident is
 
@@ -385,7 +379,7 @@ aworg-light/
 ├── PERSONA.md      identity, voice, temperament, values, what to avoid
 ├── theme.json      the room: colours, type, avatar, optional background
 ├── avatar.svg
-└── background.jpg  optional
+└── background.svg  optional
 ```
 
 `theme.json` dresses the conversation and nothing else: `accent`, `on_accent`
@@ -399,16 +393,16 @@ Both bubbles take an opacity, `owner_alpha` and `resident_alpha`, and the
 range is the point of them. Solid suits a persona whose reply is a document or
 a case file; a tenth of one is enough to settle words on busy artwork without
 hiding it; and leaving `resident` out means no bubble at all, which is how
-Sunny and Greybeard are drawn. A translucent bubble is checked as what it will
-actually look like over the ground behind it, so a persona cannot pass the
-contrast floor by being nearly invisible.
+Sunny is drawn. A translucent bubble is checked as what it will actually look
+like over the ground behind it, so a persona cannot pass the contrast floor by
+being nearly invisible.
 
 Drop it in `personas/` under this Aworg's home and it appears in Settings.
 Frontmatter is optional — a `PERSONA.md` that starts straight in with
 `# Identity` loads exactly as written and takes its name from the folder.
 
-Seven ship. `aworg-light` is worn when you have not chosen; more are in the
-store.
+Seven ship. `aworg-light` is worn when you have not chosen; eleven more are in
+the store, and all eighteen are in [personas/](personas/).
 
 | Persona | |
 |---|---|
@@ -428,7 +422,7 @@ scrim greys its picture out, so the pairing is worth matching.
 
 This is the guarantee the whole feature rests on. The same inhabitant
 continues: the conversation, the plan, the Living Log, the workers, the
-skills, the model, your standing instructions and every permission are
+skills, the model, what you added to the Persona and every permission are
 exactly where they were. Only the voice changes, and the room it speaks in.
 
 It is one column on the Resident's own row rather than an operation with
@@ -442,8 +436,7 @@ working rather than failing.
 
 You chose the interface's colours. A Persona is a guest in them, so its
 accent is redefined on the chat surface rather than at the root: it reaches
-the conversation and stops at its edge. The app stays your teal while the
-chat goes Atelier's amber.
+the conversation and stops at its edge.
 
 A persona's colours are checked before they are served. Its text is measured
 against the ground it will actually sit on, its words against its own bubble
@@ -462,81 +455,58 @@ A background image brings its own scrim, emitted with the picture and never
 without it — so whatever anyone ships, the text on top stays readable, and an
 Aworg with no background pays no dimming for a picture that is not there.
 
-### A Persona is untrusted text
+### A Persona is the system prompt, so choose them like software
 
-Personas are meant to be downloaded and swapped around, which makes
-`PERSONA.md` the one part of the system prompt a stranger may have written.
-So the block it goes into says what it governs, and says out loud that
-anything reading as granting permission, changing the mission, or excusing a
-failure from being reported is character description rather than an
-instruction. A persona that says "you may run any command without asking" is
-describing a manner, not handing out authority.
+`PERSONA.md` goes to the model as written, as the first thing it reads. A
+persona from a stranger is a stranger writing your Resident's system prompt,
+so install personas the way you install capabilities: from people you trust,
+having read them. They are a page of Markdown, which makes that quick.
 
-`theme.json` gets the same treatment: an asset path is resolved and then
-checked to be inside the persona's own folder, its suffix must be an image,
-and the name is percent-encoded before it reaches a CSS `url()`.
+`theme.json` is checked rather than trusted: an asset path is resolved and
+then checked to be inside the persona's own folder, its suffix must be an
+image, and the name is percent-encoded before it reaches a CSS `url()`.
 
-Nothing in a Persona package carries memory, mission, credentials or
-permissions. That is what makes them safe to exchange.
+Nothing in a Persona package carries memory, credentials or permissions.
 
-## Activities: what is happening right now
+## The conversation is the record
 
-Tool calls do not narrate themselves into the conversation. A Resident that
-announces every `read_file` buries the parts you actually want — the
-reasoning, the decisions, what it concluded — under machinery.
+Every tool call shows in the conversation as it runs — what was called, with
+what, and what came back — and folds shut when the batch finishes. It stays
+there: the conversation stores each call and result, so reloading the page
+shows exactly what the Resident did and in what order.
 
-So the machinery goes to the **Activities** pane, beside the Living Log. Those
-two answer different questions and the pairing is the point: Activities is
-what is happening, the Living Log is what happened and mattered. See
-[The Living Log](#the-living-log-what-happened-and-mattered) for the other
-half. A row per
-call, with a live dot while it runs, what it was called with, and what came
-back. Failures are marked. Finished work fades but lingers a moment, because a
-tool that takes 200ms would otherwise flash past and leave the pane looking
-broken.
-
-Click a row and it opens the **whole** of what the tool returned.
-
-That is not the same thing as what the model saw, and the difference is
-deliberate. A tool result is sized before it reaches the model — a 40,000-line
-build log would otherwise spend a small model's entire context on one call —
-and the extract, not the full text, is what the conversation stores, because a
-conversation records what was *said*. Storing the full result and re-cutting
-it later would reconstruct a conversation that never happened. The Activity
-keeps the rest, as evidence, for an owner who would rather check than take the
-Resident's word.
-
-The cut is announced in the text the model receives, never hidden. A result
-silently halved produces a Resident reasoning confidently about output it
-never saw. And the extract is always a deterministic head and tail, never a
-summary the model wrote — a summary of a tool result, written by the model
-about to be judged on it, is testimony rather than evidence.
+What the model saw of a tool's result is sized before it reaches it — a
+40,000-line build log would otherwise spend a small model's entire context on
+one call — and the extract is what the conversation stores, because a
+conversation records what was *said*. The cut is announced in the text the
+model receives, never hidden: a result silently halved produces a Resident
+reasoning confidently about output it never saw. And the extract is always a
+deterministic head and tail, never a summary the model wrote — a summary of a
+tool result, written by the model about to be judged on it, is testimony
+rather than evidence.
 
 ## The Living Log: what happened, and mattered
 
-Activities is a window. It shows work while it runs, it is runtime state, and
-it is gone on restart — which is right, because "what is happening right now"
-has no meaning for a moment that has passed.
-
-The Living Log is the opposite in every respect. It is on disk, it is short,
-and nothing reaches it because it occurred. It reaches it because something
-judged that it mattered.
+The conversation has everything. The Living Log has what mattered: it is on
+disk, it is short, and nothing reaches it because it occurred. It reaches it
+because something judged that it mattered.
 
 That judging is a real piece of code rather than a filter setting, and it
-lives in one file. The Activity Manager deliberately has no opinions — it
-tracks work and announces it, and it will not decide that something deserves
-remembering. So the Living Log subscribes like anything else and makes the
-call itself. Teaching AWORG to remember a new kind of thing is a rule added
-in `aworg/journal.py`, not a change to the thing being remembered.
+lives in one file. The Activity Manager underneath deliberately has no
+opinions — it tracks work and announces it, and it will not decide that
+something deserves remembering. So the Living Log subscribes like anything
+else and makes the call itself. Teaching AWORG to remember a new kind of thing
+is a rule added in `aworg/journal.py`, not a change to the thing being
+remembered.
 
 The bar is high on purpose. A log that records every successful tool call is
-a second Activities pane with worse latency, and an owner learns within a day
-to stop reading it. What earns an entry is a change of state you would want
-to find tomorrow, or something going wrong:
+a second conversation, and an owner learns within a day to stop reading it.
+What earns an entry is a change of state you would want to find tomorrow, or
+something going wrong:
 
 - a program you started, and the moment it finished or died
 - anything that failed, timed out, or was stopped part way
-- a worker finishing, since delegated work is where you were least present
+- a worker finishing
 - a plan being made, and any task that ended — done, blocked or abandoned
 - a Capability or Skill you switched off, which is invisible afterwards
 - the Aworg itself starting, stopping, or being reset
@@ -550,16 +520,15 @@ Three levels, and only one of them is allowed to shout:
 | `alarm` | something is wrong **now**, and nobody asked for it |
 
 Only `alarm` gets colour. An alarm that fires for ordinary failure is an
-alarm nobody answers, so exactly one thing raises one today: a program that
-stopped without being asked to.
+alarm nobody answers.
 
-That entry is the reason the pane exists, and AWORG is the only thing in a
-position to write it. Every program the Resident starts has its output read
-continuously — not for our benefit but for its, since a process whose stdout
-fills up blocks on its next write and quietly stops serving. That reading
-ends at exactly the moment the program stops existing. So the place that
-keeps servers alive is also the only place that learns one has died, and it
-reports it with the last dozen lines the program printed on its way out:
+The entry the pane exists for is one AWORG is the only thing in a position to
+write. Every program the Resident starts has its output read continuously —
+not for our benefit but for its, since a process whose stdout fills up blocks
+on its next write and quietly stops serving. That reading ends at exactly the
+moment the program stops existing. So the place that keeps servers alive is
+also the only place that learns one has died, and it reports it with the last
+dozen lines the program printed on its way out:
 
 ```
 ● serve_site stopped on its own                             11:01 PM
@@ -583,11 +552,8 @@ arrive as a closed pipe, and the flag saying "this one is on purpose" has to
 be set *before* anything is signalled, or it races with the death it exists
 to explain.
 
-Entries carry a little of the real output rather than only a link to it. The
-link opens the whole of what came back, but Activities are runtime state and
-are forgotten in time, and a log whose entire content is a dead link is a
-record of nothing. So a bounded tail comes across when the entry is written —
-enough that the line still means something in the morning.
+Entries carry a little of the real output rather than only a pointer to it,
+so a line still means something in the morning.
 
 ## When an application says it is in trouble
 
@@ -597,7 +563,8 @@ Resident built, running in the workspace, reporting its own failure without a
 person noticing first, is the other.
 
 ```bash
-curl -X POST "$AWORG_LOG_URL" -H "X-Aworg-Token: $AWORG_LOG_TOKEN"   -d '{"summary":"Checkout failed","severity":"critical",
+curl -X POST "$AWORG_LOG_URL" -H "X-Aworg-Token: $AWORG_LOG_TOKEN" \
+  -d '{"summary":"Checkout failed","severity":"critical",
        "where":"POST /checkout","detail":"no such table: orders",
        "application":"tea-shop"}'
 ```
@@ -614,33 +581,36 @@ in the environment of everything the Resident starts, so an application reads
 them the way it reads `PORT`. Nothing has to be wired up — which matters,
 because the thing doing the wiring would be a model that forgets.
 
-It is a token rather than an open port. Prototype authority is not production
-security and this is not an attempt at more, but something now reads this log
-on a schedule, and an unauthenticated port on localhost would mean any
-process on this machine could wake the Resident at three in the morning.
+It is a token rather than an open port, because something reads this log and
+acts on it, and an unauthenticated port on localhost would mean any process on
+this machine could wake the Resident at three in the morning.
 
-### Open, and dealt with
+### Open, dealt with, and the Resident told
 
 A concern or an alarm stays **open** until something closes it, and closing
 one carries who closed it and what they did — "the Resident restarted it" and
 "the owner said never mind" are different outcomes. Notes are never open; a
-note is a record, not a job.
+note is a record, not a job. The Resident closes them with `resolve_concern`;
+you close them with **Resolve** on the entry.
 
-AWORG looks at what is open every minute, starting the moment it boots rather
-than a minute later — an Aworg that restarted may have an application that
-fell over while it was away.
+AWORG looks at what is open every minute, starting the moment it boots — an
+Aworg that restarted may have an application that fell over while it was
+away. What an application reported goes to the Resident through the same
+queue as worker replies, and is delivered once it has been idle for a few
+seconds, so it is never interrupted mid-reply and you get the next word if
+you are typing. An entry that was resolved while it waited is dropped rather
+than told twice.
 
-The watch **only looks**. It does not diagnose, decide, or repair. What to do
-about what it found attaches to a seam it calls and knows nothing else about,
-which is where the repair loop will go — and which is what will let you
-switch repair off while leaving noticing on.
+The watch **only looks**, and the Resident does the rest. **Wakes me** on the
+Living Log is the switch: turn it off and AWORG still notices and records,
+and the Resident is left alone.
 
 ## Rate limits, and waiting instead of failing
 
 A hosted model is sold by the minute as well as by the token. Cross the line
 and the provider refuses the request — in the middle of a turn, after the
-Resident has read three files and delegated to a worker, so the cost of
-finding out is everything done so far.
+Resident has read three files and started a worker, so the cost of finding
+out is everything done so far.
 
 Each connection has a **tokens per minute** allowance, set in Settings.
 Leaving it blank uses the provider's entry tier, which for OpenAI is 30,000 —
@@ -659,12 +629,8 @@ And when a limit is hit anyway — the budget is an estimate against a number
 the provider counts its own way, and a key may be shared — the refusal is
 waited out and retried rather than ending the turn. It honours `retry-after`
 where the provider sends one, and reads *"try again in 12.4s"* out of the
-message where it does not.
-
-This exists because of a specific failure. A 429 killed a reply midway, AWORG
-recorded it nowhere, and the conversation simply stopped after a tool result.
-The owner waited, typed "continue", and it carried on with no idea what had
-happened. A turn that dies part way now leaves a Living Log entry too.
+message where it does not. A turn that dies part way anyway leaves a Living
+Log entry.
 
 ## When the application changes, the preview follows
 
@@ -678,9 +644,6 @@ changes. The Resident can also move it itself with **`reload_preview`**, for
 the cases a timestamp does not cover: a restarted server, a regenerated
 database, a page rendered from something outside the workspace — or simply
 wanting you to look again now rather than on the next poll.
-
-It reloads a view and nothing else. The tool says so in its own result,
-because "the preview refreshed" is not evidence that the page is right.
 
 ## When it stops
 
@@ -701,17 +664,19 @@ you speak. This is meant to run for years.
 
 ## Putting it back
 
-**Settings → Reset** returns an Aworg to the way it arrived: the conversation,
-the plan, the workspace, the settings, and anything the Resident left running.
-It shows you what that means as counts before asking, and asks you to type a
-code it generates for that dialog — a fixed word becomes something the hands
-do without the eyes reading, which defeats the point of asking.
+**Settings → Reset** returns parts of an Aworg to the way they arrived: the
+conversation, the plan, the Living Log, the workspace, running programs,
+capabilities, skills, the project name and more, each chosen separately. It
+shows what that means as counts before asking, and asks you to type a code it
+generates for that dialog — a fixed word becomes something the hands do
+without the eyes reading, which defeats the point of asking.
 
-Model connections are kept by default, because the alternative is a clean
-conversation and a Resident with nothing to think with. `state.db` and
-`secrets.db` are copied to `backups/` first.
+**Nothing is kept.** A reset destroys what it resets, and the dialog says so.
+Copy out anything you want first. Model connections, appearance, the persona
+and what you added to it are left unticked by default, because those are set
+up once and nobody expects a reset to take them.
 
-## Nothing asks permission yet
+## Nothing asks permission
 
 Every tool call runs the moment the Resident asks for it. There is no approval
 step.
@@ -719,13 +684,10 @@ step.
 That is a decision rather than an oversight, and it is a different question
 from confinement: AWORG has the privileges of the account that started it, and
 locking that down is yours to do with a container or a VM. This is about what
-it does *without asking*, which today is everything.
-
-It is fine for now because a person is present by construction — you typed a
-message and are watching the reply, and Stop works. It becomes a real question
-with the autonomous loop, when the Living Log reports trouble at three in the
-morning. What replaces it is a set of modes — automatic, manual, and standing
-accepts — rather than one gate bolted on. See
+it does *without asking*, which today is everything — including when an
+application's report wakes it with nobody watching. Turn **Wakes me** off if
+that is not what you want. What may eventually replace it is a set of modes —
+automatic, manual, and standing accepts — rather than one gate bolted on. See
 [docs/06_ARCHITECTURE.md](docs/06_ARCHITECTURE.md).
 
 ## A reply belongs to the Resident, not to a browser tab
@@ -759,7 +721,7 @@ no amount of dropping history makes room for it — so the composer refuses it
 before it is typed, and says why. That guard uses a deliberately generous
 estimate: it should only ever stop what is definitely too large.
 
-## Connections and roles
+## Connections
 
 A **connection** is one model and how to reach it: provider, model, endpoint,
 credential, tags, whether it thinks, and how large its context window is. It
@@ -770,14 +732,13 @@ trimmed. Local servers announce theirs — pressing **Test** on a connection fil
 it in — but most hosted endpoints do not, so it is a field you can set yourself.
 A value you type wins over what the server reports; Test says so if they differ.
 
-A **role** is who is using a model and why, and it does carry the prompt. The
-Resident is a role; workers will be roles too, each with its own prompt and its
-own set of tools it is allowed to use. Many roles may share one connection —
-one connection to a 9B, and any number of specialist workers pointing at it.
+The Resident thinks with the connection you pick in Settings. **Tags** are
+what it chooses workers' models by: tag a small local model `fast` and
+`cheap` and a big hosted one `reasoning`, and the Resident can send each job
+to the one that suits it.
 
-That separation is deliberate. It is what lets the owner change the mind the
-Resident thinks with and have it carry on as itself, and it means repointing a
-connection at a different model updates every role at once. See
+Keeping the prompt off the connection is deliberate. It is what lets you
+change the mind the Resident thinks with and have it carry on as itself. See
 [docs/06_ARCHITECTURE.md](docs/06_ARCHITECTURE.md).
 
 ## Connecting a model
@@ -810,11 +771,11 @@ credential exists.
 An Aworg is meant to be lived with, so the interface is themeable from the
 start rather than as a later concession.
 
-Open **Settings → Appearance**. Eight presets cover the usual ground — Midnight
-(the default), Slate, Nord, Gruvbox, Solarized in both directions, Paper, and a
-high-contrast scheme. Any of the 28 colour tokens can then be changed
-individually: surfaces, text, accent, status colours, the code area, and the
-full syntax palette.
+Open **Settings → Appearance**. Nine presets cover the usual ground — AWORG
+Dark (the default) and Light, Slate, Nord, Gruvbox, Solarized in both
+directions, Paper, and a high-contrast scheme. Any of the 28 colour tokens can
+then be changed individually: surfaces, text, accent, status colours, the code
+area, and the full syntax palette.
 
 Custom colours layer over the preset rather than replacing it, so trying a
 different preset does not discard them. Each changed colour can be reverted on
@@ -827,55 +788,38 @@ tabs — an instrument nobody is looking at is not an instrument — and each on
 can be dragged to whatever size it deserves.
 
 ```
-+-------------+--------------------------+-----------+
-| Application | Tasks     |   Workers    | System    |
-| Lifecycle   +--------------------------+ Capabil.  |
-| Workspace   |                          | Skills    |
-|             |     Conversation         |           |
-+-------------+--------------------------+-----------+
-|     Living Log      |      Activities              |
-+----------------------------------------------------+
++-------------+--------------------------+-------------+
+| Project     |  Tasks    |   Workers    | Environment |
+| (preview)   +--------------------------+ Capabilit.  |
+|             |                          | Skills      |
+| Living      |      Conversation        |             |
+| Workspace   |                          |             |
++-------------+--------------------------+-------------+
+|                     Living Log                       |
++------------------------------------------------------+
 ```
 
 The workspace and the conversation hold the middle, because that is where the
-work happens. What the Resident *can* do is held at the right edge — it
-changes least and is glanced at rather than worked in. **System** is at the
-top of that column and opens with the Living Workspace path, because where
-the built thing lands on your disk is the question you ask before any of the
+work happens. What the Resident *has* is held at the right edge — it changes
+least and is glanced at rather than worked in. **Environment** is at the top
+of that column and opens with the Living Workspace path, because where the
+built thing lands on your disk is the question you ask before any of the
 others — and because the Resident is told the same path, so this is where you
-check the answer it was given. What it *is* doing sits
-directly above the conversation, because that is what the owner is talking to
-it about. The console runs the whole width underneath, split between the Living Log
-and Activities — what has happened, and what is happening — because those are
-different questions and one feed trying to answer both is readable as
-neither.
+check the answer it was given. What it *is* doing sits directly above the
+conversation. The Living Log runs the whole width underneath.
 
-Most panes are empty, and several are for abilities the Resident does not have
-yet. They say which: a pane marked **not yet** is one whose ability does not
-exist, as distinct from one that exists and is reading zero. That difference
-matters to an owner who cannot check for themselves.
-
-The three columns are shares of the window — **33% / 40% / 27%** — rather
-than fixed widths, so a bigger screen is a bigger everything instead of a
-bigger conversation beside the same laptop-sized panes. The conversation is
-the remainder rather than a share of its own, so the numbers never have to be
-kept summing to a hundred. Heights stay in pixels: a taller screen does not
+The three columns are shares of the window rather than fixed widths, so a
+bigger screen is a bigger everything instead of a bigger conversation beside
+the same laptop-sized panes. Heights stay in pixels: a taller screen does not
 make a log worth more rows.
 
-The conversation sits on the darker ground between the panes rather than in
-a card of its own — the panes are the objects, and the composer is the only
-thing in that space that needs an edge.
-
-The **Application** preview holds 16:9. It has no height of its own — widen
-the column and the picture grows with it, which is what bigger means for
+The **Project** preview holds 16:9. It has no height of its own — widen the
+column and the picture grows with it, which is what bigger means for
 something you watch. The button in its header expands it to fill everything
 under the top bar; the same button or **Esc** brings it back.
 
-The **Lifecycle** stepper runs Nothing yet → Being built → Running → Verified
-→ Watched → Published. The stage is derived from what is observably true —
-files in the workspace, a process answering, a check the Resident actually
-performed — never from anything the Resident says about itself. An owner who
-could audit that claim would not need AWORG.
+On a phone the same panes become an accordion in one column: each one a
+header, one open at a time, the conversation open first.
 
 ## The view
 
@@ -893,23 +837,34 @@ jumps into position on the way in.
 
 ```
 aworg/
+  cli.py         aworg start, install, get, password, home
+  install.py     putting an Aworg on a machine
   paths.py       where an Aworg keeps its life
   secrets.py     the credential choke point
+  auth.py        the interface password
   storage.py     runtime and Resident state
   host.py        what AWORG can see about the machine it runs on
-  theme.py       the owner interface's colour tokens and presets
-  layout.py      the owner interface's pane sizes
-  panes.py       the register of what the status column holds
-  lifecycle.py   how far along the Resident's application is
-  resident.py    the Resident itself
+  resident.py    the Resident itself, and the prompt it is sent
   agent.py       the loop: reach for a tool, read what came back, carry on
-  workers.py     spawning a specialist, and reporting what it actually did
+  stopping.py    when a turn stops, and why
+  workers.py     the Resident's workers, and what they actually did
+  inbox.py       what the Resident is told between turns
   processes.py   long-running programs, and not orphaning them
   activities.py  what is happening right now, and who is watching it
+  journal.py     the Living Log, and what deserves to be in it
+  watch.py       reading the Living Log for what is still open
+  skills.py      the skill library
+  personas.py    personas, and the room each one dresses
+  packages.py    aworg get, from the store
+  ratelimit.py   tokens per minute, per connection
+  theme.py       the owner interface's colour tokens and presets
+  layout.py      the owner interface's pane sizes
+  panes.py       the register of what the panes hold
   server.py      the owner interface's backing service
   providers.py   the model providers an owner may choose from
   models/        provider-neutral model interface and adapters
-  tools/         Capabilities, the Tools inside them, and the registry
+  tools/         the built-in Capabilities, and the registry
+  personas/      the seven that ship
   web/           the owner interface
 ```
 
@@ -937,5 +892,9 @@ commercial, under the [PolyForm Shield License 1.0.0](LICENSE) with the
   [TRADEMARKS.md](TRADEMARKS.md).
 
 The summary is a guide; the license files are the terms.
+
+The personas, skills and capabilities in [personas/](personas/),
+[skills/](skills/) and [capabilities/](capabilities/) are separate: each is
+MIT No Attribution, as its own LICENSE file says.
 
 AWORG does not accept outside contributions.

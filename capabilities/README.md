@@ -3,8 +3,8 @@
 Folders of Tools that AWORG does not ship.
 
 Each of these is a capability in the form it is installed in: copy one into
-`capabilities/` in an Aworg's home and it is offered to the Resident from the
-next start, loaded by the same discovery as a built-in. Nothing here is
+`capabilities/` in an Aworg's home and it is offered to the Resident from its
+next message, loaded by the same discovery as a built-in. Nothing here is
 imported by AWORG itself, which is why it sits outside the package.
 
 Outside on purpose, and it is the same argument as everywhere else in this
@@ -34,9 +34,11 @@ inside the program is one they cannot.
   in the capability's folder. Connection URLs, passwords included, are kept
   in `connections.json` there.
 
-These are bound for the AWORG store. Until it exists, installing one is
-copying a folder. Skills work the same way and live in `skills/` beside
-this.
+search, notify and database are in the AWORG store: `aworg get tools/NAME`.
+chromium and weather are kept here and not published -- chromium for the
+prepackaged builds, which bring their own engine, and weather as the
+smallest working example. Installing either is copying its folder. Skills
+work the same way and live in `skills/` beside this.
 
 ## Installing one
 

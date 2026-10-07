@@ -496,8 +496,8 @@ def describe(
         if pane["id"] == "skills" and items:
             # Same argument as Capabilities: the total is what is being
             # offered right now, so it moves when the owner presses a switch.
-            # It counts the per-skill offers only -- the standing instruction
-            # that introduces them is prose the pane does not own.
+            # It counts the per-skill offers only -- the SKILLS header that
+            # introduces them is prose the pane does not own.
             entry["tokens"] = sum(int(item.get("tokens") or 0) for item in items)
         if pane["id"] == "capabilities" and items:
             # The pane already prices each capability; this is what the pane

@@ -36,8 +36,8 @@ From the store, `aworg get skills/NAME`. Or copy the folder:
 
     cp -r skills/NAME ~/.aworg/skills/
 
-Skills are re-read on every request, so it is available immediately. The owner switches it on or off in the Skills
-pane; a switched-off skill is invisible to the Resident, which is worth
+Skills are re-read before every message, so it is available immediately.
+The owner switches it on or off in the Skills pane; a switched-off skill is invisible to the Resident, which is worth
 knowing when one of them insists it does not exist.
 
 ## Writing one
@@ -51,8 +51,7 @@ skill is a skill that will never be reached for.
 Two things worth knowing, both learned the hard way:
 
 **Process is not worth writing down.** A skill that says "plan first, check
-your work, use real content" buys nothing: the Resident does that already, or
-the standing instructions cover it. Measured against no skill at all, that
+your work, use real content" buys nothing: the Resident does that already. Measured against no skill at all, that
 kind of skill made no difference and its prohibitions made the result worse.
 
 **A point of view is worth writing down.** Concrete values the model cannot

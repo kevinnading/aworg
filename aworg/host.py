@@ -185,11 +185,6 @@ def _aworg_version() -> str:
     Resident told nothing has to discover all of that from the inside every
     time.
 
-    It pairs with something the standing instructions already say. They warn
-    that training stopped at some point and that the gap cannot be felt from
-    within; a version the Resident either recognises or does not is the first
-    piece of evidence it has ever been given about the size of that gap.
-
     Imported here rather than at module scope so that host.py does not drag
     the package __init__ in behind it.
     """
