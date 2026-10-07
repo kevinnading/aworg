@@ -832,6 +832,7 @@ def create_app(
         """
         if resident.turn is None or resident.turn.done:
             await resident.registry.refresh()
+            resident.skills.discover()
         return panes.describe(
             resident.host,
             resident.registry,

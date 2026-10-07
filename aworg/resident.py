@@ -896,6 +896,10 @@ class Resident:
                 detail="Their files changed on disk since the last message, "
                        "so the new versions were loaded without a restart.",
             )
+        # Skills the same way. They were re-read only when the Skills pane
+        # asked, so one installed with no interface open never reached the
+        # prompt, while `aworg get` said it was available now.
+        self.skills.discover()
 
         # It was said, so it happened. Recorded before attempting a reply --
         # if the model is unreachable, the message should not vanish.
