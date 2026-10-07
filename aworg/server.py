@@ -1068,9 +1068,9 @@ def create_app(
             empty(paths.trash)
 
         # The three folders of content, back to what shipped. Emptied and
-        # sown again rather than emptied: an Aworg arrives with skills,
-        # personas and a capability in it, so an empty folder is not the
-        # state being restored.
+        # sown again rather than emptied: an Aworg arrives with personas in
+        # it and a note in each folder, so an empty folder is not the state
+        # being restored.
         #
         # The libraries are then told to look again. Skills and personas
         # re-read themselves on the next request anyway; the registry reads

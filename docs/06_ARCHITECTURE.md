@@ -488,6 +488,30 @@ capable model, and on a local floor model they are inert. That is the same
 shape as tool support varying by provider, and it is reported the same way
 rather than hidden.
 
+### On a capable model they are read every time, and help where they carry facts
+
+Measured 2026-10-07 on gpt-6-luna, the six store skills, one job each, run
+once with the skill installed and once without, from a reset Aworg:
+
+    skill          read it   difference it made
+    site-check     yes       10 of 10 planted defects, measured in a browser,
+                             against 7 of 10 guessed from the source without
+    mobile-first   yes       16px inputs (12px without), 0 low-contrast
+                             elements (11 without), safe-area padding
+    skill-writer   yes       description gained its when-to-use half, the
+                             generic checklist went, 43 lines against 58
+    design-taste   yes       took the skill's heading face; ignored its type
+                             scale, still 17 sizes down to 9px
+    ask-first      yes       built anyway, under the skill's own "under ten
+                             minutes, just build it" clause; said its defaults
+    bug-hunt       yes       none: the planted bug was easy enough that both
+                             runs found and fixed it identically
+
+Six reads in six, against one in eighteen on the 9B. The pattern matches
+what the skills README predicts: a skill wins where it carries numbers and
+checks the model would not produce alone, and adds nothing where the model
+already does the job.
+
 ## Authority Is The Account's, Not AWORG's
 
 Earlier drafts of this project described a boundary around the Living

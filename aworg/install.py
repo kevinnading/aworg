@@ -339,6 +339,14 @@ def reseed(paths: Paths, kind: str) -> tuple[list[str], list[str]]:
     record_path(paths).write_text(
         json.dumps(record, indent=2) + "\n", encoding="utf-8"
     )
+    # The folder's note went with everything else; an empty folder with no
+    # word on what goes in it is the state the note exists to prevent.
+    note = folder / "README.md"
+    if kind in FOLDER_NOTES and not note.exists():
+        try:
+            note.write_text(FOLDER_NOTES[kind], encoding="utf-8")
+        except OSError:
+            pass
     return sown, trouble
 
 
