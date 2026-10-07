@@ -499,10 +499,12 @@ else and makes the call itself. Teaching AWORG to remember a new kind of thing
 is a rule added in `aworg/journal.py`, not a change to the thing being
 remembered.
 
-The bar is high on purpose. A log that records every successful tool call is
-a second conversation, and an owner learns within a day to stop reading it.
-What earns an entry is a change of state you would want to find tomorrow, or
-something going wrong:
+It holds every tool call — the Resident's and every worker's — as the call
+alone: which tool, with what, and which worker if it was one. Never the
+output; that is what the conversation is for. A worker's own session is
+thrown away when it is stopped, so for work done by workers this is the only
+record of what was done. Beyond the calls, what earns an entry is a change of
+state you would want to find tomorrow, or something going wrong:
 
 - a program you started, and the moment it finished or died
 - anything that failed, timed out, or was stopped part way

@@ -1173,9 +1173,12 @@ class Store:
                 " VALUES (?, ?, ?, ?, ?, ?)",
                 (level, kind, source, summary, detail, activity_id),
             )
+            # Never what is still open: an alarm nobody dealt with is not
+            # old news however much has happened since.
             conn.execute(
                 "DELETE FROM journal WHERE id <= ("
-                "  SELECT id FROM journal ORDER BY id DESC LIMIT 1 OFFSET ?)",
+                "  SELECT id FROM journal ORDER BY id DESC LIMIT 1 OFFSET ?)"
+                " AND NOT (level IN ('concern', 'alarm') AND resolved = 0)",
                 (keep,),
             )
             row = conn.execute(

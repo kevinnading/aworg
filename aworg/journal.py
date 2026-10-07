@@ -20,10 +20,11 @@ something belongs here. So the Living Log subscribes like anything else and
 makes that call itself. Adding a new thing worth remembering is a rule in
 `matters`, not a change to the thing being remembered.
 
-The bar is high on purpose. A log that records every successful tool call is
-a second Activities pane with worse latency, and an owner learns within a day
-to stop reading it. What earns an entry is a change of state the owner would
-want to find later, or something going wrong. Ordinary success is not news.
+Every tool call goes in, as the call alone -- tool, arguments, and the
+worker that made it if one did -- because a worker's session is thrown away
+when it stops and this is the only record of what it did. Never the output:
+that is the conversation's. Beyond the calls, what earns an entry is a change
+of state the owner would want to find later, or something going wrong.
 
 Eventually this is what the autonomous repair loop reads. That is the reason
 for `ALARM` being a separate level rather than a hotter shade of `CONCERN`:
@@ -152,7 +153,7 @@ class Journal:
     #: read by a person and by a model with a finite window, and one that has
     #: grown to ten thousand rows is one that gets summarised instead of read,
     #: which puts a model's testimony between the owner and the evidence.
-    KEEP = 500
+    KEEP = 20000
 
     def __init__(self, store: Any):
         self.store = store
@@ -335,8 +336,9 @@ class Journal:
         it exists, and duplicating megabytes into a table meant to be read
         would defeat both.
         """
+        wanted = entry.pop("evidence", True)
         activity_id = entry.get("activity_id")
-        if not activity_id:
+        if not activity_id or not wanted:
             return
         activity = activities.get(activity_id)
         payload = getattr(activity, "payload", None) if activity else None
@@ -419,6 +421,21 @@ class Journal:
                 "kind": "worker",
                 "source": source,
                 "activity_id": activity.get("id"),
+            }
+
+        # Every tool call that went through: the call, not what came back.
+        # The conversation keeps the Resident's calls, but a worker's are
+        # thrown away with it, and this is the one record of both.
+        if kind == "tool" and state == "completed" and event == "completed":
+            who = source.split(":", 1)[1] if source.startswith("worker:") else ""
+            return {
+                "summary": f"{label}" + (f" (worker {who})" if who else ""),
+                "detail": activity.get("detail") or "",
+                "level": NOTE,
+                "kind": "tool",
+                "source": source,
+                "activity_id": activity.get("id"),
+                "evidence": False,
             }
 
         # Something waiting on a person. Nothing enters this state yet -- it
