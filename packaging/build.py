@@ -16,8 +16,8 @@ Testing, so nothing here has to run on the system it is built for. Only the
 build for the machine doing the building can be tried out here.
 
 Downloads are cached in packaging/cache; archives land in packaging/dist,
-named aworg-<target> without the version, ready to attach to a GitHub
-release.
+named aworg-<version>-<target>, ready to attach to the GitHub release
+tagged v<version>.
 """
 
 from __future__ import annotations
@@ -184,12 +184,11 @@ def build(target: str, wheel: Path, pythons: dict, chromes: dict, chrome_version
     windows = target.startswith("windows")
     mac = target.startswith("macos")
     print(f"{target}")
-    # Named for the system and not the version: GitHub's
-    # releases/latest/download/<file> address only works for a name that stays
-    # the same, and the folder inside is plain AWORG so a new version unpacks
-    # over the old one. The Aworg itself lives in ~/.aworg, untouched.
+    # The archive carries the version; the folder inside is plain AWORG, so a
+    # new version unpacks over the old one. The Aworg itself lives in
+    # ~/.aworg, untouched.
     name = "AWORG"
-    archive_name = f"aworg-{target}"
+    archive_name = f"aworg-{release}-{target}"
     work = Path(tempfile.mkdtemp(prefix="aworg-build-"))
     # Everything that is not the Python itself, laid out as it will be in the
     # archive. Python is added straight from its own tarball instead of being
