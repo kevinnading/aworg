@@ -350,7 +350,8 @@ async function refreshLivingLog() {
   app.logMore = entries.length >= app.logLimit;
   const pane = app.panes.find((candidate) => candidate.id === "log");
   if (!pane) return;
-  pane.items = entries.map((entry) => ({
+  // Oldest at the top, newest at the bottom, like any log being written.
+  pane.items = entries.slice().reverse().map((entry) => ({
     kind: "entry",
     id: String(entry.id),
     level: entry.level || "note",
@@ -378,18 +379,39 @@ async function refreshLivingLog() {
   // which refreshLivingLog is called again for.
   if (document.querySelector(".log-resolver")) return;
 
-  // A repaint replaces the list, so where the owner had scrolled to goes
-  // with it unless it is carried across -- and reading back through the log
-  // is exactly when a twenty-second refresh would throw them to the top.
+  // The newest entry is at the bottom and the pane sits there, so new ones
+  // appear as they are written and push the older ones up. An owner who has
+  // scrolled up to read is left where they were: the entry at the top of
+  // their view stays put through the refresh, whether newer entries arrived
+  // below it or older ones were loaded above it.
   const before = document.querySelector("#pane-log .pane-items");
-  const scrolled = before ? before.scrollTop : 0;
+  let anchor = null;
+  // A list nobody has positioned yet -- the first paint, or one rebuilt with
+  // the panes -- starts at the bottom too. Its rows carry no entry ids.
+  const following = !before || !before.querySelector(".log-entry[data-entry]")
+    || before.scrollTop + before.clientHeight >= before.scrollHeight - 24;
+  if (before && !following) {
+    const top = before.getBoundingClientRect().top;
+    const row = [...before.querySelectorAll(".log-entry")]
+      .find((r) => r.getBoundingClientRect().bottom > top);
+    if (row) anchor = { id: row.dataset.entry, offset: row.getBoundingClientRect().top - top };
+  }
   repaintPane("log");
   const list = document.querySelector("#pane-log .pane-items");
   if (list) {
-    list.scrollTop = scrolled;
-    if (app.logMore) list.appendChild(olderLogButton());
+    list.querySelectorAll(".log-entry").forEach((row, i) => {
+      if (pane.items[i]) row.dataset.entry = pane.items[i].id;
+    });
+    if (app.logMore) list.prepend(olderLogButton());
+    const kept = anchor && list.querySelector(`.log-entry[data-entry="${anchor.id}"]`);
+    if (kept) {
+      list.scrollTop += kept.getBoundingClientRect().top
+        - list.getBoundingClientRect().top - anchor.offset;
+    } else {
+      list.scrollTop = list.scrollHeight;
+    }
     list.addEventListener("scroll", () => {
-      if (list.scrollTop + list.clientHeight >= list.scrollHeight - 40) loadOlderLog();
+      if (list.scrollTop < 40) loadOlderLog();
     });
   }
   app.logLoading = false;
@@ -399,7 +421,7 @@ async function refreshLivingLog() {
 
 /* Reaching further back in the Living Log. Nothing in it is ever dropped,
  * so "older" is always there to ask for; it is fetched as the owner scrolls
- * to the end, and the button is the same thing for a keyboard. */
+ * to the top, and the button is the same thing for a keyboard. */
 function loadOlderLog() {
   if (!app.logMore || app.logLoading) return;
   app.logLoading = true;
@@ -1766,6 +1788,9 @@ function buildPanes() {
   // The heads are new nodes, so they need wiring and sequencing again.
   wirePhoneHeads();
   paintPhone();
+  // The log arrived in the panes' order, newest first; this puts it the
+  // right way up and at the bottom.
+  if (app.panes.some((pane) => pane.id === "log")) refreshLivingLog();
 }
 
 /* ---------- the phone ---------- */
