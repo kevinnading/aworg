@@ -13,7 +13,7 @@ the code.
 
 ## Current state
 
-**Version 0.9.** Everything 1.0 needs is in except a second look at History.
+**Version 1.0.**
 
 The Resident holds one ongoing conversation — the only one there is, with
 nothing that ends it — and thinks with whichever model you connect, hosted or
@@ -50,10 +50,11 @@ from the store with `aworg get`, and the repository's own
 [personas/](personas/), [skills/](skills/) and [capabilities/](capabilities/)
 folders are what goes there.
 
-What it does not have yet is **History** in the form 1.0 wants: a record an
-owner can be told will survive an upgrade. Reversibility was dropped — undoing
-work is left to whatever the owner and Resident are comfortable with, git,
-backups or a tool.
+**History** is the Living Log: every tool call the Resident or any worker
+made, and everything that went wrong, kept for good and readable back to the
+first entry. It lives in `state.db` and survives an upgrade. AWORG does not
+undo work — that is left to whatever the owner and Resident are comfortable
+with, git, backups or a tool.
 
 ## Running it
 
