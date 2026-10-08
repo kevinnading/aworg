@@ -31,6 +31,11 @@ const app = {
   context: null,
   contextDraft: 0,
   contextStreamed: 0,
+  // How many Living Log entries the pane holds. It keeps every entry
+  // forever, so the pane starts with the newest and reaches back on demand.
+  logLimit: 100,
+  logMore: false,
+  logLoading: false,
 };
 
 /* ---------- api ---------- */
@@ -335,12 +340,14 @@ async function refreshLivingLog() {
 
   let entries;
   try {
-    ({ entries } = await api("/api/journal"));
+    ({ entries } = await api(`/api/journal?limit=${app.logLimit}`));
   } catch (_) {
     // A failed poll leaves the last good picture up. An empty pane would
     // claim nothing has happened, which is a different and untrue thing.
+    app.logLoading = false;
     return;
   }
+  app.logMore = entries.length >= app.logLimit;
   const pane = app.panes.find((candidate) => candidate.id === "log");
   if (!pane) return;
   pane.items = entries.map((entry) => ({
@@ -371,9 +378,42 @@ async function refreshLivingLog() {
   // which refreshLivingLog is called again for.
   if (document.querySelector(".log-resolver")) return;
 
+  // A repaint replaces the list, so where the owner had scrolled to goes
+  // with it unless it is carried across -- and reading back through the log
+  // is exactly when a twenty-second refresh would throw them to the top.
+  const before = document.querySelector("#pane-log .pane-items");
+  const scrolled = before ? before.scrollTop : 0;
   repaintPane("log");
+  const list = document.querySelector("#pane-log .pane-items");
+  if (list) {
+    list.scrollTop = scrolled;
+    if (app.logMore) list.appendChild(olderLogButton());
+    list.addEventListener("scroll", () => {
+      if (list.scrollTop + list.clientHeight >= list.scrollHeight - 40) loadOlderLog();
+    });
+  }
+  app.logLoading = false;
   // New entries are the commonest reason a header badge should change.
   paintPhone();
+}
+
+/* Reaching further back in the Living Log. Nothing in it is ever dropped,
+ * so "older" is always there to ask for; it is fetched as the owner scrolls
+ * to the end, and the button is the same thing for a keyboard. */
+function loadOlderLog() {
+  if (!app.logMore || app.logLoading) return;
+  app.logLoading = true;
+  app.logLimit += 200;
+  refreshLivingLog();
+}
+
+function olderLogButton() {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "ghost small log-older";
+  button.textContent = "Show older";
+  button.onclick = loadOlderLog;
+  return button;
 }
 
 async function refresh() {

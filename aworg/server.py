@@ -1238,10 +1238,8 @@ def create_app(
     def living_log(limit: int = 100) -> dict[str, Any]:
         """What happened, and mattered.
 
-        Read whole rather than streamed. The Living Log is short by design and
-        changes rarely; an owner opening it wants the last hundred lines, not
-        a socket. Activities is the pane with a stream, because that is the
-        pane about now.
+        The newest `limit` entries. The log keeps everything, so the pane
+        asks for more as the owner scrolls back.
         """
         return {"entries": resident.journal.entries(limit=limit)}
 
