@@ -58,7 +58,14 @@ with, git, backups or a tool.
 
 ## Running it
 
+The simplest way is a download from <https://aworg.com/get>: it brings its
+own Python and a browser for the Resident, and needs nothing installed.
+
+From source, with Python 3.10 or newer and git:
+
 ```bash
+git clone https://github.com/kevinnading/aworg.git
+cd aworg
 python -m venv .venv
 .venv/Scripts/python.exe -m pip install -e .
 .venv/Scripts/python.exe -m aworg install
@@ -70,6 +77,10 @@ interface, once; `aworg password` makes a new one if it is lost. On this
 machine only, `aworg start --no-password` serves it without one.
 
 On macOS or Linux the interpreter path is `.venv/bin/python` instead.
+
+To update, `git pull` and run the `pip install -e .` line again, so the
+new version is the one reported. Your Aworg lives in `~/.aworg`, not in the
+checkout, and is untouched by either.
 
 Open **Settings**, add a model connection, and start talking.
 
