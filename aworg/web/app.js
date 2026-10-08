@@ -56,6 +56,26 @@ async function api(path, options = {}) {
   return response.status === 204 ? null : response.json();
 }
 
+/* ---------- the website ---------- */
+
+/* The website and its store: aworg.com, or wherever AWORG_STORE points, so
+ * the links and `aworg get` always mean the same place. */
+function storeUrl(path) {
+  const base = ((app.meta && app.meta.store) || "https://aworg.com").replace(/\/+$/, "");
+  return base + path;
+}
+
+function storeLink(section) {
+  const link = document.createElement("a");
+  link.className = "pane-link";
+  link.href = storeUrl(`/explore/${section}`);
+  link.target = "_blank";
+  link.rel = "noopener";
+  link.textContent = "Get more";
+  link.title = `Browse ${section} in the AWORG store`;
+  return link;
+}
+
 /* ---------- boot ---------- */
 
 async function boot() {
@@ -67,6 +87,9 @@ async function boot() {
   ]);
   app.meta = meta;
   app.panes = panes;
+  // Everything that leads out to the website is addressed from one place.
+  el("wordmark-link").href = storeUrl("");
+  el("persona-store-link").href = storeUrl("/explore/personas");
   app.layout = layout;
   setPersonas(personas);
 
@@ -2316,6 +2339,10 @@ function paneNode(pane, { region, last }) {
     mark.title = pane.hint;
     head.appendChild(mark);
   }
+
+  // Where to get more of what this pane holds.
+  const storeSection = { skills: "skills", capabilities: "tools" }[pane.id];
+  if (storeSection) head.appendChild(storeLink(storeSection));
 
   // What the pane's contents cost the Resident per message, for the panes
   // whose contents are sent. Capabilities prices each capability separately

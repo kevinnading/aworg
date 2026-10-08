@@ -25,6 +25,7 @@ from fastapi.responses import Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from .packages import store_url
 from . import __version__
 from . import auth
 from .models import (
@@ -492,6 +493,9 @@ def create_app(
             "provider_profiles": providers.for_interface(),
             "capability_tags": CAPABILITY_TAGS,
             "home": str(paths.home),
+            # The website and its store, for the links that send an owner
+            # there. Whatever `aworg get` uses, so the two never disagree.
+            "store": store_url(),
         }
 
     @app.get("/api/host")
