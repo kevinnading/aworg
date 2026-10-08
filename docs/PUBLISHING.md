@@ -156,8 +156,16 @@ per-platform wheels and is past PyPI's size limit, and the source on its own
 would give every pip install a Browser capability that is switched on, priced
 into every message and broken the first time it is used.
 
-**The per-OS build step**, when it exists, has to do two things the wheel
-build does not:
+**The per-OS builds** are made by `packaging/build.py`, from any one machine:
+`python packaging/build.py` for all four (Windows x64, macOS arm64 and x64,
+Linux x64), or name the ones wanted. Each is a standalone CPython 3.12 from
+python-build-standalone (the stripped build), AWORG and its dependencies as
+that target's wheels, a start file and a README; archives land in
+`packaging/dist/`. Python is copied from its own tarball into the archive
+rather than unpacked first, because unpacked on Windows its symlinks become
+full copies. Only the build for the building machine can be run there.
+
+Beyond what the wheel build does, it does two things:
 
 1. Copy `capabilities/chromium/` into the packaged application's
    `aworg/capabilities/` directory.

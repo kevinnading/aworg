@@ -231,3 +231,7 @@ __marimo__/
 # not source, and this line is here in case anyone ever runs install_engine
 # against a checkout.
 aworg/capabilities/*/chromium/
+
+# What packaging/build.py downloads and makes.
+packaging/cache/
+packaging/dist/
