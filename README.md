@@ -45,8 +45,8 @@ make a new Resident: the conversation, the plan, the log and every permission
 carry straight on.
 
 Seven personas ship. Everything else — more personas, skills, and extra
-capabilities such as a browser, web search or a database connector — comes
-from the store with `aworg get`, and the repository's own
+capabilities such as a browser (`aworg get tools/chromium`), web search or a
+database connector — comes from the store with `aworg get`, and the repository's own
 [personas/](personas/), [skills/](skills/) and [capabilities/](capabilities/)
 folders are what goes there.
 
