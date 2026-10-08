@@ -163,7 +163,7 @@ def chrome_downloads() -> tuple[dict[str, str], str]:
 
 def build_wheel(into: Path) -> Path:
     # setuptools' build/lib is additive: a wheel built over an old one ships
-    # files deleted since. See docs/PUBLISHING.md.
+    # files deleted since.
     for stale in (REPO / "build", *REPO.glob("*.egg-info")):
         shutil.rmtree(stale, ignore_errors=True)
     subprocess.run([sys.executable, "-m", "pip", "wheel", "--no-deps", "-q",
