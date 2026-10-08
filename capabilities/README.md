@@ -34,11 +34,10 @@ inside the program is one they cannot.
   in the capability's folder. Connection URLs, passwords included, are kept
   in `connections.json` there.
 
-chromium, search, notify and database are in the AWORG store:
-`aworg get tools/NAME`. The prepackaged builds also carry chromium, with its
-engine; from the store it drives the machine's Chrome or Chromium, or fetches
-its own engine with `install_engine`. weather stays here, unpublished, as the
-smallest working example; installing it is copying its folder. Skills
+All five are in the AWORG store: `aworg get tools/NAME`. The prepackaged
+builds also carry chromium, with its engine; from the store it drives the
+machine's Chrome or Chromium, or fetches its own engine with
+`install_engine`. Each is MIT-0, as its LICENSE file says. Skills
 work the same way and live in `skills/` beside this.
 
 ## Installing one

@@ -16,3 +16,5 @@ DESCRIPTION = (
     "actually look at. Drives Chromium, from this capability's own folder or "
     "from this machine."
 )
+AUTHOR = "Claude Opus 5 (Anthropic); edited by Claude Opus 5.5 (Anthropic)"
+LICENSE = "MIT-0"
