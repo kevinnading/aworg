@@ -223,6 +223,23 @@ class AgentLoop:
                 # and told which call it was -- a model that knows it has
                 # asked the same thing three times can try something else,
                 # where "you have had enough turns" tells it nothing.
+                #
+                # The calls are already recorded, so they are answered before
+                # stopping: a tool_use with no tool_result is refused by both
+                # wire formats, and left unanswered it broke every message
+                # after it.
+                self._keep_results(record, working, [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": call.id,
+                        "content": (
+                            f"Not run: this is the same call {REPEAT_LIMIT} "
+                            "times in a row, so the reply was stopped."
+                        ),
+                        "is_error": True,
+                    }
+                    for call in calls
+                ])
                 yield {
                     "type": "error",
                     "message": (

@@ -292,8 +292,45 @@ class Resident:
 
     @classmethod
     def _to_messages(cls, rows: list[dict[str, Any]]) -> list[Message]:
-        """Stored conversation rows as the model layer's messages."""
-        return [message for _, message in cls._converted(rows)]
+        """Stored conversation rows as the model layer's messages.
+
+        Every tool call leaves here answered. A call with no result is
+        refused by both wire formats, and because history only grows, one
+        stored that way breaks every message after it -- which has happened
+        three times, from three different code paths. The paths are fixed;
+        this is the net under whichever one is next, and it also mends a
+        conversation already stored broken.
+        """
+        messages = [message for _, message in cls._converted(rows)]
+        mended: list[Message] = []
+        for index, message in enumerate(messages):
+            mended.append(message)
+            calls = [b["id"] for b in (message.blocks or [])
+                     if b.get("type") == "tool_use" and b.get("id")]
+            if not calls:
+                continue
+            following = messages[index + 1] if index + 1 < len(messages) else None
+            answered = {
+                b.get("tool_use_id") for b in
+                ((following.blocks or []) if following and following.role == "tool" else [])
+            }
+            missing = [
+                {"type": "tool_result", "tool_use_id": call_id,
+                 "content": "Not run: the reply stopped before this call was made.",
+                 "is_error": True}
+                for call_id in calls if call_id not in answered
+            ]
+            if not missing:
+                continue
+            if following is not None and following.role == "tool" and following.blocks:
+                messages[index + 1] = Message(
+                    role="tool", content=following.content,
+                    blocks=list(following.blocks) + missing,
+                )
+            else:
+                mended.append(Message(role="tool", content="[failed] Not run.",
+                                      blocks=missing))
+        return mended
 
     @staticmethod
     def _grouped(messages: list[Message]) -> list[list[Message]]:
