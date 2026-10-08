@@ -9,11 +9,11 @@ requires-python = ">=3.10"
 # is not on the SPDX list), so this is a LicenseRef pointing at the files.
 license = "LicenseRef-AWORG"
 license-files = ["LICENSE", "ADDITIONAL-TERMS.md", "TRADEMARKS.md"]
-authors = [{ name = "Kevin Nading" }]
+authors = [{ name = "Kevin Nading", email = "kevinnading@gmail.com" }]
 keywords = ["ai", "agent", "llm", "autonomous", "assistant", "resident", "workspace", "self-hosted"]
 # No License classifier: PEP 639 forbids one alongside a license expression.
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Environment :: Web Environment",
     "Framework :: FastAPI",
     "Intended Audience :: Developers",
@@ -30,8 +30,10 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/kevinnading/aworg"
+Homepage = "https://aworg.com"
+Documentation = "https://aworg.com/learn"
 Source = "https://github.com/kevinnading/aworg"
+Issues = "https://github.com/kevinnading/aworg/issues"
 
 [project.scripts]
 aworg = "aworg.cli:main"

@@ -8,7 +8,7 @@ a host you control, builds what you ask for in plain language, keeps developing
 it through conversation, watches it run, and repairs it when it breaks — without
 you needing to read a line of what it wrote.
 
-The full concept lives in [docs/](docs/). The rest of this file is about running
+The full concept lives in [docs/](https://github.com/kevinnading/aworg/tree/main/docs/). The rest of this file is about running
 the code.
 
 ## Current state
@@ -47,7 +47,7 @@ carry straight on.
 Seven personas ship. Everything else — more personas, skills, and extra
 capabilities such as a browser, web search or a
 database connector — comes from the store with `aworg get`, and the repository's own
-[personas/](personas/), [skills/](skills/) and [capabilities/](capabilities/)
+[personas/](https://github.com/kevinnading/aworg/tree/main/personas/), [skills/](https://github.com/kevinnading/aworg/tree/main/skills/) and [capabilities/](https://github.com/kevinnading/aworg/tree/main/capabilities/)
 folders are what goes there.
 
 **History** is the Living Log: every tool call the Resident or any worker
@@ -353,7 +353,7 @@ under this Aworg's home. Nothing needs registering — a skill is a folder with
 a file in it, which is also how the Resident can write one for itself.
 
 None ship. They come from the store, and the six in this repository's
-[skills/](skills/) are the first ones there.
+[skills/](https://github.com/kevinnading/aworg/tree/main/skills/) are the first ones there.
 
 Each skill's name and description are in the system prompt on every message,
 so the Resident knows what exists; the body is read on demand with
@@ -414,7 +414,7 @@ Frontmatter is optional — a `PERSONA.md` that starts straight in with
 `# Identity` loads exactly as written and takes its name from the folder.
 
 Seven ship. `aworg-light` is worn when you have not chosen; eleven more are in
-the store, and all eighteen are in [personas/](personas/).
+the store, and all eighteen are in [personas/](https://github.com/kevinnading/aworg/tree/main/personas/).
 
 | Persona | |
 |---|---|
@@ -702,7 +702,7 @@ it does *without asking*, which today is everything — including when an
 application's report wakes it with nobody watching. Turn **Wakes me** off if
 that is not what you want. What may eventually replace it is a set of modes —
 automatic, manual, and standing accepts — rather than one gate bolted on. See
-[docs/06_ARCHITECTURE.md](docs/06_ARCHITECTURE.md).
+[docs/06_ARCHITECTURE.md](https://github.com/kevinnading/aworg/blob/main/docs/06_ARCHITECTURE.md).
 
 ## A reply belongs to the Resident, not to a browser tab
 
@@ -753,7 +753,7 @@ to the one that suits it.
 
 Keeping the prompt off the connection is deliberate. It is what lets you
 change the mind the Resident thinks with and have it carry on as itself. See
-[docs/06_ARCHITECTURE.md](docs/06_ARCHITECTURE.md).
+[docs/06_ARCHITECTURE.md](https://github.com/kevinnading/aworg/blob/main/docs/06_ARCHITECTURE.md).
 
 ## Connecting a model
 
@@ -891,8 +891,8 @@ compatibility layer in the core would be wrong everywhere at once.
 ## License
 
 AWORG is **source-available**, not open source. It is free to use, personal or
-commercial, under the [PolyForm Shield License 1.0.0](LICENSE) with the
-[AWORG Additional Terms](ADDITIONAL-TERMS.md). In short:
+commercial, under the [PolyForm Shield License 1.0.0](https://github.com/kevinnading/aworg/blob/main/LICENSE) with the
+[AWORG Additional Terms](https://github.com/kevinnading/aworg/blob/main/ADDITIONAL-TERMS.md). In short:
 
 - **Use it for anything, free** — including inside products you sell.
 - **What you make with AWORG is yours**, under your own name, with no AWORG
@@ -903,12 +903,12 @@ commercial, under the [PolyForm Shield License 1.0.0](LICENSE) with the
   it, as a substitute for AWORG, including multi-project AWORGs or a hub for
   managing many.
 - **The name is not yours to use** for your own product or fork. See
-  [TRADEMARKS.md](TRADEMARKS.md).
+  [TRADEMARKS.md](https://github.com/kevinnading/aworg/blob/main/TRADEMARKS.md).
 
 The summary is a guide; the license files are the terms.
 
-The personas, skills and capabilities in [personas/](personas/),
-[skills/](skills/) and [capabilities/](capabilities/) are separate: each is
+The personas, skills and capabilities in [personas/](https://github.com/kevinnading/aworg/tree/main/personas/),
+[skills/](https://github.com/kevinnading/aworg/tree/main/skills/) and [capabilities/](https://github.com/kevinnading/aworg/tree/main/capabilities/) are separate: each is
 MIT No Attribution, as its own LICENSE file says.
 
 AWORG does not accept outside contributions.

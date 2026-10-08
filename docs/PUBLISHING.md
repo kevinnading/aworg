@@ -1,7 +1,7 @@
 # Publishing to PyPI
 
 Notes from investigating what it would take for `pip install aworg` to work
-for anyone. Nothing has been published. Written 2026-09-14 so that the work
+for anyone. Nothing has been published yet; see "Uploading a version". Written 2026-09-14 so that the work
 already done does not have to be redone, and so the two things that caught us
 by surprise are not surprises twice.
 
@@ -92,18 +92,49 @@ Decisions worth knowing:
   and the like), because PyPI does not resolve them against the repository.
   Worth making them absolute GitHub URLs before the first upload.
 
-## The steps, when ready
+## Decided 2026-10-08
 
-1. PyPI account with 2FA. Mandatory for uploads, no exceptions.
-2. Credentials. Either an API token, or **Trusted Publishing** -- register
-   `kevinnading/aworg` plus a workflow name on PyPI once and GitHub Actions
-   uploads with a short-lived OIDC token. No secret to leak or rotate.
-   Preferred.
-3. ~~Fill in the metadata above and add a LICENSE.~~ Done 2026-09-16.
-4. `python -m build`, then `twine check dist/*`.
-5. **TestPyPI first.** Upload, install from it into a clean virtualenv, run
-   it. This is the step that would have caught the missing skills.
-6. `twine upload dist/*`.
+- **Uploads are manual**, by Kevin, when a version is ready. No Trusted
+  Publishing workflow. An API token from each index, kept on his machine.
+- **Author email** `kevinnading@gmail.com`; **Issues** go to GitHub Issues.
+  `[project.urls]` is Homepage aworg.com, Documentation aworg.com/learn,
+  Source and Issues on GitHub.
+- **README links are absolute** GitHub addresses, so they work on PyPI.
+- **Development Status 5 - Production/Stable** from 1.0.
+- **TestPyPI first** for the first upload -- a separate account at
+  test.pypi.org, with its own token.
+
+Checked 2026-10-08 on 1.0.0: `twine check` passes both files, and the wheel
+installed into a clean virtualenv and run from outside the checkout reports
+1.0.0 and installs the seven personas, no skills, no capabilities.
+
+## Uploading a version
+
+From the repository, on the machine holding the tokens:
+
+```bash
+python -m pip install --upgrade build twine
+rm -rf build dist aworg.egg-info
+python -m build
+python -m twine check dist/*
+python -m twine upload --repository testpypi dist/*
+```
+
+Then install it from TestPyPI into a fresh virtualenv and start it (the
+extra index is where its dependencies come from):
+
+```bash
+python -m venv /tmp/try && /tmp/try/bin/pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ aworg
+```
+
+If it runs, the real one:
+
+```bash
+python -m twine upload dist/*
+```
+
+twine asks for a username and password: the username is `__token__` and the
+password is that index's API token.
 
 ## Two things that cannot be undone
 
