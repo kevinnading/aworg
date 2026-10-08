@@ -15,7 +15,9 @@ prebuilt wheels (pip --platform), and the engine comes from Chrome for
 Testing, so nothing here has to run on the system it is built for. Only the
 build for the machine doing the building can be tried out here.
 
-Downloads are cached in packaging/cache; archives land in packaging/dist.
+Downloads are cached in packaging/cache; archives land in packaging/dist,
+named aworg-<target> without the version, ready to attach to a GitHub
+release.
 """
 
 from __future__ import annotations
@@ -101,10 +103,11 @@ More skills, tools and personas: https://aworg.com
 """
 
 MAC_NOTE = """
-macOS: these files are not signed, so the first time, open Terminal in this
-folder and run
+macOS: these files are not signed. Installed with the Terminal line on
+https://aworg.com/get they run straight away. If you downloaded this in a
+browser instead, macOS will refuse to run them until you open Terminal in
+this folder and run
   xattr -dr com.apple.quarantine .
-or macOS will refuse to run them.
 """
 
 
@@ -181,7 +184,12 @@ def build(target: str, wheel: Path, pythons: dict, chromes: dict, chrome_version
     windows = target.startswith("windows")
     mac = target.startswith("macos")
     print(f"{target}")
-    name = f"aworg-{release}-{target}"
+    # Named for the system and not the version: GitHub's
+    # releases/latest/download/<file> address only works for a name that stays
+    # the same, and the folder inside is plain AWORG so a new version unpacks
+    # over the old one. The Aworg itself lives in ~/.aworg, untouched.
+    name = "AWORG"
+    archive_name = f"aworg-{target}"
     work = Path(tempfile.mkdtemp(prefix="aworg-build-"))
     # Everything that is not the Python itself, laid out as it will be in the
     # archive. Python is added straight from its own tarball instead of being
@@ -236,7 +244,7 @@ def build(target: str, wheel: Path, pythons: dict, chromes: dict, chrome_version
 
     if windows:
         # Zip, which is what Windows opens. The Windows Python has no symlinks.
-        out = DIST / f"{name}.zip"
+        out = DIST / f"{archive_name}.zip"
         out.unlink(missing_ok=True)
         with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as archive:
             with tarfile.open(python) as source:
@@ -249,7 +257,7 @@ def build(target: str, wheel: Path, pythons: dict, chromes: dict, chrome_version
                     archive.write(path, f"{name}/{path.relative_to(stage).as_posix()}")
     else:
         # Tar, which keeps symlinks and the execute bits Mac and Linux need.
-        out = DIST / f"{name}.tar.gz"
+        out = DIST / f"{archive_name}.tar.gz"
         out.unlink(missing_ok=True)
         engine_dir = capability / "chromium"
 
