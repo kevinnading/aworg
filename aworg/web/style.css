@@ -1289,8 +1289,14 @@ body.has-maximised-pane .resizer { pointer-events: none; }
     min-height: 0;
     overflow: hidden;
   }
-  html, body { height: 100%; }
+  /* The height actually visible, not 100%: on a phone 100% is measured as
+     if the address bar were hidden, so while it shows the page is taller
+     than the screen and the whole thing scrolled -- top bar and all -- into
+     empty space. dvh tracks the bar. The page itself never scrolls; only the
+     open pane or the conversation does, inside it. */
+  html, body { height: 100%; height: 100dvh; overflow: hidden; overscroll-behavior: none; }
   body { min-height: 0; }
+  .home .pane[data-open] .pane-body, .home .chat[data-open] .messages { overscroll-behavior: contain; }
   .view.active { min-height: 0; }
 
   /* Collapsed is the resting state: a header, and nothing else. */
