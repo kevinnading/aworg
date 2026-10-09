@@ -1431,6 +1431,16 @@ body.has-maximised-pane .resizer { pointer-events: none; }
      the 56px bar has room for. */
   .viewtab { min-height: 44px; }
 
+  /* Nothing in the conversation may widen the page. A flex item is as wide
+     as its longest unbreakable run by default, so one long path, address or
+     code line stretched the whole view to 900px and the phone showed a
+     third of it. Held to the screen at every level; long words break, and a
+     code block scrolls inside its own box. */
+  .view.active, .home { min-width: 0; max-width: 100%; }
+  .home .chat, .home .chat .messages, .msg, .msg .body { min-width: 0; max-width: 100%; }
+  .msg .body { overflow-wrap: anywhere; }
+  .msg pre { max-width: 100%; overflow-x: auto; }
+
   .home .pane-head, .chat-head { min-width: 0; }
   .home .pane-head h2, .chat-head h2 {
     min-width: 0;
