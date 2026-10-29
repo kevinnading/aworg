@@ -106,6 +106,17 @@ body {
   white-space: nowrap;
 }
 .pane-link:hover { text-decoration: underline; }
+.pane-install {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.pane-install:disabled { color: var(--muted); cursor: default; text-decoration: none; }
+.pane-install + .pane-link { margin-left: 10px; }
+.hint .pane-install { font-size: inherit; }
 .pane-link + .pane-cost { margin-left: 0; }
 
 .wordmark {

@@ -25,7 +25,8 @@ from fastapi.responses import Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from .packages import store_url
+from .packages import GetError, from_upload, store_url
+from .packages import describe as describe_install
 from . import __version__
 from . import auth
 from .models import (
@@ -1669,6 +1670,42 @@ def create_app(
         )
 
         return {"name": target.name, "path": where, "size": written}
+
+    #: The pane's word for what it holds, and the installer's.
+    PACKAGE_KINDS = {"skills": "skill", "capabilities": "tool", "personas": "persona"}
+
+    @app.post("/api/packages/{section}")
+    async def install_package(section: str, request: Request) -> dict[str, Any]:
+        """Install a package zip the owner chose, as `aworg get` would.
+
+        The raw body is the zip, as with the workspace upload and for the
+        same reason. Held in memory rather than streamed to disk: packages
+        are small, and the installer unpacks from bytes either way.
+        """
+        kind = PACKAGE_KINDS.get(section)
+        if kind is None:
+            raise HTTPException(404, "Packages go to skills, capabilities or personas.")
+        data = bytearray()
+        async for chunk in request.stream():
+            data.extend(chunk)
+            if len(data) > MAX_UPLOAD_BYTES:
+                raise HTTPException(
+                    413, f"That zip is larger than {MAX_UPLOAD_BYTES // (1024 * 1024)} MB."
+                )
+        try:
+            result = from_upload(paths, kind, bytes(data))
+        except GetError as exc:
+            raise HTTPException(400, str(exc)) from None
+        except OSError as exc:
+            raise HTTPException(500, f"It could not be installed: {exc}") from None
+        noun = {"tool": "capability"}.get(kind, kind)
+        resident.journal.record(
+            f"{noun.capitalize()} {result.name} was installed from an upload",
+            kind=noun,
+            source="owner",
+            detail=describe_install(result),
+        )
+        return {"name": result.name, "type": kind, "replaced": bool(result.replaced)}
 
     #: Ports a served application is most likely to be on. Guessing is
     #: acceptable here in a way it is not elsewhere, because being wrong

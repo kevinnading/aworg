@@ -143,6 +143,8 @@ def unpack(name: str, data: bytes, into: Path) -> None:
                 continue
             path = PurePosixPath(info.filename.replace("\\", "/"))
             parts = path.parts
+            if parts and parts[0] == "__MACOSX":
+                continue
             if (path.is_absolute() or not parts or parts[0] != name
                     or any(part in ("..", "") for part in parts) or len(parts) < 2):
                 raise GetError(f"The package contains a file it shouldn't: {info.filename}")
@@ -197,7 +199,40 @@ def _made_here(old: Path, shipped_now: set[str]) -> list[str]:
     return keep
 
 
-def install(paths: Paths, record: dict, version: str, data: bytes) -> Installed:
+#: The file that makes a folder one of these, so a skill dropped on the
+#: Capabilities pane is refused rather than installed where it does nothing.
+MARKERS = {"skill": "SKILL.md", "persona": "PERSONA.md", "tool": "__init__.py"}
+
+
+def from_upload(paths: Paths, kind: str, data: bytes) -> Installed:
+    """A package zip the owner chose themselves, installed the way `aworg
+    get` installs one from the store: the same shape -- one folder named for
+    the package -- and the same unpacking, trash and carried-over files."""
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            files = [info.filename.replace("\\", "/") for info in archive.infolist()
+                     if not info.is_dir()]
+    except zipfile.BadZipFile:
+        raise GetError("That isn't a zip file.") from None
+    # Finder puts these in every zip it makes; they are not the package.
+    files = [f for f in files if not f.startswith("__MACOSX/")]
+    tops = {f.split("/", 1)[0] for f in files}
+    if len(tops) != 1 or any("/" not in f for f in files):
+        raise GetError("The zip should hold one folder named for the package, "
+                       "with the package's files inside it.")
+    name = tops.pop()
+    if not NAME.match(name):
+        raise GetError(f"{name!r} isn't a package name: lowercase letters, digits, "
+                       "- and _, starting with a letter.")
+    marker = MARKERS[kind]
+    if f"{name}/{marker}" not in files:
+        raise GetError(f"{name} has no {marker}, so it isn't a {kind}.")
+    return install(paths, {"name": name, "type": kind}, "uploaded", data,
+                   source="an upload")
+
+
+def install(paths: Paths, record: dict, version: str, data: bytes,
+            source: str = "the store") -> Installed:
     name, kind = record["name"], record["type"]
     root = target_root(paths, kind)
     root.mkdir(parents=True, exist_ok=True)
@@ -235,7 +270,7 @@ def install(paths: Paths, record: dict, version: str, data: bytes) -> Installed:
             "installed_at": time.time(), "files": shipped,
         }, indent=2), encoding="utf-8")
         if final.exists():
-            replaced = to_trash(paths, final, f"replaced by {name} {version} from the store")
+            replaced = to_trash(paths, final, f"replaced by {name} {version} from {source}")
         staging.rename(final)
         moved.clear()
     finally:
@@ -250,7 +285,8 @@ def install(paths: Paths, record: dict, version: str, data: bytes) -> Installed:
 
 
 def describe(result: Installed) -> str:
-    lines = [f"Installed {result.type} {result.name} {result.version} into {result.folder}"]
+    version = "" if result.version == "uploaded" else f" {result.version}"
+    lines = [f"Installed {result.type} {result.name}{version} into {result.folder}"]
     if result.replaced:
         lines.append(f"The copy that was there is in the trash at {result.replaced}")
     if result.type == "tool":

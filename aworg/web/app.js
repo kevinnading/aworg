@@ -76,6 +76,58 @@ function storeLink(section) {
   return link;
 }
 
+/* A package zip from this computer, installed the way `aworg get` installs
+ * one from the store: one folder named for the package, inside the zip. */
+function installLink(section, onInstalled) {
+  const label = "Install zip";
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "pane-link pane-install";
+  button.textContent = label;
+  button.title = `Install ${section === "capabilities" ? "a capability" :
+    `a ${section.replace(/s$/, "")}`} from a zip on this computer`;
+
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = ".zip,application/zip";
+  button.onclick = () => input.click();
+  input.onchange = async () => {
+    const file = input.files[0];
+    input.value = "";
+    if (!file) return;
+    button.disabled = true;
+    button.textContent = "Installing…";
+    try {
+      const result = await postFile(`/api/packages/${section}`, file);
+      button.textContent = `Installed ${result.name}`;
+      setTimeout(() => { button.textContent = label; }, 4000);
+      if (onInstalled) onInstalled(result);
+    } catch (error) {
+      button.textContent = label;
+      // Said plainly and held until read: the reason is the whole message,
+      // and a zip of the wrong shape is fixed by knowing which shape.
+      window.alert(`${file.name} wasn't installed. ${error.message}`);
+    }
+    button.disabled = false;
+  };
+  return button;
+}
+
+/* A file as the raw body of a POST, with the server's reason on failure. */
+async function postFile(url, file) {
+  const response = await fetch(url, { method: "POST", body: file });
+  if (!response.ok) {
+    let detail = `the server said ${response.status}`;
+    try {
+      detail = (await response.json()).detail || detail;
+    } catch (_) {
+      /* a non-JSON error body is still an error; the status will do */
+    }
+    throw new Error(detail);
+  }
+  return response.json();
+}
+
 /* ---------- boot ---------- */
 
 async function boot() {
@@ -90,6 +142,10 @@ async function boot() {
   // Everything that leads out to the website is addressed from one place.
   el("wordmark-link").href = storeUrl("");
   el("persona-store-link").href = storeUrl("/explore/personas");
+  el("persona-store-link").before(
+    installLink("personas", async () => setPersonas(await api("/api/personas"))),
+    " · ",
+  );
   app.layout = layout;
   setPersonas(personas);
 
@@ -2342,7 +2398,10 @@ function paneNode(pane, { region, last }) {
 
   // Where to get more of what this pane holds.
   const storeSection = { skills: "skills", capabilities: "tools" }[pane.id];
-  if (storeSection) head.appendChild(storeLink(storeSection));
+  if (storeSection) {
+    head.appendChild(installLink(pane.id, refreshPanes));
+    head.appendChild(storeLink(storeSection));
+  }
 
   // What the pane's contents cost the Resident per message, for the panes
   // whose contents are sent. Capabilities prices each capability separately
@@ -3711,21 +3770,8 @@ async function uploadFile(file) {
     path: app.workspacePath || "",
     name: file.name,
   });
-  const response = await fetch(`/api/workspace/upload?${query}`, {
-    method: "POST",
-    // The file itself, with no form around it. The server reads the stream.
-    body: file,
-  });
-  if (!response.ok) {
-    let detail = `the server said ${response.status}`;
-    try {
-      detail = (await response.json()).detail || detail;
-    } catch (_) {
-      /* a non-JSON error body is still an error; the status will do */
-    }
-    throw new Error(detail);
-  }
-  return response.json();
+  // The file itself, with no form around it. The server reads the stream.
+  return postFile(`/api/workspace/upload?${query}`, file);
 }
 
 /* One line under the crumbs, for something that just happened to the
