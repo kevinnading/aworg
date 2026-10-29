@@ -235,3 +235,6 @@ aworg/capabilities/*/chromium/
 # What packaging/build.py downloads and makes.
 packaging/cache/
 packaging/dist/
+
+# Capabilities for Kevin's own Aworg, not for the public or the store.
+internal/
